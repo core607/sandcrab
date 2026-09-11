@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+<!--
+  Length limits apply to production code. Test methods are scenarios and test classes are suites,
+  so the test source sets are exempt from MethodLength and FileLength as a whole.
+
+  Every other entry is a production file that was already over 600 lines when the gate was
+  introduced. Splitting the file removes its entry; new files get none. Over-limit methods are
+  exempted one method at a time in xpath-suppressions.xml, so a new long method in one of these
+  files still fails.
+-->
+<suppressions>
+    <suppress checks="MethodLength|FileLength" files="[\\/]src[\\/](test|integrationTest)[\\/]"/>
+
+    <suppress checks="FileLength" files="[\\/]assets[\\/]AssetService\.java$"/>
+    <suppress checks="FileLength" files="[\\/]auth[\\/]AuthService\.java$"/>
+    <suppress checks="FileLength" files="[\\/]content[\\/]internal[\\/]JGitRemoteRepositoryAuthority\.java$"/>
+    <suppress checks="FileLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"/>
+    <suppress checks="FileLength" files="[\\/]content[\\/]internal[\\/]LocalPortableContentExports\.java$"/>
+    <suppress checks="FileLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"/>
+</suppressions>

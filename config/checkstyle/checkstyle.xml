@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  The Java style section of AGENTS.md owns the rules. This file gates the mechanically checkable
+  ones; Spotless owns formatting. Existing files over the length limits are listed in
+  suppressions.xml, which never grows for new code.
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+
+    <module name="SuppressionFilter">
+        <property name="file" value="${config_loc}/suppressions.xml"/>
+    </module>
+
+    <module name="FileLength">
+        <property name="max" value="600"/>
+    </module>
+
+    <module name="TreeWalker">
+        <module name="NeedBraces"/>
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <!-- Over-limit methods are exempted one at a time; a new long method in the same file fails. -->
+        <module name="SuppressionXpathFilter">
+            <property name="file" value="${config_loc}/xpath-suppressions.xml"/>
+        </module>
+        <module name="MethodLength">
+            <property name="max" value="60"/>
+            <!-- Blank lines and comments do not count, so explaining a method never pushes it over the limit. -->
+            <property name="countEmpty" value="false"/>
+        </module>
+    </module>
+</module>

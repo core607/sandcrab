@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionXpathFilter Experimental Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2_xpath_experimental.dtd">
+<!--
+  Each entry exempts one named method that already exceeded 60 code lines when the gate was
+  introduced. The exemption is per method, so a new long method in the same file still fails.
+  Shortening a method removes its entry. New methods get none.
+
+  File-level exemptions live in suppressions.xml, which owns FileLength and the test source sets.
+-->
+<suppressions>
+    <suppress-xpath checks="MethodLength" files="[\\/]assets[\\/]AssetService\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='prepareMedia']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]assets[\\/]ImagePreviewPolicy\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='validate']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]assets[\\/]internal[\\/]LocalManagedBlobStore\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='uploadOriginal']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]auth[\\/]OAuthService\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='consent']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]MarkdownDestinations\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='path']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryBlobReader\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='siblings']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryContentReader\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='listDirectory' or @text='readFile' or @text='readTreeObjects']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='write']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositorySnapshotExports\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='create' or @text='createPublic']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]LocalPortableContentExports\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='create' or @text='initialize']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]PortableContentPlanner\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]PublicExecutionProjection\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='build' or @text='destination']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]RepositoryMarkdownParser\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='parse']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]RepositoryMovePlanner\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='bridgeOperation' or @text='execute' or @text='executeWithBridge'
+                           or @text='exportPackage' or @text='fetchMedia' or @text='importMedia' or @text='materialize'
+                           or @text='moveFiles' or @text='open' or @text='readArtifact' or @text='readCapture'
+                           or @text='result']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]SessionMoves\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]McpBodyLimitFilter\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='doFilter']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]McpEnvelopeBounds\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='inspect']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]RepositoryMcpTools\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='getArtifact' or @text='specifications']]"/>
+    <suppress-xpath checks="MethodLength" files="[\\/]spaces[\\/]SpaceCreationService\.java$"
+                    query="//METHOD_DEF[./IDENT[@text='create']]"/>
+</suppressions>
