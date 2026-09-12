@@ -7,3 +7,5 @@ build/
 out/
 .idea/
 *.iml
+__pycache__/
+*.pyc
