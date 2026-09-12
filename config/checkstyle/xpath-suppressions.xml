@@ -39,10 +39,9 @@
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]RepositoryMovePlanner\.java$"
                     query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='bridgeOperation' or @text='execute' or @text='executeWithBridge'
-                           or @text='exportPackage' or @text='fetchMedia' or @text='importMedia' or @text='materialize'
-                           or @text='moveFiles' or @text='open' or @text='readArtifact' or @text='readCapture'
-                           or @text='result']]"/>
+                    query="//METHOD_DEF[./IDENT[@text='execute' or @text='executeWithBridge'
+                           or @text='fetchMedia' or @text='importMedia' or @text='materialize'
+                           or @text='moveFiles' or @text='readArtifact' or @text='readCapture']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]SessionMoves\.java$"
                     query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]McpBodyLimitFilter\.java$"
