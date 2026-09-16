@@ -23,7 +23,7 @@
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryBlobReader\.java$"
                     query="//METHOD_DEF[./IDENT[@text='siblings']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryContentReader\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='listDirectory' or @text='readFile' or @text='readTreeObjects']]"/>
+                    query="//METHOD_DEF[./IDENT[@text='listDirectory' or @text='readTreeObjects']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"
                     query="//METHOD_DEF[./IDENT[@text='write']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositorySnapshotExports\.java$"
@@ -42,12 +42,6 @@
                     query="//METHOD_DEF[./IDENT[@text='executeWithBridge']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]SessionMoves\.java$"
                     query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]McpBodyLimitFilter\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='doFilter']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]McpEnvelopeBounds\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='inspect']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]mcp[\\/]internal[\\/]RepositoryMcpTools\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='getArtifact' or @text='specifications']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]spaces[\\/]SpaceCreationService\.java$"
                     query="//METHOD_DEF[./IDENT[@text='create']]"/>
 </suppressions>
