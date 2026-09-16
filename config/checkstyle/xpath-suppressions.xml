@@ -14,12 +14,6 @@
                     query="//METHOD_DEF[./IDENT[@text='prepareMedia']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]auth[\\/]OAuthService\.java$"
                     query="//METHOD_DEF[./IDENT[@text='consent']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]MarkdownDestinations\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='path']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryBlobReader\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='siblings']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryContentReader\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='listDirectory' or @text='readTreeObjects']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"
                     query="//METHOD_DEF[./IDENT[@text='write']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositorySnapshotExports\.java$"
@@ -30,8 +24,6 @@
                     query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]PublicExecutionProjection\.java$"
                     query="//METHOD_DEF[./IDENT[@text='build' or @text='destination']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]RepositoryMarkdownParser\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='parse']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]RepositoryMovePlanner\.java$"
                     query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"
