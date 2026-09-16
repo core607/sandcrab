@@ -16,12 +16,6 @@
                     query="//METHOD_DEF[./IDENT[@text='consent']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"
                     query="//METHOD_DEF[./IDENT[@text='write']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositorySnapshotExports\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='create' or @text='createPublic']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]LocalPortableContentExports\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='create' or @text='initialize']]"/>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]PortableContentPlanner\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='prepare']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"
                     query="//METHOD_DEF[./IDENT[@text='executeWithBridge']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]SessionMoves\.java$"
