@@ -14,5 +14,4 @@
 <suppressions>
     <suppress checks="MethodLength|FileLength" files="[\\/]src[\\/](test|integrationTest)[\\/]"/>
 
-    <suppress checks="FileLength" files="[\\/]assets[\\/]AssetService\.java$"/>
 </suppressions>
