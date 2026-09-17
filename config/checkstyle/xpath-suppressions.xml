@@ -10,8 +10,6 @@
   File-level exemptions live in suppressions.xml, which owns FileLength and the test source sets.
 -->
 <suppressions>
-    <suppress-xpath checks="MethodLength" files="[\\/]content[\\/]internal[\\/]JGitRepositoryPatchService\.java$"
-                    query="//METHOD_DEF[./IDENT[@text='write']]"/>
     <suppress-xpath checks="MethodLength" files="[\\/]executor[\\/]internal[\\/]IsolatedRepositoryExecutor\.java$"
                     query="//METHOD_DEF[./IDENT[@text='executeWithBridge']]"/>
 </suppressions>
