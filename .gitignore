@@ -9,3 +9,5 @@ out/
 *.iml
 __pycache__/
 *.pyc
+executor-service/rust/target/
+executor-service/bin/

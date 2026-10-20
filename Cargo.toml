@@ -1,0 +1,18 @@
+[workspace]
+members = ["poketto-cli"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+serde_json = { version = "1.0", features = ["preserve_order", "arbitrary_precision"] }
+rustix = { version = "1.1", features = ["fs", "event"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
