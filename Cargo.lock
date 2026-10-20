@@ -94,6 +94,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "poketto-syncfs"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"

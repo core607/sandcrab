@@ -1,5 +1,5 @@
 [workspace]
-members = ["poketto-cli", "poketto-shell"]
+members = ["poketto-cli", "poketto-shell", "poketto-syncfs"]
 resolver = "3"
 
 [workspace.package]
