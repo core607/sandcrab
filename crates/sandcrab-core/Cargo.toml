@@ -1,0 +1,15 @@
+[package]
+name = "sandcrab-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+base64.workspace = true
+rustix = { workspace = true, features = ["time"] }
+serde_json = { workspace = true, features = ["raw_value"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+unicode-normalization = "=0.1.25"

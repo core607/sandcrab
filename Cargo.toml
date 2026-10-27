@@ -1,5 +1,11 @@
 [workspace]
-members = ["poketto-cli", "poketto-shell", "poketto-syncfs", "poketto-supervisor"]
+members = [
+    "poketto-cli",
+    "poketto-shell",
+    "poketto-syncfs",
+    "poketto-supervisor",
+    "sandcrab-core",
+]
 resolver = "3"
 
 [workspace.package]

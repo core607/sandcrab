@@ -264,11 +264,11 @@ dependencies = [
  "base64",
  "ed25519-dalek",
  "rustix",
+ "sandcrab-core",
  "serde",
  "serde_json",
  "sha2",
  "signal-hook",
- "unicode-normalization",
 ]
 
 [[package]]
@@ -325,6 +325,18 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys",
+]
+
+[[package]]
+name = "sandcrab-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "unicode-normalization",
 ]
 
 [[package]]
