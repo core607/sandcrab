@@ -379,27 +379,6 @@ impl Snapshot {
     pub fn manifest(&self) -> Value {
         json!({"captureId": self.id, "writes": self.entries.iter().map(|v| json!({"path":v.path,"bytes":v.bytes,"sha256":v.digest})).collect::<Vec<_>>(), "deletes":self.deletes,"absent":self.absent})
     }
-    pub fn chunk(&self, data: &Value) -> Result<Value> {
-        let index = data["index"]
-            .as_u64()
-            .filter(|v| *v < self.entries.len() as u64)
-            .ok_or_else(|| rejected("CAPTURE_UNAVAILABLE"))?;
-        let entry = &self.entries[index as usize];
-        let offset = data["offset"]
-            .as_u64()
-            .filter(|v| *v <= entry.bytes)
-            .ok_or_else(|| rejected("CAPTURE_UNAVAILABLE"))?;
-        let limit = data["limit"]
-            .as_u64()
-            .filter(|v| (1..=CHUNK_BYTES as u64).contains(v))
-            .ok_or_else(|| rejected("CAPTURE_UNAVAILABLE"))?;
-        let count = limit.min(entry.bytes - offset) as usize;
-        let bytes = match &entry.content {
-            Content::Memory(bytes) => bytes[offset as usize..offset as usize + count].to_vec(),
-            Content::Disk(stage) => read_at(stage.file()?, offset, count)?,
-        };
-        Ok(json!({"captureId":self.id,"index":index,"offset":offset,"data":STANDARD.encode(bytes)}))
-    }
     pub fn close(&mut self) -> io::Result<()> {
         for entry in &mut self.entries {
             if let Content::Disk(stage) = &mut entry.content {
@@ -408,6 +387,65 @@ impl Snapshot {
         }
         Ok(())
     }
+    /// The byte length of [`Snapshot::write_tar`] with this manifest.
+    pub fn tar_length(&self, manifest: &[u8]) -> u64 {
+        let entry = |bytes: u64| 512 + bytes.div_ceil(512) * 512;
+        entry(manifest.len() as u64)
+            + self.entries.iter().map(|e| entry(e.bytes)).sum::<u64>()
+            + 1024
+    }
+    /// One ustar archive: `manifest.json`, then each captured file as `files/<index>` in
+    /// manifest order. Paths, sizes and digests are in the manifest; entry names never carry
+    /// a repository path.
+    pub fn write_tar(&self, manifest: &[u8], out: &mut impl Write) -> io::Result<()> {
+        out.write_all(&tar_header("manifest.json", manifest.len() as u64))?;
+        out.write_all(manifest)?;
+        tar_pad(out, manifest.len() as u64)?;
+        for (index, entry) in self.entries.iter().enumerate() {
+            out.write_all(&tar_header(&format!("files/{index}"), entry.bytes))?;
+            match &entry.content {
+                Content::Memory(bytes) => out.write_all(bytes)?,
+                Content::Disk(stage) => {
+                    let file = stage
+                        .file()
+                        .map_err(|_| io::Error::other("Captured file unavailable"))?;
+                    let mut offset = 0;
+                    let mut buffer = vec![0; CHUNK_BYTES];
+                    while offset < entry.bytes {
+                        let count = (entry.bytes - offset).min(CHUNK_BYTES as u64) as usize;
+                        let read = file.read_at(&mut buffer[..count], offset)?;
+                        if read == 0 {
+                            return Err(io::Error::other("Captured file shrank"));
+                        }
+                        out.write_all(&buffer[..read])?;
+                        offset += read as u64;
+                    }
+                }
+            }
+            tar_pad(out, entry.bytes)?;
+        }
+        out.write_all(&[0; 1024])
+    }
+}
+fn tar_pad(out: &mut impl Write, bytes: u64) -> io::Result<()> {
+    out.write_all(&[0; 512][..(bytes.div_ceil(512) * 512 - bytes) as usize])
+}
+/// A ustar header for a regular file of `size` bytes, owned by nobody and dated at the epoch.
+fn tar_header(name: &str, size: u64) -> [u8; 512] {
+    let mut header = [0u8; 512];
+    header[..name.len()].copy_from_slice(name.as_bytes());
+    header[100..107].copy_from_slice(b"0000644");
+    header[108..115].copy_from_slice(b"0000000");
+    header[116..123].copy_from_slice(b"0000000");
+    header[124..135].copy_from_slice(format!("{size:011o}").as_bytes());
+    header[136..147].copy_from_slice(b"00000000000");
+    header[156] = b'0';
+    header[257..263].copy_from_slice(b"ustar\0");
+    header[263..265].copy_from_slice(b"00");
+    header[148..156].copy_from_slice(b"        ");
+    let sum: u32 = header.iter().map(|b| u32::from(*b)).sum();
+    header[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+    header
 }
 fn read_at(file: &File, offset: u64, count: usize) -> Result<Vec<u8>> {
     let mut bytes = vec![0; count];
@@ -690,6 +728,69 @@ pub fn current(parent: &File, name: &str, flag: &AtomicBool) -> Result<(Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The files of a snapshot's archive, read back by their declared sizes.
+    fn archived(snapshot: &Snapshot) -> Vec<Vec<u8>> {
+        let mut archive = Vec::new();
+        snapshot.write_tar(b"{}", &mut archive).unwrap();
+        let mut offset = 1024;
+        let mut files = Vec::new();
+        while archive[offset] != 0 {
+            let size = usize::from_str_radix(
+                std::str::from_utf8(&archive[offset + 124..offset + 135]).unwrap(),
+                8,
+            )
+            .unwrap();
+            files.push(archive[offset + 512..offset + 512 + size].to_vec());
+            offset += 512 + size.div_ceil(512) * 512;
+        }
+        files
+    }
+    #[test]
+    fn a_snapshot_streams_as_one_ustar_archive_of_its_declared_length() {
+        let snapshot = Snapshot {
+            id: "capture".into(),
+            entries: vec![
+                Entry {
+                    path: "notes/a.md".into(),
+                    bytes: 3,
+                    digest: String::new(),
+                    content: Content::Memory(b"abc".to_vec()),
+                },
+                Entry {
+                    path: "notes/empty.md".into(),
+                    bytes: 0,
+                    digest: String::new(),
+                    content: Content::Memory(vec![]),
+                },
+            ],
+            deletes: vec![],
+            absent: vec![],
+        };
+        let manifest = br#"{"ok":true}"#;
+        let mut archive = Vec::new();
+        snapshot.write_tar(manifest, &mut archive).unwrap();
+        assert_eq!(archive.len() as u64, snapshot.tar_length(manifest));
+        assert_eq!(archive.len(), 512 * 7);
+        let header = |offset: usize| &archive[offset..offset + 512];
+        for (offset, name, size) in [
+            (0, "manifest.json", 11),
+            (1024, "files/0", 3),
+            (2048, "files/1", 0),
+        ] {
+            let block = header(offset);
+            assert_eq!(&block[..name.len()], name.as_bytes());
+            assert_eq!(&block[124..135], format!("{size:011o}").as_bytes());
+            assert_eq!(&block[257..263], b"ustar\0");
+            let recorded =
+                u32::from_str_radix(std::str::from_utf8(&block[148..154]).unwrap(), 8).unwrap();
+            let mut copy = block.to_vec();
+            copy[148..156].copy_from_slice(b"        ");
+            assert_eq!(recorded, copy.iter().map(|b| u32::from(*b)).sum::<u32>());
+        }
+        assert_eq!(&archive[512..523], manifest);
+        assert_eq!(&archive[1536..1539], b"abc");
+        assert!(archive[2560..].iter().all(|b| *b == 0));
+    }
     const TREE: Tree = Tree {
         directories: &["work", "repository"],
         reserved: ".git",
@@ -782,13 +883,7 @@ mod tests {
         let manifest = snapshot.manifest();
         assert_eq!(manifest["writes"][0]["sha256"], hash(bytes));
         assert_eq!(manifest["deletes"], json!(["deleted.md"]));
-        let chunk = snapshot
-            .chunk(&json!({"index":0,"offset":0,"limit":65536}))
-            .unwrap();
-        assert_eq!(
-            STANDARD.decode(chunk["data"].as_str().unwrap()).unwrap(),
-            bytes
-        );
+        assert_eq!(archived(&snapshot), vec![bytes.to_vec()]);
         let absent = Snapshot::capture(
             &fixture.root,
             TREE,
@@ -866,19 +961,8 @@ mod tests {
         ));
         assert_eq!(fs::metadata(&stage).unwrap().mode() & 0o777, 0o600);
         fs::write(fixture.repository.join("data"), b"changed").unwrap();
-        let chunk = snapshot
-            .chunk(&json!({"index":0,"offset":65530,"limit":65536}))
-            .unwrap();
-        assert_eq!(
-            STANDARD.decode(chunk["data"].as_str().unwrap()).unwrap(),
-            bytes[65530..65530 + 65536]
-        );
-        assert!(
-            snapshot
-                .chunk(&json!({"index":0,"offset":bytes.len(),"limit":1}))
-                .unwrap()["data"]
-                == ""
-        );
+        // The archive comes from the staged copy, not from the changed source.
+        assert_eq!(archived(&snapshot), vec![bytes.to_vec()]);
         snapshot.close().unwrap();
         assert!(!stage.exists());
     }
