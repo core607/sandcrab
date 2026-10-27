@@ -20,6 +20,84 @@ pub struct Launch {
     pub unit: String,
     pub cgroup: PathBuf,
 }
+/// The account, slice and limits every sandbox unit of one service shares.
+#[derive(Clone)]
+pub struct Profile {
+    pub tools: PathBuf,
+    pub launcher: PathBuf,
+    pub exec_user: String,
+    pub resource_slice: String,
+    pub supervisor_unit: String,
+    pub cpu_quota_percent: u64,
+    pub memory_bytes: u64,
+    pub tasks_max: u64,
+    pub temporary_bytes: u64,
+    pub temporary_inodes: u64,
+}
+impl Profile {
+    /// `systemd-run` for one launcher record. The tools, the launcher, the record and its
+    /// policy are bound read-only and `writable` read-write; the unit stops with the
+    /// supervisor and, with `runtime_max_millis`, after that time.
+    pub fn command(
+        &self,
+        unit: &str,
+        record: &Path,
+        settings: &Path,
+        writable: &Path,
+        runtime_max_millis: Option<u64>,
+    ) -> Vec<String> {
+        let mut command: Vec<String> = vec![
+            "systemd-run".into(),
+            "--quiet".into(),
+            "--wait".into(),
+            "--pipe".into(),
+            "--unit".into(),
+            unit.into(),
+            "--slice".into(),
+            self.resource_slice.clone(),
+        ];
+        let properties = [
+            format!("User={}", self.exec_user),
+            format!("CPUQuota={}%", self.cpu_quota_percent),
+            format!("MemoryMax={}", self.memory_bytes),
+            "MemorySwapMax=0".into(),
+            format!("TasksMax={}", self.tasks_max),
+            "KillMode=control-group".into(),
+            "TimeoutStopSec=1".into(),
+            "SendSIGKILL=yes".into(),
+            "NoNewPrivileges=yes".into(),
+            "UMask=0077".into(),
+            format!(
+                "TemporaryFileSystem=/tmp:rw,size={},nr_inodes={},mode=1777,nosuid,nodev",
+                self.temporary_bytes, self.temporary_inodes
+            ),
+            format!(
+                "BindReadOnlyPaths={} {} {} {}",
+                self.tools.display(),
+                self.launcher.display(),
+                record.display(),
+                settings.display()
+            ),
+            format!("BindPaths={}", writable.display()),
+            format!("BindsTo={}", self.supervisor_unit),
+            format!("After={}", self.supervisor_unit),
+        ];
+        for property in properties.into_iter().chain(
+            runtime_max_millis
+                .map(|millis| format!("RuntimeMaxSec={}.{:03}", millis / 1000, millis % 1000)),
+        ) {
+            command.extend(["-p".into(), property]);
+        }
+        command.extend([
+            "/usr/bin/env".into(),
+            "-i".into(),
+            "PATH=/usr/bin:/bin".into(),
+            self.launcher.to_string_lossy().into(),
+            record.to_string_lossy().into(),
+        ]);
+        command
+    }
+}
 /// A launched helper unit whose containment must be confirmed before it is forgotten.
 pub struct Maintenance {
     pub launch: Launch,
