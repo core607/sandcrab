@@ -1,0 +1,12 @@
+[package]
+name = "sandcrab-launch"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+rustix = { workspace = true, features = ["fs", "process"] }
+serde_json.workspace = true
+sha2 = "0.10"

@@ -1,11 +1,13 @@
 [workspace]
 members = [
     "poketto-cli",
+    "poketto-launch",
     "poketto-shell",
     "poketto-syncfs",
     "poketto-supervisor",
     "sandcrab-core",
     "sandcrab-daemon",
+    "sandcrab-launch",
 ]
 resolver = "3"
 
