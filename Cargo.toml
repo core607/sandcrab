@@ -5,6 +5,7 @@ members = [
     "poketto-syncfs",
     "poketto-supervisor",
     "sandcrab-core",
+    "sandcrab-daemon",
 ]
 resolver = "3"
 

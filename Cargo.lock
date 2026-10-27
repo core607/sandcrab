@@ -265,6 +265,7 @@ dependencies = [
  "ed25519-dalek",
  "rustix",
  "sandcrab-core",
+ "sandcrab-daemon",
  "serde",
  "serde_json",
  "sha2",
@@ -337,6 +338,19 @@ dependencies = [
  "serde_json",
  "sha2",
  "unicode-normalization",
+]
+
+[[package]]
+name = "sandcrab-daemon"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "ed25519-dalek",
+ "rustix",
+ "sandcrab-core",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
