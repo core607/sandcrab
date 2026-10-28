@@ -7,13 +7,14 @@ import uuid
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
-from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, GenerateConfig, execute_tools
+from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, GenerateConfig, execute_tools, get_model
 from inspect_ai.scorer import CORRECT, INCORRECT, Score, accuracy, scorer
 from inspect_ai.solver import generate, solver
 from inspect_ai.tool import ToolCall, ToolError, tool
 from inspect_ai.util import store
 
 from cases import load
+from budget import Ledger
 from native_http import request, wait
 
 CASES = Path(__file__).parent / 'cases' / 'sandcrab'
@@ -42,6 +43,13 @@ def grade(expected: dict, readback: tuple[int, dict], observations: list[dict], 
     for code in expected.get('errors', []):
         if code not in errors:
             failures.append('missing refusal ' + code)
+    if 'refusalBeforeRun' in expected:
+        refusals = [i for i, o in enumerate(observations) if o['status'] >= 400
+                    and o['response'].get('error', {}).get('code') == expected['refusalBeforeRun']]
+        admissions = [i for i, o in enumerate(observations) if o['method'] == 'POST' and o['path'] == '/v1/runs'
+                      and o['status'] == 202 and o['response'].get('id') == run_id]
+        if not refusals or not admissions or min(refusals) >= min(admissions):
+            failures.append('refusal did not precede successful admission')
     if expected.get('replay') and not any(o['method'] == 'POST' and o['path'] == '/v1/runs'
                                         and o['status'] == 200 and o['response'].get('id') == run_id
                                         for o in observations):
@@ -84,13 +92,17 @@ def native_api(endpoint: str, run_id: str):
 
 
 @solver
-def prepare(endpoint: str):
+def prepare(endpoint: str, baseline: bool):
     async def solve(state, generate):
+        if not baseline and not isinstance(getattr(get_model().api, 'ledger', None), Ledger):
+            raise ValueError('Model tasks require the budgeted runner; direct unbudgeted Inspect generation is disabled')
         run_id = str(uuid.uuid4())
         store().set('run_id', run_id)
         store().set('native_observations', [])
         store().set('cleanup', 'PENDING')
-        state.messages.append(ChatMessageUser(content=f'Your assigned run ID is {run_id}. Use it for all requests.'))
+        store().set('sample_key', f'{state.sample_id}:{state.epoch}')
+        state.messages.append(ChatMessageUser(content=f'Your assigned run ID is {run_id}. Use it for all requests. '
+                                                     'Leave the result record for verification unless the task explicitly asks you to forget it.'))
         state.tools = [native_api(endpoint, run_id)]
         return state
     return solve
@@ -137,6 +149,8 @@ def scripted(endpoint: str):
 def native_state(endpoint: str):
     async def score(state, target):
         run_id = store().get('run_id')
+        if not run_id:
+            return Score(value=INCORRECT, explanation='Sample setup did not complete')
         readback = await asyncio.to_thread(request, endpoint, 'GET', '/v1/runs/' + run_id)
         failures = grade(state.metadata['expected'], readback, store().get('native_observations'), run_id)
         return Score(value=INCORRECT if failures else CORRECT,
@@ -171,13 +185,14 @@ def cleanup(endpoint: str):
 @task
 def sandcrab_native(endpoint: str, baseline: bool = False):
     cases, digest = load(CASES)
-    samples = [Sample(id=c['id'], input=c['task'] + '\nFixture: ' + json.dumps(c['fixture']),
+    samples = [Sample(id=c['id'], input=c['task'] + '\nFixture: ' + json.dumps({k: v for k, v in c['fixture'].items() if k != 'exercise'}, ensure_ascii=False),
                       metadata={'fixture': c['fixture'], 'expected': c['expected']}) for c in cases]
-    return Task(dataset=samples, setup=prepare(endpoint),
+    return Task(dataset=samples, setup=prepare(endpoint, baseline),
                 solver=scripted(endpoint) if baseline else generate(),
                 cleanup=cleanup(endpoint), scorer=native_state(endpoint), epochs=3,
-                time_limit=90, message_limit=30, token_limit=16000, cost_limit=None if baseline else .02,
-                config=GenerateConfig(max_tokens=1024, max_retries=0, parallel_tool_calls=False, max_tool_output=20000),
+                time_limit=180, message_limit=30, turn_limit=12, token_limit=32000,
+                config=GenerateConfig(max_tokens=2048, max_retries=0, parallel_tool_calls=False, max_tool_output=20000, cache=False),
                 fail_on_error=False, score_on_error=True,
                 metadata={'suite': 'sandcrab-native', 'corpusSha256': digest,
-                          'evidenceKind': 'scripted' if baseline else 'model-directed'}, version=1)
+                          'evidenceKind': 'scripted' if baseline else 'model-directed',
+                          'clientVersion': 2, 'sampling': {'thinking': 'disabled', 'temperature': 0, 'maxOutputTokens': 2048}}, version=2)

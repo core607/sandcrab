@@ -16,9 +16,16 @@ def main():
     parser.add_argument('--tools', type=Path, required=True)
     parser.add_argument('--python', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
+    parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
+    parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
+    parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error('native preflight requires root to create its isolated fixture')
+    key = os.environ.pop('DEEPSEEK_API_KEY', '')
+    if args.mode == 'model' and not key:
+        parser.error('DEEPSEEK_API_KEY is required for model mode')
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Native preflight interrupted')
     signal.signal(signal.SIGTERM, interrupted)
@@ -35,7 +42,7 @@ def main():
         fixture.setup()
         fixture.cli_completed_outcome()
         fixture.startup_cancellation()
-        fixture.receipt['scope'] = 'Disposable native service for an Inspect scripted preflight; no model or production endpoint'
+        fixture.receipt['scope'] = 'Disposable native service for Inspect ' + args.mode + ' evaluation; no production endpoint'
         revision = subprocess.run(['git', '-c', f'safe.directory={source}', 'rev-parse', 'HEAD'],
                                   cwd=source, check=True, capture_output=True, text=True).stdout.strip()
         client_home = fixture.root / 'client'
@@ -51,16 +58,20 @@ def main():
             target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
             shutil.copyfile(origin, target)
             target.chmod(0o644)
-        # Do not pass root's provider credentials, SSH configuration or environment to Inspect.
+        # Only model mode receives the selected provider key. The daemon and its sandboxes
+        # never receive it, nor root's other credentials or environment.
         child_env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'HOME': str(client_home), 'PYTHONUTF8': '1',
                      'LD_LIBRARY_PATH': str(args.python.resolve().parent.parent / 'lib')}
+        if args.mode == 'model':
+            child_env['DEEPSEEK_API_KEY'] = key
         # Preserve the venv path: resolving its python symlink selects the base interpreter.
         child = subprocess.Popen([str(args.python.absolute()), str(staged / 'run.py'),
-                                  '--endpoint', str(fixture.socket), '--output', str(output), '--revision', revision],
+                                  '--endpoint', str(fixture.socket), '--output', str(output), '--revision', revision,
+                                  '--mode', args.mode, '--epochs', str(args.epochs), '--model', args.model, '--budget-usd', args.budget_usd],
                                  cwd=staged, env=child_env, start_new_session=True,
                                  user=client.pw_uid, group=client.pw_gid, extra_groups=[client.pw_gid])
         try:
-            returncode = child.wait(timeout=600)
+            returncode = child.wait(timeout=1800 if args.mode == 'model' else 600)
         finally:
             try:
                 os.killpg(child.pid, signal.SIGKILL)

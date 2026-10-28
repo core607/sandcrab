@@ -1,0 +1,34 @@
+name: Agent evaluations
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model for the independent Sandcrab native API tasks
+        type: choice
+        options: [deepseek-flash]
+        default: deepseek-flash
+      repeats:
+        description: Trials per case
+        type: choice
+        options: ['3', '1', '5']
+        default: '3'
+      budget_usd:
+        description: Total batch budget in USD, including uncertain-call reservations (maximum 5)
+        type: string
+        default: '1.00'
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    uses: ./.github/workflows/evals.yml
+    with:
+      evidence_mode: model
+      model: ${{ inputs.model }}
+      repeats: ${{ fromJSON(inputs.repeats) }}
+      budget_usd: ${{ inputs.budget_usd }}
+    secrets:
+      model_key: ${{ secrets.DEEPSEEK_EVAL_API_KEY || ((vars.AI_REVIEW_BASE_URL == '' || vars.AI_REVIEW_BASE_URL == 'https://api.deepseek.com') && secrets.AI_REVIEW_API_KEY) || '' }}

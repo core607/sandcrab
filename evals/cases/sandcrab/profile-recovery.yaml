@@ -1,4 +1,4 @@
 id: profile-recovery
 task: "Try the fixture with profile 'missing'. After the refusal, discover a valid profile and execute the original command with the same assigned ID. Inspect its terminal outcome."
 fixture: {"command":["python3","-c","print('recovered')"],"exercise":"profile-recovery"}
-expected: {"state":"succeeded","stdout":"recovered\n","errors":["PROFILE_NOT_FOUND"]}
+expected: {"state":"succeeded","stdout":"recovered\n","refusalBeforeRun":"PROFILE_NOT_FOUND"}

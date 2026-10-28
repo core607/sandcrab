@@ -32,7 +32,7 @@ def load(directory: Path) -> tuple[list[dict], str]:
         for key in ['timeoutMillis', 'outputLimitBytes']:
             if key in fixture and (type(fixture[key]) is not int or not 1 <= fixture[key] <= 10000):
                 raise ValueError(f'{path.name}: invalid {key}')
-        if not isinstance(expected, dict) or set(expected) - {'state', 'stdout', 'stderr', 'exitCode', 'truncated', 'errors', 'forgotten', 'replay'}:
+        if not isinstance(expected, dict) or set(expected) - {'state', 'stdout', 'stderr', 'exitCode', 'truncated', 'errors', 'refusalBeforeRun', 'forgotten', 'replay'}:
             raise ValueError(f'{path.name}: unknown expected-state check')
         if expected.get('state') not in {'succeeded', 'failed', 'cancelled', 'timed_out', 'output_limit', 'resource_limit'}:
             raise ValueError(f'{path.name}: terminal state is required')
@@ -44,6 +44,8 @@ def load(directory: Path) -> tuple[list[dict], str]:
             raise ValueError(f'{path.name}: expected boolean check')
         if 'errors' in expected and (not isinstance(expected['errors'], list) or any(not isinstance(s, str) for s in expected['errors'])):
             raise ValueError(f'{path.name}: errors must be a list of codes')
+        if 'refusalBeforeRun' in expected and not isinstance(expected['refusalBeforeRun'], str):
+            raise ValueError(f'{path.name}: refusalBeforeRun must be an error code')
         digest.update(path.name.encode() + b'\0' + raw + b'\0')
         cases.append(value)
     if not cases or len({c['id'] for c in cases}) != len(cases):

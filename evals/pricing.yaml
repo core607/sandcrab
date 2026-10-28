@@ -1,0 +1,10 @@
+model: deepseek-flash
+advertised_release: DeepSeek-V4.1-Flash-1017
+verified_on: '2026-10-28'
+source: https://api-docs.deepseek.com/quick_start/pricing/
+# Reserve above the advertised 1M context; count every input token at the peak cache-miss rate.
+context_tokens: 1100000
+max_output_tokens: 2048
+usd_per_million:
+  input: '0.30'
+  output: '1.20'

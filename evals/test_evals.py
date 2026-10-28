@@ -48,6 +48,14 @@ class CasesAndGrades(unittest.TestCase):
                         {'method': 'POST', 'path': '/v1/runs', 'status': 409, 'response': {'error': {'code': 'ID_CONFLICT'}}}]
         self.assertFalse(grade(expected, actual, observations, 'id'))
 
+    def test_recovery_requires_refusal_before_successful_admission(self):
+        expected = {'state': 'succeeded', 'refusalBeforeRun': 'PROFILE_NOT_FOUND'}
+        result = {'id': 'id', 'state': 'succeeded'}
+        admission = {'method': 'POST', 'path': '/v1/runs', 'status': 202, 'response': result}
+        refusal = {'method': 'POST', 'path': '/v1/runs', 'status': 400, 'response': {'error': {'code': 'PROFILE_NOT_FOUND'}}}
+        self.assertFalse(grade(expected, (200, result), [refusal, admission], 'id'))
+        self.assertTrue(grade(expected, (200, result), [admission, refusal], 'id'))
+
     def test_real_inspect_retains_infrastructure_failures_without_model_calls(self):
         with tempfile.TemporaryDirectory() as directory:
             task = sandcrab_native(str(Path(directory) / 'missing.sock'), baseline=True)

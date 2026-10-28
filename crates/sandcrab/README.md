@@ -92,3 +92,5 @@ Linux, creates its own bounded slice and service and exercises real CLI/HTTP,
 containment, cancellation, replay, capacity, restart and cleanup. It uses no
 model API and reports deterministic evidence only. It does not establish agent
 usability, OpenSandbox compatibility or Poketto adoption.
+Independent agent tasks and their budgeted runner live in the
+[Inspect suite](../../../evals/README.md).
