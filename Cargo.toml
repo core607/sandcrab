@@ -6,6 +6,7 @@ members = [
     "poketto-shell",
     "poketto-syncfs",
     "poketto-supervisor",
+    "sandcrab",
     "sandcrab-core",
     "sandcrab-daemon",
     "sandcrab-launch",

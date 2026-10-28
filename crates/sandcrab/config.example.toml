@@ -1,0 +1,24 @@
+[service]
+runtime_root = "/run/sandcrab-demo"
+socket = "/run/sandcrab-demo/control.sock"
+client_uid = 1000
+client_gid = 1000
+resource_slice = "sandcrab.slice"
+supervisor_unit = "sandcrab-demo.service"
+unit_prefix = "sandcrab-demo-"
+max_runs = 2
+max_records = 128
+max_output_bytes = 8388608
+
+[profiles.python]
+exec_user = "sandcrab-exec"
+tools = "/opt/sandcrab/tools"
+read_only = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]
+memory_bytes = 134217728
+temporary_bytes = 16777216
+temporary_inodes = 4096
+tasks_max = 64
+cpu_quota_percent = 50
+timeout_millis = 30000
+output_limit_bytes = 65536
+network = "none"

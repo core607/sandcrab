@@ -1,0 +1,17 @@
+[package]
+name = "sandcrab"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+sandcrab-core = { path = "../sandcrab-core" }
+sandcrab-daemon = { path = "../sandcrab-daemon" }
+sandcrab-launch = { path = "../sandcrab-launch" }
+rustix = { workspace = true, features = ["net", "process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+signal-hook = "=0.4.5"
+toml = { version = "=0.9.8", default-features = false, features = ["parse", "serde"] }
