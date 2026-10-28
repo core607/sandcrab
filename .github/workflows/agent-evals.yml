@@ -22,7 +22,17 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Validate the paid run before starting its evaluator
+        run: python3 evals/check_run.py
   native:
+    needs: validate
     if: github.ref == 'refs/heads/main' && github.run_attempt == 1
     uses: ./.github/workflows/evals.yml
     with:

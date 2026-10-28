@@ -191,7 +191,7 @@ def sandcrab_native(endpoint: str, baseline: bool = False):
                 solver=scripted(endpoint) if baseline else generate(),
                 cleanup=cleanup(endpoint), scorer=native_state(endpoint), epochs=3,
                 time_limit=180, message_limit=30, turn_limit=12, token_limit=32000,
-                config=GenerateConfig(max_tokens=2048, max_retries=0, parallel_tool_calls=False, max_tool_output=20000, cache=False),
+                config=GenerateConfig(max_tokens=2048, max_retries=0, max_connections=1, parallel_tool_calls=False, max_tool_output=20000, cache=False),
                 fail_on_error=False, score_on_error=True,
                 metadata={'suite': 'sandcrab-native', 'corpusSha256': digest,
                           'evidenceKind': 'scripted' if baseline else 'model-directed',

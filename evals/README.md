@@ -32,9 +32,9 @@ remains in the artifact. Paid work never runs automatically on a pull request.
 Configure `DEEPSEEK_EVAL_API_KEY` as a repository secret. The workflow can reuse
 `AI_REVIEW_API_KEY` when review uses the standard DeepSeek endpoint. Only the
 unprivileged evaluator receives the key; the daemon and sandbox commands do not.
-Rerunning an existing paid workflow is disabled: inspect its ledger and start a
-new run explicitly. Non-main refs, other providers, automatic baseline comparison,
-scheduled runs, Poketto MCP tasks and creator QA remain under the
+Rerunning an existing paid workflow fails validation before the evaluator starts:
+inspect its ledger and start a new run explicitly. Non-main refs, other providers,
+automatic baseline comparison, scheduled runs, Poketto MCP tasks and creator QA remain under the
 [evaluation proposal](../notes/proposed/2026-10-28-agent-evaluation-entrance.md).
 
 ## Cases and scoring
