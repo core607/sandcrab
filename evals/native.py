@@ -42,6 +42,10 @@ def main():
         fixture.setup()
         fixture.cli_completed_outcome()
         fixture.startup_cancellation()
+        fixture.session_tests()
+        fixture.example(source / 'examples/sandcrab-build-test.sh')
+        fixture.session_cleanup_failure()
+        fixture.startup_cancellation(session=True)
         fixture.receipt['scope'] = 'Disposable native service for Inspect ' + args.mode + ' evaluation; no production endpoint'
         revision = subprocess.run(['git', '-c', f'safe.directory={source}', 'rev-parse', 'HEAD'],
                                   cwd=source, check=True, capture_output=True, text=True).stdout.strip()

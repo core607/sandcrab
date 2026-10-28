@@ -3,6 +3,7 @@
 use crate::config::{Config, Profile, invalid};
 use rustix::fs::{Gid, OFlags, Uid, chown};
 use sandcrab_core::{
+    command::{Channel, EndReason, Request as CommandRequest},
     fs::{mounted, protected_directory},
     unit::{Launch, checked, empty_group},
     uuid,
@@ -15,8 +16,10 @@ use std::{
     io::{self, Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
+    process::{Command, Stdio},
     sync::atomic::AtomicBool,
-    time::Duration,
+    thread,
+    time::{Duration, Instant},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -27,6 +30,7 @@ struct Record {
     settings: PathBuf,
     uid: u32,
     command: Vec<String>,
+    shell: bool,
 }
 
 fn command(args: &[String]) -> io::Result<std::process::Output> {
@@ -176,12 +180,50 @@ impl Runtime {
                 .join("records")
                 .join(format!("{id}.{kind}.json"))
         });
-        let (result, contained) = match self.prepare(id, &root, &records, profile, argv, timeout) {
-            Ok(launch) => job::run(&launch, cancelled, Duration::from_millis(timeout), limit),
-            Err(error) => (Err(error), Ok(())),
-        };
+        let (result, contained) =
+            match self.prepare(id, &root, &records, profile, argv, Some(timeout)) {
+                Ok(launch) => job::run(&launch, cancelled, Duration::from_millis(timeout), limit),
+                Err(error) => (Err(error), Ok(())),
+            };
         let cleanup = contained.and_then(|()| release(&root, &records));
         (result, cleanup)
+    }
+
+    /// Prepare a persistent shell. Failed cleanup holds the caller's admission until restart.
+    pub fn open_shell(&self, id: &str, profile: &Profile) -> Result<Shell, bool> {
+        let root = self.config.service.runtime_root.join("jobs").join(id);
+        if DirBuilder::new().mode(0o750).create(&root).is_err() {
+            return Err(true);
+        }
+        let records = ["launch", "policy"].map(|kind| {
+            self.config
+                .service
+                .runtime_root
+                .join("records")
+                .join(format!("{id}.{kind}.json"))
+        });
+        let launch = match self.prepare(id, &root, &records, profile, &[], None) {
+            Ok(launch) => launch,
+            Err(_) => return Err(release(&root, &records).is_ok()),
+        };
+        let child = match Command::new(&launch.command[0])
+            .args(&launch.command[1..])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(_) => return Err(release(&root, &records).is_ok()),
+        };
+        // If pipe setup fails after launch, ownership is uncertain. Keep storage/admission.
+        let channel = Channel::new(child).map_err(|_| false)?;
+        Ok(Shell {
+            channel,
+            launch,
+            root,
+            records,
+        })
     }
 
     fn prepare(
@@ -191,7 +233,7 @@ impl Runtime {
         records: &[PathBuf; 2],
         profile: &Profile,
         argv: &[String],
-        timeout: u64,
+        timeout: Option<u64>,
     ) -> io::Result<Launch> {
         sandcrab_core::unit::verify_resource_pool(&self.pool)?;
         let options = format!(
@@ -220,6 +262,7 @@ impl Runtime {
                 settings: settings.clone(),
                 uid: profile.uid,
                 command: argv.into(),
+                shell: timeout.is_none(),
             },
             profile.gid,
         )?;
@@ -248,7 +291,7 @@ impl Runtime {
             temporary_bytes: profile.temporary_bytes,
             temporary_inodes: profile.temporary_inodes,
         };
-        let mut command = limits.command(&unit, record, settings, root, Some(timeout));
+        let mut command = limits.command(&unit, record, settings, root, timeout);
         command.insert(command.len() - 1, "__launch".into());
         Ok(Launch {
             command,
@@ -317,12 +360,33 @@ pub fn launch(path: &Path) -> io::Result<()> {
     let policy: Value = sandcrab_core::parse(&launch_file(&record.settings)?)
         .map_err(|_| invalid("Invalid policy JSON"))?;
     sandcrab_launch::enter_bootstrap(&record.root).map_err(io::Error::other)?;
-    let mut args = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &record.command)
+    let command = if record.shell {
+        vec![
+            "/sandcrab-driver".into(),
+            "__shell".into(),
+            "/workspace".into(),
+        ]
+    } else {
+        record.command
+    };
+    let mut args = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &command)
         .map_err(io::Error::other)?;
     let separator = args
         .iter()
         .position(|s| s == "--remount-ro")
         .ok_or_else(|| invalid("Missing sandbox root protection"))?;
+    if record.shell {
+        let binary = std::env::current_exe()?.canonicalize()?;
+        sandcrab_launch::trusted_executable(&binary).map_err(io::Error::other)?;
+        args.splice(
+            separator..separator,
+            [
+                "--ro-bind".into(),
+                binary.to_string_lossy().into(),
+                "/sandcrab-driver".into(),
+            ],
+        );
+    }
     args.splice(
         separator..separator,
         [
@@ -343,4 +407,127 @@ pub fn launch(path: &Path) -> io::Result<()> {
         ("SANDBOX_RUNTIME".into(), "1".into()),
     ];
     Err(io::Error::other(sandcrab_launch::exec(&args, &environment)))
+}
+
+/// Owns one persistent unit. Storage can be released only after its launcher and cgroup stop.
+pub struct Shell {
+    pub channel: Channel,
+    launch: Launch,
+    root: PathBuf,
+    records: [PathBuf; 2],
+}
+impl Shell {
+    pub fn ready(&mut self, cancelled: &AtomicBool) -> bool {
+        let id = match sandcrab_core::new_uuid() {
+            Ok(id) => id,
+            Err(_) => return false,
+        };
+        let result = self.channel.execute(
+            CommandRequest {
+                execution: &id,
+                command: ":",
+                timeout: Duration::from_secs(15),
+                output_limit: 4096,
+            },
+            cancelled,
+            || {},
+        );
+        result.reason.is_none() && !result.shell_exited && result.exit_code == 0
+    }
+
+    pub fn close(mut self) -> io::Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while self.channel.process().try_wait()?.is_none() {
+            let _ = call(&[
+                "systemctl",
+                "kill",
+                "--kill-who=all",
+                "--signal=KILL",
+                &self.launch.unit,
+            ]);
+            self.channel.drain()?;
+            if Instant::now() >= deadline {
+                return Err(invalid("Session launcher containment unconfirmed"));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        if let Err(error) = call(&["systemctl", "stop", &self.launch.unit]) {
+            // Successful transient units may already be collected. A completed launcher
+            // plus a witnessed ready frame rules out a registration still in flight.
+            if !self.channel.ready()
+                || !call(&[
+                    "systemctl",
+                    "show",
+                    &self.launch.unit,
+                    "-p",
+                    "LoadState",
+                    "-p",
+                    "ActiveState",
+                ])
+                .is_ok_and(|state| {
+                    state
+                        .stdout
+                        .split(|b| *b == b'\n')
+                        .any(|line| line == b"LoadState=not-found")
+                        && state
+                            .stdout
+                            .split(|b| *b == b'\n')
+                            .any(|line| line == b"ActiveState=inactive")
+                })
+            {
+                return Err(error);
+            }
+        }
+        empty_group(&self.launch.cgroup)?;
+        let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
+        release(&self.root, &self.records)
+    }
+
+    pub fn execute(
+        &mut self,
+        id: &str,
+        command: &str,
+        timeout: u64,
+        limit: usize,
+        cancelled: &AtomicBool,
+    ) -> (job::Finished, bool) {
+        let result = self.channel.execute(
+            CommandRequest {
+                execution: id,
+                command,
+                timeout: Duration::from_millis(timeout),
+                output_limit: limit,
+            },
+            cancelled,
+            || {},
+        );
+        let end = match result.reason {
+            Some(EndReason::Timeout) => job::End::Timeout,
+            Some(EndReason::OutputLimit) => job::End::OutputLimit,
+            Some(EndReason::Cancelled) => job::End::Cancelled,
+            Some(EndReason::SandboxFailed)
+                if call(&[
+                    "systemctl",
+                    "show",
+                    &self.launch.unit,
+                    "-p",
+                    "Result",
+                    "--value",
+                ])
+                .is_ok_and(|value| value.stdout == b"oom-kill\n") =>
+            {
+                job::End::ResourceLimit
+            }
+            _ => job::End::Normal,
+        };
+        (
+            job::Finished {
+                exit_code: i32::from(result.exit_code),
+                output: result.captured.output,
+                truncated: result.captured.truncated.into_iter().any(|t| t),
+                end,
+            },
+            !result.shell_exited,
+        )
+    }
 }

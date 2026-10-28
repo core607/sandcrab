@@ -6,7 +6,7 @@ client_gid = 1000
 resource_slice = "sandcrab.slice"
 supervisor_unit = "sandcrab-demo.service"
 unit_prefix = "sandcrab-demo-"
-max_runs = 2
+max_sandboxes = 2
 max_records = 128
 max_output_bytes = 8388608
 
@@ -20,5 +20,6 @@ temporary_inodes = 4096
 tasks_max = 64
 cpu_quota_percent = 50
 timeout_millis = 30000
+session_ttl_millis = 60000
 output_limit_bytes = 65536
 network = "none"

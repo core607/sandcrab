@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Sandcrab native runs",
+    "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Finite isolated commands over a protected Unix socket. The configured peer UID authenticates every operation; this release has no TCP listener. Runs are ephemeral; a serverId binds retries to one daemon lifetime."
+    "description": "Isolated finite commands and persistent shell sessions over a protected Unix socket. The configured peer UID authenticates every operation. A serverId binds retries to one daemon lifetime. Session workspace and shell state last until close, expiry, command termination or daemon loss; no TCP listener or durable volume is provided."
   },
   "servers": [
     {
@@ -27,14 +27,7 @@
             }
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           }
         }
       }
@@ -54,14 +47,7 @@
             }
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           }
         }
       }
@@ -82,74 +68,25 @@
         },
         "responses": {
           "200": {
-            "description": "Current run state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Run200"
           },
           "202": {
-            "description": "Current run state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Run202"
           },
           "400": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error400"
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           },
           "409": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error409"
           },
           "429": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error429"
           },
           "503": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error503"
           }
         }
       }
@@ -170,34 +107,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Current run state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Run200"
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           },
           "404": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error404"
           }
         }
       }
@@ -230,54 +146,19 @@
         },
         "responses": {
           "200": {
-            "description": "Current run state.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Run200"
           },
           "400": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error400"
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           },
           "404": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error404"
           },
           "409": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error409"
           }
         }
       }
@@ -329,44 +210,335 @@
             }
           },
           "400": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error400"
           },
           "403": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           },
           "404": {
-            "description": "Request refused or run unavailable.",
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/v1/sessions": {
+      "post": {
+        "operationId": "createSession",
+        "description": "Create an isolated persistent bash session. Repeating the same ID and request returns that session, including its terminal state; different arguments conflict. Poll until ready before submitting a command.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Session200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Session202"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getSession",
+        "description": "Read the session state. A connection does not own the session lifetime.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Session200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/commands": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "executeSessionCommand",
+        "description": "Admit one command while ready. Commands retain shell state and files. Concurrent commands are refused. Read, cancel and forget the returned command through /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit ends the whole session; it is never silently reset.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Run200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Run202"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/renew": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "renewSession",
+        "description": "Extend a live session from the current time, within its profile TTL. Expired sessions cannot be revived.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Session200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ttlMillis"
+                ],
+                "properties": {
+                  "ttlMillis": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 86400000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/close": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "closeSession",
+        "description": "Stop the whole session, including background processes. Poll until closed, expired or failed. Closing means containment or cleanup is unconfirmed and admission stays held until restart.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Session200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/forget": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "forgetSession",
+        "description": "Forget a closed, expired or failed session. Retained command records are independent and must be forgotten separately. Never reuse this session ID.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Record released.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "forgotten"
+                  ],
+                  "properties": {
+                    "forgotten": {
+                      "const": true
+                    }
+                  }
                 }
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
           "409": {
-            "description": "Request refused or run unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error409"
           }
         }
       }
@@ -415,7 +587,10 @@
           "capabilities": {
             "type": "array",
             "items": {
-              "const": "runs"
+              "enum": [
+                "runs",
+                "sessions"
+              ]
             }
           },
           "profiles": {
@@ -425,7 +600,8 @@
               "required": [
                 "timeoutMillis",
                 "outputLimitBytes",
-                "network"
+                "network",
+                "sessionTtlMillis"
               ],
               "properties": {
                 "timeoutMillis": {
@@ -440,6 +616,11 @@
                 },
                 "network": {
                   "const": "none"
+                },
+                "sessionTtlMillis": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 86400000
                 }
               }
             }
@@ -544,6 +725,11 @@
                 "$ref": "#/components/schemas/Failure"
               }
             ]
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Present for commands executed in a persistent session."
           }
         }
       },
@@ -585,6 +771,227 @@
               "RUN_FAILED",
               "CONTAINMENT_UNCONFIRMED"
             ]
+          }
+        }
+      },
+      "SessionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "profile"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "ttlMillis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 100,
+            "maximum": 86400000,
+            "description": "Cannot exceed the selected profile lifetime."
+          }
+        }
+      },
+      "SessionCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "command"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Bash source, at most 16384 UTF-8 bytes, without NUL."
+          },
+          "timeoutMillis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 300000
+          },
+          "outputLimitBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 1048576
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "profile",
+          "state",
+          "expiresAtMillis",
+          "activeRunId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "starting",
+              "ready",
+              "busy",
+              "stopping",
+              "closed",
+              "expired",
+              "failed",
+              "closing"
+            ]
+          },
+          "expiresAtMillis": {
+            "type": "integer",
+            "description": "Wall-clock estimate of expiry; enforcement uses a monotonic deadline."
+          },
+          "activeRunId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error403": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Run200": {
+        "description": "Current run state.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Run"
+            }
+          }
+        }
+      },
+      "Run202": {
+        "description": "Current run state.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Run"
+            }
+          }
+        }
+      },
+      "Error400": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error503": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "Request refused or run unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Session200": {
+        "description": "Current state or retained outcome.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Session"
+            }
+          }
+        }
+      },
+      "Session202": {
+        "description": "Admitted; poll the returned identity.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Session"
+            }
           }
         }
       }

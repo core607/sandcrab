@@ -62,6 +62,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     println!("{{\"ready\":true,\"apiVersion\":1}}");
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
+            service.registry.lock().unwrap().expire_sessions();
             workers.retain(|worker| !worker.is_finished());
             let (mut stream, _) = match listener.accept() {
                 Ok(pair) => pair,

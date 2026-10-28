@@ -1,9 +1,9 @@
-# Sandcrab native runs
+# Sandcrab native service
 
-`sandcrab` is a standalone Linux daemon and CLI for finite commands. It needs no
-Poketto account, workspace, repository, signing key or compiled extension. This
-entrance currently supports runs on a Unix socket; persistent sessions, file
-transfer, SSE, TCP and the OpenSandbox adapter remain under the
+`sandcrab` is a standalone Linux daemon and CLI for finite commands and persistent
+bash sessions. It needs no Poketto account, workspace, repository, signing key or
+compiled extension. Both use a Unix socket; durable volumes, file transfer, SSE,
+TCP and the OpenSandbox adapter remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
 ## Installation
@@ -18,7 +18,8 @@ Copy [config.example.toml](config.example.toml) to a root-owned file with mode 0
 in a protected directory. Set the client's numeric UID/GID and a separate execution
 account. Profiles choose readable paths, tools, finite resource limits and
 `network = "none"`; calls can lower timeout and output limits but cannot select
-accounts, mounts or isolation policy. Read mounts cannot expose runtime storage.
+accounts, mounts or isolation policy. Sessions need `/bin/bash` and its libraries
+in the profile's read mounts. Read mounts cannot expose runtime storage.
 
 Configure the slice with finite `MemoryMax`, `MemorySwapMax`, `TasksMax` and
 `CPUQuota`, then run `sandcrab serve --config FILE` as root in `supervisor_unit`
@@ -30,7 +31,7 @@ accounts and tools; it does not prove the runtime slice or sandbox works.
 Each run executes as the profile's account in a fresh bounded tmpfs at
 `/workspace`, with a private `/tmp`, isolated network and PID namespaces and
 seccomp. It shares the host kernel; this is not a microVM boundary. Workspace bytes
-are disposable after the run. Read mounts are the operator's responsibility.
+are disposable after the run or session ends. Read mounts are the operator's responsibility.
 
 ## CLI
 
@@ -79,18 +80,76 @@ and truncation, or a failure code. Output bounds apply to combined raw stdout an
 stderr; invalid UTF-8 becomes replacement characters. Runs continue after HTTP
 disconnect and remain bounded by their timeout. Cancellation does not undo work.
 
-`RUN_CAPACITY` refuses before execution. `RESULT_CAPACITY` means retained records
-or output reservations must be forgotten. `max_output_bytes` bounds reserved raw
+`max_sandboxes` bounds live runs and sessions together; it replaces `max_runs` in
+native TOML configurations. `RUN_CAPACITY` or `SESSION_CAPACITY` refuses before execution. `RESULT_CAPACITY` means retained records
+or output reservations must be forgotten. Session records and command results share
+`max_records`; command output remains reserved until its result is forgotten. `max_output_bytes` bounds reserved raw
 output, not total process memory; the slice bounds runtime, tmpfs and overhead.
 Reserve enough supervisor memory for encoded responses and retained output.
+
+## Persistent sessions
+
+```sh
+sandcrab session open --socket /run/sandcrab-demo/control.sock --profile python --ttl-ms 60000
+sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'mkdir project; cd project; export VALUE=42'
+sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'printf "%s\n" "$VALUE"; pwd'
+sandcrab session renew --socket /run/sandcrab-demo/control.sock SESSION_ID --ttl-ms 60000
+sandcrab session close --socket /run/sandcrab-demo/control.sock SESSION_ID
+sandcrab session forget --socket /run/sandcrab-demo/control.sock SESSION_ID
+```
+
+`open` prints its recovery ID before submission and waits for `ready`. `exec`
+accepts one quoted bash source argument, prints a run recovery ID, waits for its
+outcome and forgets that command result. `close` waits for confirmed termination
+and also succeeds for an already expired or failed session whose cleanup finished.
+`get` reads state without waiting. The [build/test example](../../../examples/sandcrab-build-test.sh)
+uses ordinary Python files and shell state across separate client connections.
+
+A session preserves its working directory, environment, shell functions, files,
+`/tmp` and background processes. Only one command may run at a time. A nonzero
+command exit preserves the session while its shell remains alive. A shell exit,
+command cancellation, timeout, output overflow or runtime failure ends the session.
+The daemon never silently resets its state. Closing or expiry also stops background
+processes before releasing storage and admission. These workspaces are ephemeral;
+copying data into a session is not a durable save.
+
+`session_ttl_millis` is the profile's default and maximum lifetime per open or
+renewal, from 100 ms through one day. Expiry uses a monotonic clock and includes
+startup and idle time. Renewal moves a live deadline from the current time; it
+cannot revive an expired or closed session. Disconnects do not stop or renew it.
+A run's timeout and output limits still apply to each command independently.
+
+| Request | Result |
+|---|---|
+| `POST /v1/sessions` | Open with `id`, `serverId`, `profile`, optional `ttlMillis`; returns 202 |
+| `GET /v1/sessions/ID` | State, expiry estimate and any active run ID |
+| `POST /v1/sessions/ID/commands` | Execute `command` bash source with a fresh `id`, `serverId` and optional `timeoutMillis`/`outputLimitBytes`; returns 202 |
+| `POST /v1/sessions/ID/renew` | Renew with `ttlMillis` |
+| `POST /v1/sessions/ID/close` with `{}` | Request closure; poll until terminal |
+| `POST /v1/sessions/ID/forget` with `{}` | Forget a terminal session's identity |
+
+Use `/v1/runs/RUN_ID` to inspect, cancel or forget a session command. Exact command
+replays return their retained record even after the session ends or is forgotten;
+changed commands or another session using the ID conflict. `SESSION_NOT_READY`
+refuses commands while starting, busy or ended. A record's `sessionId` identifies
+its session; names, profiles and IDs confer no authority beyond the socket's peer.
+
+Session states are `starting`, `ready`, `busy`, `stopping`, `closed`, `expired`,
+`failed` and `closing`. Only the first three accept renewal. `closing` means
+containment or storage cleanup is unconfirmed; it cannot be forgotten and holds
+admission until restart. Result records are forgotten separately from sessions.
+A restart terminates sessions and removes their ephemeral workspaces. The changed
+server epoch refuses old create/command requests; a missing result does not prove
+that the command never ran.
 
 ## Verification
 
 `executorRustCheck` checks the binary and its configuration/request tests.
 `native_probe.py --binary FILE --tools DIRECTORY --report FILE`, run as root on
 Linux, creates its own bounded slice and service and exercises real CLI/HTTP,
-containment, cancellation, replay, capacity, restart and cleanup. It uses no
+containment, cancellation, replay, capacity, session build/repair, renewal, expiry, restart and cleanup. It uses no
 model API and reports deterministic evidence only. It does not establish agent
-usability, OpenSandbox compatibility or Poketto adoption.
+usability, OpenSandbox compatibility or Poketto adoption. Injected cleanup failure
+must retain session admission, and delayed unit registration must remain cancellable.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

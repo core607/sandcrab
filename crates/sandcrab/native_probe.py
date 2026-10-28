@@ -22,22 +22,26 @@ def call(*args, check=True, timeout=30):
     return subprocess.run(args, check=check, capture_output=True, text=True, timeout=timeout)
 
 
+def connect(stream, path):
+    # Connect with the ordinary client's actual filesystem permissions and peer identity.
+    # Restore the controller before invoking any test code or privileged cleanup.
+    uid, gid, groups = os.geteuid(), os.getegid(), os.getgroups()
+    try:
+        os.setgroups([CLIENT[1]])
+        os.setegid(CLIENT[1])
+        os.seteuid(CLIENT[0])
+        stream.connect(str(path))
+    finally:
+        os.seteuid(uid)
+        os.setegid(gid)
+        os.setgroups(groups)
+
+
 def http(path, method, route, data=None):
     body = json.dumps(data).encode() if data is not None else b''
     with socket.socket(socket.AF_UNIX) as stream:
         stream.settimeout(15)
-        # Connect with the ordinary client's actual filesystem permissions and peer identity.
-        # Restore the controller before invoking any test code or privileged cleanup.
-        uid, gid, groups = os.geteuid(), os.getegid(), os.getgroups()
-        try:
-            os.setgroups([CLIENT[1]])
-            os.setegid(CLIENT[1])
-            os.seteuid(CLIENT[0])
-            stream.connect(str(path))
-        finally:
-            os.seteuid(uid)
-            os.setegid(gid)
-            os.setgroups(groups)
+        connect(stream, path)
         stream.sendall((f'{method} {route} HTTP/1.1\r\nHost: sandcrab\r\n'
                         f'Content-Length: {len(body)}\r\n\r\n').encode() + body)
         response = HTTPResponse(stream)
@@ -77,7 +81,7 @@ client_gid = {client.pw_gid}
 resource_slice = "{self.slice}"
 supervisor_unit = "{self.unit}"
 unit_prefix = "{self.name}-"
-max_runs = 2
+max_sandboxes = 2
 max_records = 8
 max_output_bytes = 1048576
 [profiles.python]
@@ -90,6 +94,7 @@ temporary_inodes = 1024
 tasks_max = 64
 cpu_quota_percent = 50
 timeout_millis = 10000
+session_ttl_millis = 60000
 output_limit_bytes = 4096
 network = "none"
 ''')
@@ -154,7 +159,7 @@ network = "none"
         self.report.write_text(json.dumps(self.receipt, indent=2) + '\n')
 
     def tests(self):
-        assert self.info['capabilities'] == ['runs']
+        assert self.info['capabilities'] == ['runs', 'sessions']
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'
         assert schema['paths']['/v1/runs']['post']['operationId'] == 'createRun'
@@ -280,6 +285,238 @@ network = "none"
         self.forget(request)
         self.done('abrupt-loss-cleanup-and-stale-epoch')
 
+    def session_wait(self, identity, terminal=False):
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            status, result = http(self.socket, 'GET', '/v1/sessions/' + identity['id'])
+            assert status == 200, result
+            if result['state'] in ('closed', 'expired', 'failed', 'closing') or (not terminal and result['state'] == 'ready'):
+                return result
+            time.sleep(.025)
+        raise AssertionError('session did not reach expected state')
+
+    def session_open(self, wait=True, **extra):
+        identity = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'profile': 'python', **extra}
+        status, result = http(self.socket, 'POST', '/v1/sessions', identity)
+        assert status == 202, result
+        if wait:
+            assert self.session_wait(identity)['state'] == 'ready'
+        return identity
+
+    def session_exec(self, session, command, wait=True, **extra):
+        request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'command': command, **extra}
+        status, result = http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/commands', request)
+        assert status == 202, result
+        return request, self.wait(request) if wait else result
+
+    def session_forget(self, session):
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/forget', {}) == (200, {'forgotten': True})
+
+    def session_close(self, session):
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/close', {})[0] == 200
+        result = self.session_wait(session, terminal=True)
+        assert result['state'] == 'closed', result
+        assert not (self.socket.parent / 'jobs' / session['id']).exists()
+        group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
+        unit = Path('/sys/fs/cgroup') / group.lstrip('/') / (self.name + '-' + session['id'] + '.service')
+        assert not any(p.read_text().strip() for p in unit.rglob('cgroup.procs'))
+        return result
+
+    def session_tests(self):
+        session = self.session_open()
+        route = '/v1/sessions/' + session['id']
+        assert http(self.socket, 'POST', '/v1/sessions', session)[0] == 200
+        assert http(self.socket, 'POST', '/v1/sessions', {**session, 'ttlMillis': 5000})[1]['error']['code'] == 'ID_CONFLICT'
+        assert http(self.socket, 'POST', route + '/forget', {})[1]['error']['code'] == 'SESSION_ACTIVE'
+        assert http(self.socket, 'POST', route + '/renew', {'ttlMillis': 60001})[1]['error']['code'] == 'PROFILE_LIMIT'
+        for change, expected in [({'timeoutMillis': 10001}, 'PROFILE_LIMIT'),
+                                 ({'outputLimitBytes': 4097}, 'PROFILE_LIMIT'),
+                                 ({'outputLimitBytes': 0}, 'PROFILE_LIMIT'),
+                                 ({'profile': 'python'}, 'INVALID_REQUEST')]:
+            invalid = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'command': 'true', **change}
+            assert http(self.socket, 'POST', route + '/commands', invalid)[1]['error']['code'] == expected
+        for field in ['uid', 'mounts', 'accountId', 'workspaceId']:
+            assert http(self.socket, 'POST', '/v1/sessions', {**session, 'id': str(uuid.uuid4()), field: 0})[1]['error']['code'] == 'INVALID_REQUEST'
+        # Disable timestamp-based bytecode caching for same-second, same-length repairs.
+        request, result = self.session_exec(session, "mkdir project; cd project; export CHECK=retained; "
+                                             "printf 'def add(a,b): return a-b\n' > calc.py; "
+                                             "printf 'import unittest\nfrom calc import add\nclass Check(unittest.TestCase):\n def test_add(self): self.assertEqual(5, add(2,3))\n' > test_calc.py; "
+                                             "python3 -B -m unittest")
+        assert result['state'] == 'failed' and 'FAILED' in result['result']['stderr'], result
+        self.forget(request)
+        request, result = self.session_exec(session, "test \"$CHECK\" = retained; sed -i 's/a-b/a+b/' calc.py; python3 -B -m unittest")
+        assert result['state'] == 'succeeded' and 'OK' in result['result']['stderr'], result
+        self.forget(request)
+        assert (self.socket.parent / 'jobs' / session['id'] / 'work/project/calc.py').read_text() == 'def add(a,b): return a+b\n'
+        request, result = self.session_exec(session, f'test ! -e {self.secret}; printf "$CHECK"')
+        assert result['state'] == 'succeeded' and result['result']['stdout'] == 'retained', result
+        self.forget(request)
+        request, result = self.session_exec(session, 'sleep 30 & printf background')
+        self.forget(request)
+        self.session_close(session)
+        self.session_forget(session)
+        self.done('session-build-repair-state-isolation-and-descendant-cleanup')
+
+        # CLI operations reconnect each time; no connection is an identity or lifetime owner.
+        prefix = ['runuser', '-u', 'daemon', '--', str(self.binary), 'session']
+        opened = call(*prefix, 'open', '--socket', str(self.socket), '--profile', 'python')
+        cli_session = json.loads(opened.stdout)
+        assert 'sessionId=' + cli_session['id'] in opened.stderr
+        for source, expected in [('export VALUE=42', ''), ('printf "$VALUE"', '42')]:
+            result = call(*prefix, 'exec', '--socket', str(self.socket), cli_session['id'], '--', source)
+            assert json.loads(result.stdout)['result']['stdout'] == expected
+        assert json.loads(call(*prefix, 'renew', '--socket', str(self.socket), cli_session['id'], '--ttl-ms', '5000').stdout)['state'] == 'ready'
+        assert json.loads(call(*prefix, 'close', '--socket', str(self.socket), cli_session['id']).stdout)['state'] == 'closed'
+        call(*prefix, 'forget', '--socket', str(self.socket), cli_session['id'])
+        self.done('session-cli-reconnects-and-explicit-lifecycle')
+
+        one, two = self.session_open(), self.session_open()
+        rejected = {**one, 'id': str(uuid.uuid4())}
+        assert http(self.socket, 'POST', '/v1/sessions', rejected)[1]['error']['code'] == 'SESSION_CAPACITY'
+        finite = {**rejected, 'command': ['true']}
+        assert http(self.socket, 'POST', '/v1/runs', finite)[1]['error']['code'] == 'RUN_CAPACITY'
+        request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'],
+                   'command': 'printf x >> replay-count; sleep 1; cat replay-count'}
+        command_route = '/v1/sessions/' + one['id'] + '/commands'
+        body = json.dumps(request).encode()
+        with socket.socket(socket.AF_UNIX) as lost:
+            connect(lost, self.socket)
+            lost.sendall((f'POST {command_route} HTTP/1.1\r\nHost: sandcrab\r\n'
+                          f'Content-Length: {len(body)}\r\n\r\n').encode() + body)
+            lost.shutdown(socket.SHUT_WR)
+            # Discard the response; reconnect with the original ID rather than resubmitting work.
+
+        assert http(self.socket, 'POST', command_route, request)[0] in (200, 202)
+        assert http(self.socket, 'POST', command_route, {**request, 'id': str(uuid.uuid4())})[1]['error']['code'] == 'SESSION_NOT_READY'
+        assert http(self.socket, 'POST', command_route, {**request, 'command': 'false'})[1]['error']['code'] == 'ID_CONFLICT'
+        assert http(self.socket, 'POST', '/v1/sessions/' + two['id'] + '/commands', request)[1]['error']['code'] == 'ID_CONFLICT'
+        result = self.wait(request)
+        assert result['result']['stdout'] == 'x'
+        assert (self.socket.parent / 'jobs' / one['id'] / 'work/replay-count').read_bytes() == b'x'
+        self.session_close(one)
+        self.session_forget(one)
+        assert http(self.socket, 'POST', command_route, request) == (200, result)
+        self.forget(request)
+        self.session_close(two)
+        self.session_forget(two)
+        self.done('session-shared-admission-exclusive-command-and-replay')
+
+        session = self.session_open()
+        records = [self.session_exec(session, 'true')[0] for _ in range(7)]
+        overflow = {**records[0], 'id': str(uuid.uuid4())}
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/commands', overflow)[1]['error']['code'] == 'RESULT_CAPACITY'
+        for record in records:
+            self.forget(record)
+        self.session_close(session)
+        self.session_forget(session)
+        self.done('session-results-share-the-global-retention-bound')
+
+        for source, options, expected in [
+            ('sleep 30 & sleep 30', {'timeoutMillis': 200}, 'timed_out'),
+            ("python3 -c 'print(\"x\"*10000)'", {'outputLimitBytes': 63}, 'output_limit'),
+            ("python3 -c 'x=bytearray(128*1024*1024)'", {}, 'resource_limit'),
+            ('exit 0', {}, 'succeeded'),
+        ]:
+            session = self.session_open()
+            request, result = self.session_exec(session, source, **options)
+            assert result['state'] == expected, result
+            if expected == 'output_limit':
+                assert result['result']['truncated'] and len(result['result']['stdout'].encode()) <= 63
+            assert self.session_wait(session, terminal=True)['state'] == ('closed' if expected == 'succeeded' else 'failed')
+            call(*prefix, 'close', '--socket', str(self.socket), session['id'])
+            assert not (self.socket.parent / 'jobs' / session['id']).exists()
+            assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/commands', {**request, 'id': str(uuid.uuid4())})[1]['error']['code'] == 'SESSION_NOT_READY'
+            self.forget(request)
+            self.session_forget(session)
+        self.done('session-timeout-output-memory-and-shell-exit-end-the-session')
+
+        session = self.session_open(ttlMillis=3000)
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/renew', {'ttlMillis': 6000})[0] == 200
+        request, result = self.session_exec(session, 'sleep 4; printf renewed')
+        assert result['result']['stdout'] == 'renewed', result
+        self.forget(request)
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/renew', {'ttlMillis': 300})[0] == 200
+        request, _ = self.session_exec(session, 'sleep 30 & sleep 30', wait=False)
+        assert self.wait(request)['state'] == 'cancelled'
+        assert self.session_wait(session, terminal=True)['state'] == 'expired'
+        call(*prefix, 'close', '--socket', str(self.socket), session['id'])
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/renew', {'ttlMillis': 6000})[1]['error']['code'] == 'SESSION_ENDED'
+        self.forget(request)
+        self.session_forget(session)
+        self.done('session-renewal-and-expiry-cancel-an-active-command')
+
+        session = self.session_open()
+        request, _ = self.session_exec(session, 'sleep 30 & sleep 30', wait=False)
+        assert http(self.socket, 'POST', '/v1/runs/' + request['id'] + '/cancel', {})[0] == 200
+        assert self.wait(request)['state'] == 'cancelled'
+        self.session_close(session)
+        self.forget(request)
+        self.session_forget(session)
+        self.done('session-command-cancellation-closes-the-whole-session')
+
+        session = self.session_open()
+        self.session_exec(session, 'sleep 30 & printf retained')
+        call('systemctl', 'kill', '--kill-whom=main', '--signal=KILL', self.unit)
+        call('systemctl', 'stop', self.unit, check=False)
+        call('systemctl', 'reset-failed', self.unit, check=False)
+        self.start()
+        assert http(self.socket, 'POST', '/v1/sessions', session)[1]['error']['code'] == 'SERVER_CHANGED'
+        assert http(self.socket, 'GET', '/v1/sessions/' + session['id'])[0] == 404
+        assert not list((self.socket.parent / 'jobs').iterdir())
+        session = self.session_open()
+        self.session_close(session)
+        self.session_forget(session)
+        self.done('session-supervisor-loss-cleans-units-and-invalidates-the-epoch')
+
+    def session_cleanup_failure(self):
+        call('systemctl', 'stop', self.unit)
+        helpers = self.root / 'failed-session-cleanup'
+        helpers.mkdir(mode=0o755)
+        failure = helpers / 'fail-id'
+        (helpers / 'umount').write_text(f'''#!/usr/bin/python3
+import os, sys
+from pathlib import Path
+flag=Path({str(failure)!r})
+if flag.exists() and Path(sys.argv[-1]).name == flag.read_text():
+    raise SystemExit(79)
+os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
+''')
+        (helpers / 'umount').chmod(0o755)
+        self.launch_path = str(helpers) + ':/usr/bin:/bin'
+        self.start()
+        session = self.session_open()
+        failure.write_text(session['id'])
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/close', {})[0] == 200
+        assert self.session_wait(session, terminal=True)['state'] == 'closing'
+        assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/forget', {})[1]['error']['code'] == 'SESSION_ACTIVE'
+        other = self.session_open()
+        assert http(self.socket, 'POST', '/v1/sessions', {**other, 'id': str(uuid.uuid4())})[1]['error']['code'] == 'SESSION_CAPACITY'
+        self.session_close(other)
+        self.session_forget(other)
+        failure.unlink()
+        call('systemctl', 'stop', self.unit, check=False)
+        call('systemctl', 'reset-failed', self.unit, check=False)
+        del self.launch_path
+        self.start()
+        assert not list((self.socket.parent / 'jobs').iterdir())
+        first, second = self.session_open(), self.session_open()
+        for current in [first, second]:
+            self.session_close(current)
+            self.session_forget(current)
+        self.done('session-unconfirmed-cleanup-holds-capacity-until-restart')
+
+    def example(self, source):
+        staged = self.root / 'build-test.sh'
+        shutil.copyfile(source, staged)
+        staged.chmod(0o644)
+        result = call('runuser', '-u', 'daemon', '--', 'env', '-i', 'PATH=/usr/bin:/bin',
+                      'SANDCRAB_BIN=' + str(self.binary), 'SANDCRAB_SOCKET=' + str(self.socket),
+                      'bash', str(staged))
+        assert '"state":"succeeded"' in result.stdout, result.stdout
+        assert not list((self.socket.parent / 'jobs').iterdir())
+        self.receipt['exampleSha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.done('independent-build-test-example')
+
     def cleanup(self):
         call('systemctl', 'stop', self.unit, check=False)
         units = call('systemctl', 'list-units', '--all', '--plain', '--no-legend', self.name + '-*.service').stdout
@@ -308,9 +545,9 @@ network = "none"
         shutil.rmtree(self.root)
         self.receipt['cleanup'] = 'PASS'
 
-    def startup_cancellation(self):
+    def startup_cancellation(self, session=False):
         call('systemctl', 'stop', self.unit)
-        helpers = self.root / 'delayed-launch'
+        helpers = self.root / ('delayed-session-launch' if session else 'delayed-launch')
         helpers.mkdir(mode=0o755)
         entered, release, attempts = [helpers / name for name in ['entered', 'release', 'kill-attempts']]
         # Delay registration, not the sandbox command. The first kill reaches the real
@@ -338,13 +575,14 @@ raise SystemExit(result.returncode)
             helper.chmod(0o755)
         self.launch_path = str(helpers) + ':/usr/bin:/bin'
         self.start()
-        request = self.submit('import time; time.sleep(20)')
+        request = self.session_open(wait=False) if session else self.submit('import time; time.sleep(20)')
         deadline = time.monotonic() + 5
         while not entered.exists() and time.monotonic() < deadline:
             time.sleep(.01)
         assert entered.exists(), 'launcher did not enter the registration gate'
         started = time.monotonic()
-        assert http(self.socket, 'POST', f'/v1/runs/{request["id"]}/cancel', {})[0] == 200
+        cancel_path = f'/v1/sessions/{request["id"]}/close' if session else f'/v1/runs/{request["id"]}/cancel'
+        assert http(self.socket, 'POST', cancel_path, {})[0] == 200
         while (not attempts.exists() or not attempts.read_text().strip()) and time.monotonic() < deadline:
             time.sleep(.01)
         assert attempts.exists() and attempts.read_text().strip(), 'cancellation did not attempt to kill the pending unit'
@@ -353,17 +591,17 @@ raise SystemExit(result.returncode)
         initial = int(attempts.read_text().splitlines()[0])
         assert initial != 0, 'first kill unexpectedly found a registered unit'
         release.touch()
-        result = self.wait(request)
+        result = self.session_wait(request, terminal=True) if session else self.wait(request)
         elapsed = time.monotonic() - started
-        self.receipt['startupCancellation'] = {
+        self.receipt['sessionStartupCancellation' if session else 'startupCancellation'] = {
             'initialKillExitCode': initial, 'killAttempts': len(attempts.read_text().splitlines()),
             'seconds': round(elapsed, 3), 'state': result['state'], 'limitSeconds': 3,
         }
         self.save()
-        self.forget(request)
-        assert result['state'] == 'cancelled', result
+        self.session_forget(request) if session else self.forget(request)
+        assert result['state'] == ('closed' if session else 'cancelled'), result
         assert elapsed < 3, f'pending cancellation waited {elapsed:.3f}s for the runtime deadline'
-        self.done('cancellation-before-unit-registration')
+        self.done('session-close-before-unit-registration' if session else 'cancellation-before-unit-registration')
         call('systemctl', 'stop', self.unit)
         del self.launch_path
         self.start()
@@ -442,6 +680,7 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--tools', type=Path, required=True)
     parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--example', type=Path)
     args = parser.parse_args()
     assert os.geteuid() == 0, 'native probe requires root'
     assert not args.report.exists(), 'preserve the previous receipt; use a fresh output file'
@@ -449,7 +688,12 @@ def main():
     try:
         probe.setup()
         probe.tests()
+        probe.session_tests()
+        if args.example:
+            probe.example(args.example)
+        probe.session_cleanup_failure()
         probe.startup_cancellation()
+        probe.startup_cancellation(session=True)
         probe.receipt['result'] = 'PASS'
     except BaseException as error:
         probe.receipt['result'] = 'FAIL'

@@ -25,16 +25,18 @@ pub enum EndReason {
 pub struct Captured {
     pub output: [Vec<u8>; 2],
     pub truncated: [bool; 2],
+    limit: usize,
 }
 impl Captured {
-    fn new() -> Self {
+    fn new(limit: usize) -> Self {
         Self {
             output: [Vec::new(), Vec::new()],
             truncated: [false, false],
+            limit,
         }
     }
     fn append(&mut self, stream: usize, bytes: &[u8]) -> Result<(), EndReason> {
-        let available = MAX_OUTPUT - self.output.iter().map(Vec::len).sum::<usize>();
+        let available = self.limit - self.output.iter().map(Vec::len).sum::<usize>();
         self.output[stream].extend_from_slice(&bytes[..available.min(bytes.len())]);
         if bytes.len() > available {
             self.truncated[stream] = true;
@@ -52,6 +54,14 @@ pub struct Run {
     pub captured: Captured,
     pub ready_ms: u64,
     pub command_ms: Option<u64>,
+}
+/// A command's deadline includes startup. Output is bounded over both raw streams,
+/// from one byte through 4 MiB; an invalid bound fails before sending the command.
+pub struct Request<'a> {
+    pub execution: &'a str,
+    pub command: &'a str,
+    pub timeout: Duration,
+    pub output_limit: usize,
 }
 pub struct Channel {
     child: Child,
@@ -94,6 +104,26 @@ impl Channel {
     }
     pub fn process(&mut self) -> &mut Child {
         &mut self.child
+    }
+    /// Discard buffered output during unit shutdown; no frame can delay containment checks.
+    pub fn drain(&mut self) -> io::Result<()> {
+        self.buffer.clear();
+        let mut bytes = [0; 8192];
+        for stream in [
+            &mut self.output as &mut dyn Read,
+            &mut self.diagnostic as &mut dyn Read,
+        ] {
+            match stream.read(&mut bytes) {
+                Ok(_) => (),
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
     }
     pub fn ready(&self) -> bool {
         self.ready
@@ -159,16 +189,20 @@ impl Channel {
     }
     pub fn execute(
         &mut self,
-        execution: &str,
-        command: &str,
-        timeout: Duration,
+        request: Request<'_>,
         cancelled: &AtomicBool,
         on_ready: impl FnOnce(),
     ) -> Run {
+        let Request {
+            execution,
+            command,
+            timeout,
+            output_limit,
+        } = request;
         let started = Instant::now();
         let deadline = started + timeout;
         let mut command_started = self.ready.then(Instant::now);
-        let mut captured = Captured::new();
+        let mut captured = Captured::new(output_limit.min(MAX_OUTPUT));
         let check = || {
             if cancelled.load(Ordering::SeqCst) {
                 Err(EndReason::Cancelled)
@@ -179,6 +213,9 @@ impl Channel {
             }
         };
         let result = (|| -> Result<(u8, bool), EndReason> {
+            if !(1..=MAX_OUTPUT).contains(&output_limit) {
+                return Err(EndReason::SandboxFailed);
+            }
             while !self.ready {
                 check()?;
                 for event in self
@@ -327,6 +364,25 @@ mod tests {
         thread,
     };
     const EXEC: &str = "11111111-1111-1111-1111-111111111111";
+    fn execute(
+        channel: &mut Channel,
+        execution: &str,
+        command: &str,
+        timeout: Duration,
+        cancelled: &AtomicBool,
+        on_ready: impl FnOnce(),
+    ) -> Run {
+        channel.execute(
+            Request {
+                execution,
+                command,
+                timeout,
+                output_limit: MAX_OUTPUT,
+            },
+            cancelled,
+            on_ready,
+        )
+    }
     fn helper(body: &str) -> Channel {
         let child = Command::new("/bin/sh")
             .args(["-c", body])
@@ -342,7 +398,8 @@ mod tests {
         let mut channel = helper(
             r#"printf '%s\n' '{"kind":"ready"}'; read -r request; printf '%s\n' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stdout","data":"aGVsbG8="}' '{"kind":"complete","executionId":"11111111-1111-1111-1111-111111111111","exitCode":17,"shellExited":false}'; read -r ignored"#,
         );
-        let result = channel.execute(
+        let result = execute(
+            &mut channel,
             EXEC,
             "true",
             Duration::from_secs(1),
@@ -359,11 +416,32 @@ mod tests {
         assert!(channel.process().try_wait().unwrap().is_none());
     }
     #[test]
+    fn a_smaller_request_limit_bounds_both_streams() {
+        let mut channel = helper(
+            r#"printf '%s\n' '{"kind":"ready"}'; read -r request; printf '%s\n' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stdout","data":"YWJj"}' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stderr","data":"ZGVm"}'; read -r ignored"#,
+        );
+        let result = channel.execute(
+            Request {
+                execution: EXEC,
+                command: "true",
+                timeout: Duration::from_secs(1),
+                output_limit: 5,
+            },
+            &AtomicBool::new(false),
+            || {},
+        );
+        assert_eq!(result.reason, Some(EndReason::OutputLimit));
+        assert_eq!(result.captured.output, [b"abc".to_vec(), b"de".to_vec()]);
+        assert_eq!(result.captured.truncated, [false, true]);
+    }
+
+    #[test]
     fn a_foreign_execution_frame_fails_closed() {
         let mut channel = helper(
             r#"printf '%s\n' '{"kind":"ready"}'; read -r request; printf '%s\n' '{"kind":"complete","executionId":"wrong","exitCode":0,"shellExited":false}'; read -r ignored"#,
         );
-        let result = channel.execute(
+        let result = execute(
+            &mut channel,
             EXEC,
             "true",
             Duration::from_secs(1),
@@ -379,7 +457,8 @@ mod tests {
         // Escaping keeps the command within 64 KiB while its frame fills the Linux pipe.
         let command = "\n".repeat(65536);
         let started = Instant::now();
-        let result = channel.execute(
+        let result = execute(
+            &mut channel,
             EXEC,
             &command,
             Duration::from_millis(800),
@@ -400,7 +479,14 @@ mod tests {
                 thread::sleep(Duration::from_millis(20));
                 signaller.store(cancel, Ordering::SeqCst);
             });
-            let result = channel.execute(EXEC, "true", Duration::from_millis(100), &flag, || {});
+            let result = execute(
+                &mut channel,
+                EXEC,
+                "true",
+                Duration::from_millis(100),
+                &flag,
+                || {},
+            );
             update.join().unwrap();
             assert_eq!(
                 result.reason,
@@ -414,7 +500,7 @@ mod tests {
     }
     #[test]
     fn output_never_exceeds_the_combined_bound() {
-        let mut capture = Captured::new();
+        let mut capture = Captured::new(MAX_OUTPUT);
         capture.append(0, &vec![b'x'; MAX_OUTPUT - 2]).unwrap();
         assert_eq!(capture.append(1, b"more"), Err(EndReason::OutputLimit));
         assert_eq!(

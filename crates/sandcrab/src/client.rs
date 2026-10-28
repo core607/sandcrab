@@ -96,11 +96,6 @@ pub fn run(
     command: &[String],
     timeout: Option<u64>,
 ) -> io::Result<i32> {
-    let stopped = Arc::new(AtomicBool::new(false));
-    let signals = [
-        signal_hook::flag::register(signal_hook::consts::SIGINT, stopped.clone())?,
-        signal_hook::flag::register(signal_hook::consts::SIGTERM, stopped.clone())?,
-    ];
     let info = request(socket, "GET", "/v1/info", None)?;
     let server_id = info["serverId"]
         .as_str()
@@ -114,17 +109,36 @@ pub fn run(
         timeout_millis: timeout,
         output_limit_bytes: None,
     };
-    let path = format!("/v1/runs/{}", input.id);
+    submit_run(socket, "/v1/runs", &serde_json::to_value(&input)?)
+}
+
+pub fn execute_session(
+    socket: &Path,
+    session: &str,
+    command: &str,
+    timeout: Option<u64>,
+) -> io::Result<i32> {
+    let info = request(socket, "GET", "/v1/info", None)?;
+    let input = json!({"id":sandcrab_core::new_uuid()?,"serverId":info["serverId"],
+        "command":command,"timeoutMillis":timeout});
+    submit_run(socket, &format!("/v1/sessions/{session}/commands"), &input)
+}
+
+fn submit_run(socket: &Path, endpoint: &str, input: &Value) -> io::Result<i32> {
+    let stopped = Arc::new(AtomicBool::new(false));
+    let signals = [
+        signal_hook::flag::register(signal_hook::consts::SIGINT, stopped.clone())?,
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, stopped.clone())?,
+    ];
+    let id = input["id"]
+        .as_str()
+        .ok_or_else(|| invalid("Missing run ID"))?;
+    let path = format!("/v1/runs/{id}");
     // Publish the recovery handle before dispatch; a lost POST response must never cause replay
     // with a newly generated ID or a newly fetched server epoch.
-    eprintln!("runId={}", input.id);
+    eprintln!("runId={id}");
     let result = (|| {
-        request(
-            socket,
-            "POST",
-            "/v1/runs",
-            Some(&serde_json::to_value(&input)?),
-        )?;
+        request(socket, "POST", endpoint, Some(input))?;
         let deadline = Instant::now() + Duration::from_secs(340);
         let mut cancelled = false;
         loop {
@@ -138,7 +152,7 @@ pub fn run(
                 Some("closing") => {
                     return Err(invalid(format!(
                         "Run {} requires daemon cleanup; result retained",
-                        input.id
+                        id
                     )));
                 }
                 Some(_) => {
@@ -148,7 +162,7 @@ pub fn run(
                     {
                         eprintln!(
                             "Run {} outcome is final; forgetting its record failed: {error}. Inspect or forget this ID; do not rerun the command.",
-                            input.id
+                            id
                         );
                     }
                     return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
@@ -158,7 +172,7 @@ pub fn run(
             if Instant::now() >= deadline {
                 return Err(invalid(format!(
                     "Run {} observation timed out; inspect it before another run",
-                    input.id
+                    id
                 )));
             }
             thread::sleep(Duration::from_millis(50));
@@ -168,4 +182,48 @@ pub fn run(
         signal_hook::low_level::unregister(signal);
     }
     result
+}
+
+pub fn open_session(socket: &Path, profile: &str, ttl: Option<u64>) -> io::Result<i32> {
+    let info = request(socket, "GET", "/v1/info", None)?;
+    let id = sandcrab_core::new_uuid()?;
+    eprintln!("sessionId={id}");
+    request(
+        socket,
+        "POST",
+        "/v1/sessions",
+        Some(&json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl})),
+    )?;
+    wait_session(socket, &id, true)
+}
+
+pub fn wait_session(socket: &Path, id: &str, opening: bool) -> io::Result<i32> {
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        let state = request(socket, "GET", &format!("/v1/sessions/{id}"), None)?;
+        let status = state["state"]
+            .as_str()
+            .ok_or_else(|| invalid("Missing session state"))?;
+        if status == "closing"
+            || ["closed", "expired", "failed"].contains(&status)
+            || (opening && status == "ready")
+        {
+            println!("{state}");
+            return Ok(
+                if (opening && status == "ready")
+                    || (!opening && ["closed", "expired", "failed"].contains(&status))
+                {
+                    0
+                } else {
+                    1
+                },
+            );
+        }
+        if Instant::now() >= deadline {
+            return Err(invalid(format!(
+                "Session {id} observation timed out; inspect the existing ID"
+            )));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 }

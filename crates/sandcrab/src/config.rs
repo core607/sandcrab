@@ -25,7 +25,7 @@ pub struct Service {
     pub resource_slice: String,
     pub supervisor_unit: String,
     pub unit_prefix: String,
-    pub max_runs: usize,
+    pub max_sandboxes: usize,
     pub max_records: usize,
     pub max_output_bytes: usize,
 }
@@ -42,6 +42,7 @@ pub struct Profile {
     pub tasks_max: u64,
     pub cpu_quota_percent: u64,
     pub timeout_millis: u64,
+    pub session_ttl_millis: u64,
     pub output_limit_bytes: usize,
     pub network: String,
     #[serde(skip)]
@@ -142,14 +143,14 @@ impl Config {
                 "unit_prefix must be the supervisor unit name followed by '-'",
             ));
         }
-        if !(1..=64).contains(&service.max_runs)
-            || !(service.max_runs..=1024).contains(&service.max_records)
+        if !(1..=64).contains(&service.max_sandboxes)
+            || !(service.max_sandboxes..=1024).contains(&service.max_records)
             || !(65536..=64 * 1024 * 1024).contains(&service.max_output_bytes)
             || self.profiles.is_empty()
             || self.profiles.len() > 32
         {
             return Err(invalid(
-                "Use 1..64 max_runs, max_runs..1024 max_records and 1..32 profiles",
+                "Use 1..64 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
             ));
         }
         for (key, profile) in &self.profiles {
@@ -184,6 +185,7 @@ impl Config {
                 || !(16..=4096).contains(&profile.tasks_max)
                 || !(1..=10000).contains(&profile.cpu_quota_percent)
                 || !(1..=300_000).contains(&profile.timeout_millis)
+                || !(100..=86_400_000).contains(&profile.session_ttl_millis)
                 || !(1..=1_048_576.min(service.max_output_bytes))
                     .contains(&profile.output_limit_bytes)
             {
@@ -211,7 +213,7 @@ mod tests {
         for input in [
             EXAMPLE.replace("network = \"none\"", "network = \"host\""),
             EXAMPLE.replace("memory_bytes = 134217728", "memory_bytes = 0"),
-            EXAMPLE.replace("max_runs = 2", "max_runs = 0"),
+            EXAMPLE.replace("max_sandboxes = 2", "max_sandboxes = 0"),
             EXAMPLE.replace("\"/usr\"", "\"/run\""),
             EXAMPLE.replace("\"/usr\"", "\"/tmp/data\""),
             EXAMPLE.replace("\"/usr\"", "\"/usr/../etc\""),

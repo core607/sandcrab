@@ -5,6 +5,7 @@ mod config;
 mod runtime;
 mod server;
 mod service;
+mod sessions;
 
 use std::{
     io,
@@ -13,7 +14,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
 
 fn execute(args: &[String]) -> io::Result<i32> {
     match args {
@@ -86,6 +87,7 @@ fn execute(args: &[String]) -> io::Result<i32> {
             Ok(0)
         }
         [mode, rest @ ..] if mode == "run" => run(rest),
+        [mode, rest @ ..] if mode == "session" => session(rest),
         _ => Err(config::invalid(HELP)),
     }
 }
@@ -127,6 +129,86 @@ fn run(args: &[String]) -> io::Result<i32> {
         timeout,
     )
 }
+fn session(args: &[String]) -> io::Result<i32> {
+    match args {
+        [mode, socket_flag, socket, profile_flag, profile, rest @ ..]
+            if mode == "open" && socket_flag == "--socket" && profile_flag == "--profile" =>
+        {
+            client::open_session(
+                Path::new(socket),
+                profile,
+                numeric_option(rest, "--ttl-ms")?,
+            )
+        }
+        [mode, flag, socket, id, rest @ ..] if flag == "--socket" && sandcrab_core::uuid(id) => {
+            let path = format!("/v1/sessions/{id}");
+            match mode.as_str() {
+                "exec" => {
+                    let split = rest.iter().position(|v| v == "--").ok_or_else(|| {
+                        config::invalid("session exec requires -- before one shell source argument")
+                    })?;
+                    let [source] = &rest[split + 1..] else {
+                        return Err(config::invalid("Pass one quoted shell source argument"));
+                    };
+                    client::execute_session(
+                        Path::new(socket),
+                        id,
+                        source,
+                        numeric_option(&rest[..split], "--timeout-ms")?,
+                    )
+                }
+                "renew" => {
+                    let ttl = numeric_option(rest, "--ttl-ms")?
+                        .ok_or_else(|| config::invalid("--ttl-ms is required"))?;
+                    println!(
+                        "{}",
+                        client::request(
+                            Path::new(socket),
+                            "POST",
+                            &format!("{path}/renew"),
+                            Some(&serde_json::json!({"ttlMillis":ttl}))
+                        )?
+                    );
+                    Ok(0)
+                }
+                "get" if rest.is_empty() => {
+                    println!(
+                        "{}",
+                        client::request(Path::new(socket), "GET", &path, None)?
+                    );
+                    Ok(0)
+                }
+                "close" | "forget" if rest.is_empty() => {
+                    let result = client::request(
+                        Path::new(socket),
+                        "POST",
+                        &format!("{path}/{mode}"),
+                        Some(&serde_json::json!({})),
+                    )?;
+                    if mode == "close" {
+                        client::wait_session(Path::new(socket), id, false)
+                    } else {
+                        println!("{result}");
+                        Ok(0)
+                    }
+                }
+                _ => Err(config::invalid(HELP)),
+            }
+        }
+        _ => Err(config::invalid(HELP)),
+    }
+}
+fn numeric_option(args: &[String], name: &str) -> io::Result<Option<u64>> {
+    match args {
+        [] => Ok(None),
+        [key, value] if key == name => value
+            .parse()
+            .map(Some)
+            .map_err(|_| config::invalid(format!("Invalid {name}"))),
+        _ => Err(config::invalid(format!("Expected {name} VALUE"))),
+    }
+}
+
 fn main() -> ExitCode {
     match execute(&std::env::args().skip(1).collect::<Vec<_>>()) {
         Ok(code) => ExitCode::from(code as u8),

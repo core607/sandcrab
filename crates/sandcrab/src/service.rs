@@ -55,31 +55,38 @@ impl Request {
     }
 }
 
-struct Run {
-    request: Request,
-    state: String,
-    result: Option<Value>,
-    cancelled: Arc<AtomicBool>,
-    reservation: usize,
+pub(crate) struct Run {
+    pub request: Value,
+    pub profile: String,
+    pub state: String,
+    pub result: Option<Value>,
+    pub cancelled: Arc<AtomicBool>,
+    pub reservation: usize,
 }
 impl Run {
-    fn terminal(&self) -> bool {
+    pub(crate) fn terminal(&self) -> bool {
         self.state != "running" && self.state != "closing"
     }
-    fn value(&self) -> Value {
-        json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
-            "state":self.state,"result":self.result})
+    pub(crate) fn value(&self) -> Value {
+        let mut value = json!({"id":self.request["id"],"serverId":self.request["serverId"],"profile":self.profile,
+            "state":self.state,"result":self.result});
+        if let Some(id) = self.request.get("sessionId") {
+            value["sessionId"] = id.clone();
+        }
+        value
     }
 }
-struct Registry {
-    runs: BTreeMap<String, Run>,
-    active: usize,
-    reserved: usize,
+pub(crate) struct Registry {
+    pub runs: BTreeMap<String, Run>,
+    pub sessions: BTreeMap<String, crate::sessions::Session>,
+    pub active: usize,
+    pub reserved: usize,
 }
 impl Registry {
     fn new() -> Self {
         Self {
             runs: BTreeMap::new(),
+            sessions: BTreeMap::new(),
             active: 0,
             reserved: 0,
         }
@@ -99,7 +106,7 @@ impl Registry {
 pub struct Service {
     pub runtime: Runtime,
     pub id: String,
-    registry: Mutex<Registry>,
+    pub(crate) registry: Mutex<Registry>,
     pub stopped: Arc<AtomicBool>,
 }
 impl Service {
@@ -121,11 +128,11 @@ impl Service {
         }
         if method == "GET" && path == "/v1/info" {
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
-                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"network":p.network})))
+                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"network":p.network})))
                 .collect::<serde_json::Map<_,_>>();
             return (
                 200,
-                json!({"apiVersion":1,"serverId":self.id,"capabilities":["runs"],"profiles":profiles}),
+                json!({"apiVersion":1,"serverId":self.id,"capabilities":["runs","sessions"],"profiles":profiles}),
             );
         }
         if method == "POST" && path == "/v1/runs" {
@@ -135,6 +142,9 @@ impl Service {
             return request
                 .map(|r| self.submit(r))
                 .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
+        }
+        if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
+            return self.session_route(method, path, body);
         }
         let Some(path) = path.strip_prefix("/v1/runs/") else {
             return error(404, "NOT_FOUND");
@@ -160,10 +170,17 @@ impl Service {
             return error(404, "RUN_NOT_FOUND");
         };
         if method == "POST" && action == "cancel" {
+            let session = (!run.terminal())
+                .then(|| run.request["sessionId"].as_str().map(str::to_owned))
+                .flatten();
             if !run.terminal() {
                 run.cancelled.store(true, Ordering::SeqCst);
             }
-            return (200, run.value());
+            let value = run.value();
+            if let Some(session) = session {
+                registry.stop_session(&session, "closed");
+            }
+            return (200, value);
         }
         if method == "GET" && action.is_empty() {
             return (200, run.value());
@@ -186,20 +203,23 @@ impl Service {
         let id = request.id.clone();
         let mut registry = self.registry.lock().unwrap();
         if let Some(run) = registry.runs.get(&id) {
-            return if run.request == request {
+            return if run.request == serde_json::to_value(&request).unwrap() {
                 (200, run.value())
             } else {
                 error(409, "ID_CONFLICT")
             };
         }
+        if registry.sessions.contains_key(&id) {
+            return error(409, "ID_CONFLICT");
+        }
         if self.stopped.load(Ordering::SeqCst) {
             return error(503, "STOPPING");
         }
         let limits = &self.runtime.config.service;
-        if registry.active >= limits.max_runs {
+        if registry.active >= limits.max_sandboxes {
             return error(429, "RUN_CAPACITY");
         }
-        if registry.runs.len() >= limits.max_records
+        if registry.runs.len() + registry.sessions.len() >= limits.max_records
             || registry.reserved + limit > limits.max_output_bytes
         {
             return error(429, "RESULT_CAPACITY");
@@ -207,7 +227,8 @@ impl Service {
         registry.active += 1;
         registry.reserved += limit;
         let run = Run {
-            request: request.clone(),
+            request: serde_json::to_value(&request).unwrap(),
+            profile: request.profile.clone(),
             state: "running".into(),
             result: None,
             cancelled: cancelled.clone(),
@@ -226,7 +247,7 @@ impl Service {
                     limit,
                     &cancelled,
                 );
-                service.complete(&request.id, finished, cleanup);
+                service.complete(&request.id, finished, cleanup, true);
             })
             .is_err()
         {
@@ -238,7 +259,13 @@ impl Service {
         (202, accepted)
     }
 
-    fn complete(&self, id: &str, finished: io::Result<job::Finished>, cleanup: io::Result<()>) {
+    pub(crate) fn complete(
+        &self,
+        id: &str,
+        finished: io::Result<job::Finished>,
+        cleanup: io::Result<()>,
+        release_admission: bool,
+    ) {
         let mut registry = self.registry.lock().unwrap();
         let run = registry.runs.get_mut(id).unwrap();
         if cleanup.is_err() {
@@ -272,21 +299,39 @@ impl Service {
                 run.result = Some(json!({"code":"RUN_FAILED"}));
             }
         }
-        registry.active -= 1;
+        if release_admission {
+            registry.active -= 1;
+        } else if let Some(session_id) = run.request["sessionId"].as_str().map(str::to_owned)
+            && let Some(session) = registry.sessions.get_mut(&session_id)
+        {
+            session.active_run = None;
+            if session.state == "busy" {
+                session.state = "ready".into();
+            }
+        }
     }
 
     pub fn shutdown(&self) -> io::Result<()> {
         self.stopped.store(true, Ordering::SeqCst);
         {
-            let registry = self.registry.lock().unwrap();
+            let mut registry = self.registry.lock().unwrap();
+            let sessions: Vec<_> = registry.sessions.keys().cloned().collect();
+            for id in sessions {
+                registry.stop_session(&id, "closed");
+            }
             for run in registry.runs.values() {
                 run.cancelled.store(true, Ordering::SeqCst);
             }
         }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
         loop {
             let registry = self.registry.lock().unwrap();
-            if registry.runs.values().all(|r| r.state != "running") {
+            if registry.runs.values().all(|r| r.state != "running")
+                && registry
+                    .sessions
+                    .values()
+                    .all(|s| s.terminal() || s.state == "closing")
+            {
                 if registry.active != 0 {
                     return Err(invalid("Containment unconfirmed; restart required"));
                 }
@@ -350,7 +395,8 @@ mod tests {
         registry.runs.insert(
             id.clone(),
             Run {
-                request,
+                request: serde_json::to_value(&request).unwrap(),
+                profile: request.profile.clone(),
                 state: "running".into(),
                 result: None,
                 cancelled: Arc::new(AtomicBool::new(false)),
