@@ -4,9 +4,10 @@ use crate::{
     service::{Service, error},
 };
 use rustix::fs::{Gid, Uid, chown};
-use sandcrab_daemon::http;
+use sandcrab_core::http;
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read, Write},
     os::unix::{
         fs::{FileTypeExt, MetadataExt, PermissionsExt},
         net::{UnixListener, UnixStream},
@@ -16,7 +17,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 struct Connection(Arc<AtomicUsize>);
@@ -26,14 +27,92 @@ impl Drop for Connection {
     }
 }
 
+const REQUEST_LIMIT: usize = 128;
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+
+// A socket timeout alone resets with every read/write. One deadline prevents a
+// peer from holding admission indefinitely by sending a byte before each timeout.
+struct Timed<'a> {
+    stream: &'a mut UnixStream,
+    deadline: Instant,
+}
+impl Timed<'_> {
+    fn remaining(&self) -> io::Result<Duration> {
+        self.deadline
+            .checked_duration_since(Instant::now())
+            .filter(|d| !d.is_zero())
+            .ok_or_else(|| io::ErrorKind::TimedOut.into())
+    }
+}
+impl Read for Timed<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.remaining()?))?;
+        self.stream.read(bytes)
+    }
+}
+impl Write for Timed<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.write(bytes)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+
 fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let (status, reply) = match http::read(stream, 65536) {
-        Ok(request) => service.route(&request.method, &request.path, &request.body),
-        Err(_) => error(400, "INVALID_HTTP"),
-    };
-    http::write(stream, status, &serde_json::to_vec(&reply)?)
+    for index in 0..REQUEST_LIMIT {
+        if service.stopped.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let mut input = Timed {
+            stream,
+            deadline: Instant::now() + EXCHANGE_TIMEOUT,
+        };
+        let request = match http::start(&mut input) {
+            Ok(Some((head, mut body)))
+                if ["GET", "POST"].contains(&head.method.as_str())
+                    && head.length <= 65536
+                    && (head.method == "POST") == (head.length > 0) =>
+            {
+                let mut bytes = Vec::with_capacity(head.length as usize);
+                body.read_to_end(&mut bytes).ok().map(|_| (head, bytes))
+            }
+            Ok(None) => return Ok(()),
+            _ => None,
+        };
+        let (status, reply, close) = match request {
+            Some((head, body)) => {
+                let (status, reply) = service.route(&head.method, &head.path, &body);
+                (
+                    status,
+                    reply,
+                    head.close
+                        || index + 1 == REQUEST_LIMIT
+                        || service.stopped.load(Ordering::SeqCst),
+                )
+            }
+            None => {
+                let (status, reply) = error(400, "INVALID_HTTP");
+                (status, reply, true)
+            }
+        };
+        let mut output = Timed {
+            stream,
+            deadline: Instant::now() + EXCHANGE_TIMEOUT,
+        };
+        http::respond(
+            &mut output,
+            status,
+            "application/json",
+            &serde_json::to_vec(&reply)?,
+            close,
+        )?;
+        if close {
+            return Ok(());
+        }
+    }
+    Ok(())
 }
 
 pub fn serve(service: Arc<Service>) -> io::Result<()> {

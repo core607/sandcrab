@@ -162,6 +162,7 @@ network = "none"
 
     def tests(self):
         assert self.info['capabilities'] == ['runs', 'sessions']
+        self.transport()
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'
         assert schema['paths']['/v1/runs']['post']['operationId'] == 'createRun'
@@ -170,6 +171,7 @@ network = "none"
         assert json.loads(cli.stdout)['result']['stdout'] == '42\n'
         self.done('independent-cli')
         self.cli_completed_outcome()
+        self.cli_lost_response()
 
         request = self.submit('import os; print(os.geteuid()); print(os.getcwd()); print(any(k.startswith("POKETTO") for k in os.environ))')
         result = self.wait(request)
@@ -626,6 +628,144 @@ raise SystemExit(result.returncode)
         call('systemctl', 'stop', self.unit)
         del self.launch_path
         self.start()
+
+    def transport(self):
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(10)
+            connect(stream, self.socket)
+            for index in range(128):
+                route = '/v1/missing' if index == 1 else '/v1/info'
+                stream.sendall(f'GET {route} HTTP/1.1\r\nHost: sandcrab\r\n\r\n'.encode())
+                response = HTTPResponse(stream)
+                response.begin()
+                value = json.loads(response.read())
+                assert response.status == (404 if index == 1 else 200), value
+                assert response.getheader('Connection') == ('close' if index == 127 else 'keep-alive')
+                response.close()
+            assert stream.recv(1) == b''
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(10)
+            connect(stream, self.socket)
+            body = b'{}' + b' ' * (65536 - 2)
+            stream.sendall(b'POST /v1/missing HTTP/1.1\r\nContent-Length: 65536\r\n\r\n' + body)
+            response = HTTPResponse(stream)
+            response.begin()
+            assert response.status == 404, response.read()
+            response.read()
+            response.close()
+            stream.sendall(b'GET /v1/info HTTP/1.1\r\nConnection: CLOSE\r\n\r\n')
+            response = HTTPResponse(stream)
+            response.begin()
+            assert json.loads(response.read())['serverId'] == self.info['serverId']
+            assert response.getheader('Connection') == 'close'
+            response.close()
+            assert stream.recv(1) == b''
+        self.done('http-sequential-reuse-body-boundary-and-declared-close')
+
+        for request in [b'POST /v1/runs HTTP/1.1\r\nContent-Length: 65537\r\n\r\n',
+                        b'POST /v1/runs HTTP/1.1\r\nContent-Length: 2\r\ncontent-length: 2\r\n\r\n{}',
+                        b'POST /v1/runs HTTP/1.1\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n{}',
+                        b'POST /v1/runs HTTP/1.1\r\nContent-Length: 3\r\n\r\n{}',
+                        b'GET /v1/info HTTP/1.1\r\n\r\nGET /v1/info HTTP/1.1\r\n\r\n']:
+            with socket.socket(socket.AF_UNIX) as stream:
+                stream.settimeout(10)
+                connect(stream, self.socket)
+                stream.sendall(request)
+                stream.shutdown(socket.SHUT_WR)
+                response = HTTPResponse(stream)
+                response.begin()
+                assert response.status == 400 and json.loads(response.read())['error']['code'] == 'INVALID_HTTP'
+                assert response.getheader('Connection') == 'close'
+                response.close()
+                assert stream.recv(1) == b''
+        self.done('http-invalid-framing-closes-without-dispatch')
+
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(10)
+            connect(stream, self.socket)
+            started = time.monotonic()
+            finished = threading.Event()
+
+            def slow_sender():
+                try:
+                    while not finished.wait(.25):
+                        stream.sendall(b'G')
+                except OSError:
+                    pass
+
+            sender = threading.Thread(target=slow_sender)
+            sender.start()
+            try:
+                response = HTTPResponse(stream)
+                response.begin()
+                assert response.status == 400 and json.loads(response.read())['error']['code'] == 'INVALID_HTTP'
+                elapsed = time.monotonic() - started
+                assert 4.5 <= elapsed < 7, elapsed
+                self.receipt['slowRequestDeadlineSeconds'] = round(elapsed, 3)
+            finally:
+                finished.set()
+                sender.join(timeout=2)
+            assert not sender.is_alive()
+        self.done('http-deadline-does-not-reset-on-progress')
+
+    def cli_lost_response(self):
+        endpoint = self.root / 'cli-lost.sock'
+        errors, requests = [], []
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(endpoint))
+            os.chown(endpoint, 0, CLIENT[1])
+            endpoint.chmod(0o660)
+            listener.listen()
+            listener.settimeout(15)
+
+            def serve():
+                try:
+                    stream, _ = listener.accept()
+                    with stream, stream.makefile('rb') as reader:
+                        stream.settimeout(10)
+                        for index in range(2):
+                            method, path, _ = reader.readline(65537).decode().split()
+                            headers = {}
+                            while True:
+                                line = reader.readline(65537)
+                                if line == b'\r\n':
+                                    break
+                                key, value = line.decode().split(':', 1)
+                                headers[key.lower()] = value.strip()
+                            size = int(headers['content-length'])
+                            assert 0 <= size <= 65536
+                            body = json.loads(reader.read(size)) if size else None
+                            requests.append((method, path, body))
+                            if index == 0:
+                                assert (method, path) == ('GET', '/v1/info')
+                                raw = json.dumps(self.info).encode()
+                                stream.sendall(f'HTTP/1.1 200 OK\r\nContent-Length: {len(raw)}\r\nConnection: keep-alive\r\n\r\n'.encode() + raw)
+                            else:
+                                assert (method, path) == ('POST', '/v1/runs')
+                                stream.sendall(b'HTTP/1.1 202 Accepted\r\nContent-Length: 100\r\nConnection: keep-alive\r\n\r\n{"id":')
+                    listener.settimeout(1)
+                    try:
+                        replay, _ = listener.accept()
+                    except TimeoutError:
+                        return
+                    replay.close()
+                    raise AssertionError('CLI reconnected after an incomplete response')
+                except BaseException as error:
+                    errors.append(error)
+
+            server = threading.Thread(target=serve)
+            server.start()
+            try:
+                result = call('runuser', '-u', 'daemon', '--', str(self.binary), 'run', '--socket', str(endpoint),
+                              '--profile', 'python', '--', 'true', check=False)
+            finally:
+                server.join(timeout=20)
+            assert not server.is_alive() and not errors, errors
+            assert len(requests) == 2 and result.returncode != 0, (requests, result)
+            assert f'runId={requests[1][2]["id"]}' in result.stderr, result
+            assert result.stdout == '', result
+        endpoint.unlink()
+        self.done('cli-reuses-connection-and-does-not-replay-incomplete-response')
 
     def cli_completed_outcome(self):
         # A protected root peer injects a post-result transport failure. This checks CLI

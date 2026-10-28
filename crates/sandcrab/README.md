@@ -54,9 +54,15 @@ command's exit result. Inspect or forget the printed ID instead of rerunning it.
 
 ## HTTP
 
-One HTTP/1.1 exchange uses one connection. Requests have a declared content length,
-at most 64 KiB; pipelining and chunked bodies are rejected. Only `client_uid` is
-accepted, even if another account can connect to the socket.
+HTTP/1.1 connections accept sequential requests until `Connection: close`, an
+invalid message, the 128th response or shutdown. Reading a request, including idle
+time, and writing its response each have a five-second deadline. The CLI reuses connections while
+polling and reconnects after a declared close; transport failures are returned
+without replay. Up to 32 connections are admitted. POST bodies declare a content
+length of 1 to 65536 bytes; GET requests have no body. Headers are at most 8192 bytes
+and 32 fields. Chunked messages, duplicate headers and upgrades are
+rejected; pipelining is unsupported. Only `client_uid` is accepted, even if another
+account can connect to the socket.
 
 | Request | Result |
 |---|---|

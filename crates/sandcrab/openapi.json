@@ -3,7 +3,7 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Isolated finite commands and persistent shell sessions over a protected Unix socket. The configured peer UID authenticates every operation. A serverId binds retries to one daemon lifetime. Session workspace and shell state last until close, expiry, command termination or daemon loss; no TCP listener or durable volume is provided."
+    "description": "Isolated finite commands, persistent shell sessions and optional durable volumes over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential requests; follow Connection: close. A serverId binds run and session retries to one daemon lifetime. Volumes persist across restarts; shell state and unattached ephemeral workspaces do not. No TCP listener is provided."
   },
   "servers": [
     {

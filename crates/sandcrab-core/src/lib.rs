@@ -6,6 +6,7 @@
 pub mod artifacts;
 pub mod command;
 pub mod fs;
+pub mod http;
 pub mod ids;
 pub mod json;
 pub mod mailbox;

@@ -54,7 +54,9 @@ def main():
     fixture = module.Probe(args.binary.resolve(), args.tools.resolve(), output / 'fixture.json')
     try:
         fixture.setup()
+        fixture.transport()
         fixture.cli_completed_outcome()
+        fixture.cli_lost_response()
         fixture.startup_cancellation()
         fixture.session_tests()
         fixture.example(source / 'examples/sandcrab-build-test.sh')
