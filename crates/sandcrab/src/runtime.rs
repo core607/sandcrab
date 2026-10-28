@@ -292,6 +292,13 @@ impl Runtime {
             temporary_inodes: profile.temporary_inodes,
         };
         let mut command = limits.command(&unit, record, settings, root, timeout);
+        // One OOM ends the session, including its shell and background processes.
+        // Do not inherit the host's DefaultOOMPolicy.
+        let properties = command.iter().position(|s| s == "/usr/bin/env").unwrap();
+        command.splice(
+            properties..properties,
+            ["-p".into(), "OOMPolicy=kill".into()],
+        );
         command.insert(command.len() - 1, "__launch".into());
         Ok(Launch {
             command,
@@ -505,8 +512,16 @@ impl Shell {
             Some(EndReason::Timeout) => job::End::Timeout,
             Some(EndReason::OutputLimit) => job::End::OutputLimit,
             Some(EndReason::Cancelled) => job::End::Cancelled,
-            Some(EndReason::SandboxFailed)
-                if call(&[
+            _ if fs::read_to_string(self.launch.cgroup.join("memory.events")).is_ok_and(
+                |events| {
+                    events.lines().any(|line| {
+                        line.split_once(' ').is_some_and(|(key, value)| {
+                            key == "oom_kill" && value.trim().parse::<u64>().is_ok_and(|n| n > 0)
+                        })
+                    })
+                },
+            ) || (result.shell_exited
+                && call(&[
                     "systemctl",
                     "show",
                     &self.launch.unit,
@@ -514,7 +529,7 @@ impl Shell {
                     "Result",
                     "--value",
                 ])
-                .is_ok_and(|value| value.stdout == b"oom-kill\n") =>
+                .is_ok_and(|value| value.stdout == b"oom-kill\n")) =>
             {
                 job::End::ResourceLimit
             }
@@ -527,7 +542,7 @@ impl Shell {
                 truncated: result.captured.truncated.into_iter().any(|t| t),
                 end,
             },
-            !result.shell_exited,
+            !result.shell_exited && end == job::End::Normal,
         )
     }
 }

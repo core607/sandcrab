@@ -411,11 +411,27 @@ network = "none"
         self.session_forget(session)
         self.done('session-results-share-the-global-retention-bound')
 
+        session = self.session_open()
+        slice_group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
+        group = Path('/sys/fs/cgroup') / slice_group.lstrip('/') / (self.name + '-' + session['id'] + '.service')
+        assert (group / 'memory.oom.group').read_text().strip() == '1'
+        for source in ['(exit 137)', "python3 -c 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'"]:
+            request, result = self.session_exec(session, source)
+            assert result['state'] == 'failed' and result['result']['exitCode'] == 137, result
+            assert http(self.socket, 'GET', '/v1/sessions/' + session['id'])[1]['state'] == 'ready'
+            self.forget(request)
+        self.session_close(session)
+        self.session_forget(session)
+        self.done('session-sigkill-and-exit-137-are-not-memory-evidence')
+
         for source, options, expected in [
             ('sleep 30 & sleep 30', {'timeoutMillis': 200}, 'timed_out'),
             ("python3 -c 'print(\"x\"*10000)'", {'outputLimitBytes': 63}, 'output_limit'),
-            ("python3 -c 'x=bytearray(128*1024*1024)'", {}, 'resource_limit'),
             ('exit 0', {}, 'succeeded'),
+            # Repeated child OOMs cover the shell-result/systemd-event race. A shell
+            # that catches the child's exit must not turn an OOM into success either.
+            *[("python3 -c 'x=bytearray(128*1024*1024)'" + suffix, {}, 'resource_limit')
+              for _ in range(4) for suffix in ['', '; true']],
         ]:
             session = self.session_open()
             request, result = self.session_exec(session, source, **options)

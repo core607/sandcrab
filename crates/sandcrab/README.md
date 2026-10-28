@@ -109,6 +109,8 @@ A session preserves its working directory, environment, shell functions, files,
 `/tmp` and background processes. Only one command may run at a time. A nonzero
 command exit preserves the session while its shell remains alive. A shell exit,
 command cancellation, timeout, output overflow or runtime failure ends the session.
+A kernel OOM kill ends the whole session and reports `resource_limit`, even when
+the shell catches a child's failure. Exit code 137 alone is not OOM evidence.
 The daemon never silently resets its state. Closing or expiry also stops background
 processes before releasing storage and admission. These workspaces are ephemeral;
 copying data into a session is not a durable save.
