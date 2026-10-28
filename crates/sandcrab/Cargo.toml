@@ -10,6 +10,7 @@ publish = false
 sandcrab-core = { path = "../sandcrab-core" }
 sandcrab-daemon = { path = "../sandcrab-daemon" }
 sandcrab-launch = { path = "../sandcrab-launch" }
+sandcrab-shell = { path = "../sandcrab-shell" }
 rustix = { workspace = true, features = ["net", "process"] }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true

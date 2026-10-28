@@ -10,6 +10,7 @@ members = [
     "sandcrab-core",
     "sandcrab-daemon",
     "sandcrab-launch",
+    "sandcrab-shell",
 ]
 resolver = "3"
 

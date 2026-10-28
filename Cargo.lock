@@ -275,9 +275,7 @@ dependencies = [
 name = "poketto-shell"
 version = "0.1.0"
 dependencies = [
- "base64",
- "rustix",
- "serde_json",
+ "sandcrab-shell",
 ]
 
 [[package]]
@@ -360,6 +358,7 @@ dependencies = [
  "sandcrab-core",
  "sandcrab-daemon",
  "sandcrab-launch",
+ "sandcrab-shell",
  "serde",
  "serde_json",
  "signal-hook",
@@ -399,6 +398,15 @@ dependencies = [
  "rustix",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "sandcrab-shell"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rustix",
+ "serde_json",
 ]
 
 [[package]]

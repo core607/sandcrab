@@ -29,6 +29,10 @@ fn execute(args: &[String]) -> io::Result<i32> {
             println!("sandcrab {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
         }
+        [mode, path] if mode == "__shell" => {
+            sandcrab_shell::run(Path::new(path), "SANDBOX_EXECUTION_ID")?;
+            Ok(0)
+        }
         [mode, path] if mode == "__launch" => {
             runtime::launch(Path::new(path))?;
             Ok(0)
