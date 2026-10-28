@@ -48,6 +48,8 @@ other outcomes exit nonzero. SIGINT/SIGTERM requests cancellation. A lost respon
 does not submit a new run: inspect the printed ID. `closing` means containment or
 workspace cleanup was not confirmed; its admission remains held until restart.
 The CLI authenticates the root-owned socket and root peer before sending commands.
+If forgetting a terminal record fails, the CLI warns on stderr and preserves the
+command's exit result. Inspect or forget the printed ID instead of rerunning it.
 
 ## HTTP
 

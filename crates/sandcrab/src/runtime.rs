@@ -111,6 +111,7 @@ impl Runtime {
             "systemctl",
             "list-units",
             "--all",
+            "--full",
             "--plain",
             "--no-legend",
             &format!("{prefix}*"),

@@ -33,6 +33,8 @@ def main():
     fixture = module.Probe(args.binary.resolve(), args.tools.resolve(), output / 'fixture.json')
     try:
         fixture.setup()
+        fixture.cli_completed_outcome()
+        fixture.startup_cancellation()
         fixture.receipt['scope'] = 'Disposable native service for an Inspect scripted preflight; no model or production endpoint'
         revision = subprocess.run(['git', '-c', f'safe.directory={source}', 'rev-parse', 'HEAD'],
                                   cwd=source, check=True, capture_output=True, text=True).stdout.strip()

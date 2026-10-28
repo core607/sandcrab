@@ -143,7 +143,14 @@ pub fn run(
                 }
                 Some(_) => {
                     println!("{}", serde_json::to_string(&state)?);
-                    request(socket, "POST", &format!("{path}/forget"), Some(&json!({})))?;
+                    if let Err(error) =
+                        request(socket, "POST", &format!("{path}/forget"), Some(&json!({})))
+                    {
+                        eprintln!(
+                            "Run {} outcome is final; forgetting its record failed: {error}. Inspect or forget this ID; do not rerun the command.",
+                            input.id
+                        );
+                    }
                     return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
                 }
                 None => return Err(invalid("Missing run state")),

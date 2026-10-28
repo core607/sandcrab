@@ -11,6 +11,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 
@@ -101,6 +102,7 @@ network = "none"
     def start(self):
         call('systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
              '-p', 'MemoryMax=128M', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=128',
+             '-p', 'Environment=PATH=' + getattr(self, 'launch_path', '/usr/bin:/bin'),
              '-p', 'KillMode=control-group', str(self.binary), 'serve', '--config', str(self.config))
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
@@ -160,6 +162,7 @@ network = "none"
                    '--', 'python3', '-c', 'print(6*7)')
         assert json.loads(cli.stdout)['result']['stdout'] == '42\n'
         self.done('independent-cli')
+        self.cli_completed_outcome()
 
         request = self.submit('import os; print(os.geteuid()); print(os.getcwd()); print(any(k.startswith("POKETTO") for k in os.environ))')
         result = self.wait(request)
@@ -305,6 +308,134 @@ network = "none"
         shutil.rmtree(self.root)
         self.receipt['cleanup'] = 'PASS'
 
+    def startup_cancellation(self):
+        call('systemctl', 'stop', self.unit)
+        helpers = self.root / 'delayed-launch'
+        helpers.mkdir(mode=0o755)
+        entered, release, attempts = [helpers / name for name in ['entered', 'release', 'kill-attempts']]
+        # Delay registration, not the sandbox command. The first kill reaches the real
+        # systemd manager while the unit does not exist; the controller then permits launch.
+        (helpers / 'systemd-run').write_text(f'''#!/usr/bin/python3
+import os, sys, time
+from pathlib import Path
+Path({str(entered)!r}).touch()
+deadline = time.monotonic() + 8
+while not Path({str(release)!r}).exists():
+    if time.monotonic() > deadline:
+        raise SystemExit(91)
+    time.sleep(.01)
+os.execv('/usr/bin/systemd-run', ['systemd-run', *sys.argv[1:]])
+''')
+        (helpers / 'systemctl').write_text(f'''#!/usr/bin/python3
+import subprocess, sys
+result = subprocess.run(['/usr/bin/systemctl', *sys.argv[1:]])
+if sys.argv[1:2] == ['kill']:
+    with open({str(attempts)!r}, 'a') as log:
+        log.write(str(result.returncode) + '\\n')
+raise SystemExit(result.returncode)
+''')
+        for helper in [helpers / 'systemd-run', helpers / 'systemctl']:
+            helper.chmod(0o755)
+        self.launch_path = str(helpers) + ':/usr/bin:/bin'
+        self.start()
+        request = self.submit('import time; time.sleep(20)')
+        deadline = time.monotonic() + 5
+        while not entered.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert entered.exists(), 'launcher did not enter the registration gate'
+        started = time.monotonic()
+        assert http(self.socket, 'POST', f'/v1/runs/{request["id"]}/cancel', {})[0] == 200
+        while (not attempts.exists() or not attempts.read_text().strip()) and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert attempts.exists() and attempts.read_text().strip(), 'cancellation did not attempt to kill the pending unit'
+        unit = self.name + '-' + request['id'] + '.service'
+        assert call('systemctl', 'show', unit, '-p', 'LoadState', '--value').stdout.strip() == 'not-found'
+        initial = int(attempts.read_text().splitlines()[0])
+        assert initial != 0, 'first kill unexpectedly found a registered unit'
+        release.touch()
+        result = self.wait(request)
+        elapsed = time.monotonic() - started
+        self.receipt['startupCancellation'] = {
+            'initialKillExitCode': initial, 'killAttempts': len(attempts.read_text().splitlines()),
+            'seconds': round(elapsed, 3), 'state': result['state'], 'limitSeconds': 3,
+        }
+        self.save()
+        self.forget(request)
+        assert result['state'] == 'cancelled', result
+        assert elapsed < 3, f'pending cancellation waited {elapsed:.3f}s for the runtime deadline'
+        self.done('cancellation-before-unit-registration')
+        call('systemctl', 'stop', self.unit)
+        del self.launch_path
+        self.start()
+
+    def cli_completed_outcome(self):
+        # A protected root peer injects a post-result transport failure. This checks CLI
+        # reporting only; independent-cli above exercises actual sandbox execution.
+        for terminal in ['succeeded', 'failed']:
+            endpoint = self.root / 'cli-fault.sock'
+            errors, requests = [], []
+            with socket.socket(socket.AF_UNIX) as listener:
+                listener.bind(str(endpoint))
+                os.chown(endpoint, 0, CLIENT[1])
+                endpoint.chmod(0o660)
+                listener.listen()
+                listener.settimeout(15)
+
+                def serve():
+                    try:
+                        run_id = None
+                        for index in range(4):
+                            stream, _ = listener.accept()
+                            with stream:
+                                stream.settimeout(15)
+                                with stream.makefile('rb') as reader:
+                                    method, path, _ = reader.readline(65537).decode().split()
+                                    headers = {}
+                                    while True:
+                                        line = reader.readline(65537)
+                                        if line == b'\r\n':
+                                            break
+                                        key, value = line.decode().split(':', 1)
+                                        headers[key.lower()] = value.strip()
+                                    size = int(headers.get('content-length', '0'))
+                                    assert 0 <= size <= 65536
+                                    body = json.loads(reader.read(size)) if size else None
+                                requests.append((method, path))
+                                if index == 0:
+                                    assert (method, path) == ('GET', '/v1/info')
+                                    status, value = 200, self.info
+                                elif index == 1:
+                                    assert (method, path) == ('POST', '/v1/runs')
+                                    run_id = body['id']
+                                    status, value = 202, {'id': run_id, 'state': 'running'}
+                                elif index == 2:
+                                    assert (method, path) == ('GET', '/v1/runs/' + run_id)
+                                    status, value = 200, {'id': run_id, 'state': terminal,
+                                                          'result': {'exitCode': 0 if terminal == 'succeeded' else 7}}
+                                else:
+                                    assert (method, path) == ('POST', '/v1/runs/' + run_id + '/forget')
+                                    status, value = 503, {'error': {'code': 'STOPPING'}}
+                                raw = json.dumps(value).encode()
+                                stream.sendall(f'HTTP/1.1 {status} Fixture\r\nContent-Length: {len(raw)}\r\nConnection: close\r\n\r\n'.encode() + raw)
+                    except BaseException as error:
+                        errors.append(error)
+
+                server = threading.Thread(target=serve)
+                server.start()
+                try:
+                    result = call('runuser', '-u', 'daemon', '--', str(self.binary), 'run', '--socket', str(endpoint),
+                                  '--profile', 'python', '--', 'true', check=False)
+                finally:
+                    server.join(timeout=20)
+                assert not server.is_alive(), 'CLI fixture peer did not finish'
+                assert not errors, errors
+                assert len(requests) == 4, requests
+                assert json.loads(result.stdout)['state'] == terminal, result
+                assert result.returncode == (0 if terminal == 'succeeded' else 1), result
+                assert 'forgetting its record failed' in result.stderr and 'do not rerun' in result.stderr, result
+            endpoint.unlink()
+        self.done('cli-outcome-survives-forget-failure')
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -318,6 +449,7 @@ def main():
     try:
         probe.setup()
         probe.tests()
+        probe.startup_cancellation()
         probe.receipt['result'] = 'PASS'
     except BaseException as error:
         probe.receipt['result'] = 'FAIL'

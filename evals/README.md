@@ -13,6 +13,7 @@ disposable native service and runs Inspect as an ordinary client. No production
 endpoint, product account, model key or model API is used. The root controller
 owns only its fixture's units, slice and temporary directory; cleanup verifies
 containment before deleting them.
+Startup cancellation and CLI result-recovery fault probes must pass before Inspect runs.
 
 The workflow summary lists every case and all attempts. Its artifact contains
 the machine-readable summary, complete Inspect log, static transcript viewer and
