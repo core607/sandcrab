@@ -1,6 +1,9 @@
 //! A generic run owns one quota-bounded workspace, one unit and its protected launch records.
 //! No workspace or record is removed until the unit's containment is confirmed.
-use crate::config::{Config, Profile, invalid};
+use crate::{
+    config::{Config, Profile, invalid},
+    storage::{Attachment, Store},
+};
 use rustix::fs::{Gid, OFlags, Uid, chown};
 use sandcrab_core::{
     command::{Channel, EndReason, Request as CommandRequest},
@@ -17,7 +20,7 @@ use std::{
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::atomic::AtomicBool,
+    sync::{Arc, atomic::AtomicBool},
     thread,
     time::{Duration, Instant},
 };
@@ -31,6 +34,7 @@ struct Record {
     uid: u32,
     command: Vec<String>,
     shell: bool,
+    workspace: PathBuf,
 }
 
 fn command(args: &[String]) -> io::Result<std::process::Output> {
@@ -63,6 +67,7 @@ fn create(path: &Path, value: &impl Serialize, gid: u32) -> io::Result<()> {
 }
 
 pub struct Runtime {
+    pub storage: Option<Arc<Store>>,
     pub config: Config,
     pool: PathBuf,
     executable: PathBuf,
@@ -99,13 +104,19 @@ impl Runtime {
         let lock = install::runtime_lock(root)?;
         directory(&root.join("jobs"), 0o711)?;
         directory(&root.join("records"), 0o711)?;
+        let storage = config.storage.clone().map(|s| Store::open(s, json!({"version":1,
+            "runtimeRoot":config.service.runtime_root,"resourceSlice":config.service.resource_slice,"unitPrefix":config.service.unit_prefix}))).transpose()?;
         let runtime = Self {
+            storage,
             config,
             pool,
             executable,
             _lock: lock,
         };
         runtime.cleanup()?;
+        if let Some(storage) = &runtime.storage {
+            storage.recover()?;
+        }
         Ok(runtime)
     }
 
@@ -125,7 +136,7 @@ impl Runtime {
             if !unit
                 .strip_prefix(prefix)
                 .and_then(|s| s.strip_suffix(".service"))
-                .is_some_and(uuid)
+                .is_some_and(|s| uuid(s) || s.strip_prefix("volume-").is_some_and(uuid))
             {
                 return Err(invalid("Unexpected unit in Sandcrab namespace"));
             }
@@ -181,7 +192,7 @@ impl Runtime {
                 .join(format!("{id}.{kind}.json"))
         });
         let (result, contained) =
-            match self.prepare(id, &root, &records, profile, argv, Some(timeout)) {
+            match self.prepare(&root, &records, profile, argv, Some(timeout), None) {
                 Ok(launch) => job::run(&launch, cancelled, Duration::from_millis(timeout), limit),
                 Err(error) => (Err(error), Ok(())),
             };
@@ -190,10 +201,34 @@ impl Runtime {
     }
 
     /// Prepare a persistent shell. Failed cleanup holds the caller's admission until restart.
-    pub fn open_shell(&self, id: &str, profile: &Profile) -> Result<Shell, bool> {
+    pub fn open_shell(
+        &self,
+        id: &str,
+        profile: &Profile,
+        volume: Option<&str>,
+    ) -> Result<Shell, OpenError> {
+        let mut attachment = match volume {
+            Some(volume) => Some(
+                self.storage
+                    .as_ref()
+                    .ok_or(OpenError {
+                        code: "VOLUMES_DISABLED",
+                        contained: true,
+                    })?
+                    .bind(volume, id, profile)
+                    .map_err(|e| OpenError {
+                        code: e.code,
+                        contained: true,
+                    })?,
+            ),
+            None => None,
+        };
         let root = self.config.service.runtime_root.join("jobs").join(id);
         if DirBuilder::new().mode(0o750).create(&root).is_err() {
-            return Err(true);
+            return Err(OpenError {
+                code: "SESSION_UNAVAILABLE",
+                contained: true,
+            });
         }
         let records = ["launch", "policy"].map(|kind| {
             self.config
@@ -202,9 +237,21 @@ impl Runtime {
                 .join("records")
                 .join(format!("{id}.{kind}.json"))
         });
-        let launch = match self.prepare(id, &root, &records, profile, &[], None) {
+        let launch = match self.prepare(
+            &root,
+            &records,
+            profile,
+            &[],
+            None,
+            attachment.as_ref().map(Attachment::path).as_deref(),
+        ) {
             Ok(launch) => launch,
-            Err(_) => return Err(release(&root, &records).is_ok()),
+            Err(_) => {
+                return Err(OpenError {
+                    code: "SESSION_UNAVAILABLE",
+                    contained: release(&root, &records).is_ok(),
+                });
+            }
         };
         let child = match Command::new(&launch.command[0])
             .args(&launch.command[1..])
@@ -214,27 +261,103 @@ impl Runtime {
             .spawn()
         {
             Ok(child) => child,
-            Err(_) => return Err(release(&root, &records).is_ok()),
+            Err(_) => {
+                return Err(OpenError {
+                    code: "SESSION_UNAVAILABLE",
+                    contained: release(&root, &records).is_ok(),
+                });
+            }
         };
-        // If pipe setup fails after launch, ownership is uncertain. Keep storage/admission.
-        let channel = Channel::new(child).map_err(|_| false)?;
+        // Once launched, a failed owner must retain volume ownership until restart cleanup.
+        if let Some(attachment) = &mut attachment {
+            attachment.launched();
+        }
+        let channel = Channel::new(child).map_err(|_| OpenError {
+            code: "CONTAINMENT_UNCONFIRMED",
+            contained: false,
+        })?;
         Ok(Shell {
             channel,
             launch,
             root,
             records,
+            attachment,
         })
+    }
+
+    pub fn clone_volume(
+        &self,
+        operation: &str,
+        source: &Path,
+        destination: &Path,
+        profile: &Profile,
+        stopped: &AtomicBool,
+    ) -> (io::Result<job::Finished>, io::Result<()>) {
+        if let Err(error) = sandcrab_core::unit::verify_resource_pool(&self.pool) {
+            return (Err(error), Ok(()));
+        }
+        let storage = self.storage.as_ref().expect("configured volume store");
+        let unit = format!("{}volume-{operation}", self.config.service.unit_prefix);
+        let limits = sandcrab_core::unit::Profile {
+            tools: profile.tools.clone(),
+            launcher: self.executable.clone(),
+            exec_user: "root".into(),
+            resource_slice: self.config.service.resource_slice.clone(),
+            supervisor_unit: self.config.service.supervisor_unit.clone(),
+            cpu_quota_percent: profile.cpu_quota_percent,
+            memory_bytes: profile.memory_bytes,
+            tasks_max: profile.tasks_max,
+            temporary_bytes: profile.temporary_bytes,
+            temporary_inodes: profile.temporary_inodes,
+        };
+        let argv = vec![
+            self.executable.to_string_lossy().into(),
+            "__copy-tree".into(),
+            source.to_string_lossy().into(),
+            destination.to_string_lossy().into(),
+            storage.config.root.join("data").to_string_lossy().into(),
+        ];
+        let command = limits.command_with_args(
+            &unit,
+            &[source],
+            &[destination],
+            &argv,
+            Some(profile.timeout_millis),
+            &[
+                "OOMPolicy=kill".into(),
+                "ProtectSystem=strict".into(),
+                format!("ReadWritePaths={}", destination.display()),
+                "PrivateNetwork=yes".into(),
+                "PrivateDevices=yes".into(),
+                "CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER".into(),
+            ],
+        );
+        job::run(
+            &Launch {
+                command,
+                unit: unit.clone(),
+                cgroup: self.pool.join(format!("{unit}.service")),
+            },
+            stopped,
+            Duration::from_millis(profile.timeout_millis),
+            65536,
+        )
     }
 
     fn prepare(
         &self,
-        id: &str,
         root: &Path,
         records: &[PathBuf; 2],
         profile: &Profile,
         argv: &[String],
         timeout: Option<u64>,
+        workspace: Option<&Path>,
     ) -> io::Result<Launch> {
+        let id = root
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| uuid(s))
+            .ok_or_else(|| invalid("Invalid workspace identity"))?;
         sandcrab_core::unit::verify_resource_pool(&self.pool)?;
         let options = format!(
             "size={},nr_inodes={},mode=0750,nosuid,nodev",
@@ -263,6 +386,7 @@ impl Runtime {
                 uid: profile.uid,
                 command: argv.into(),
                 shell: timeout.is_none(),
+                workspace: workspace.unwrap_or(&root.join("work")).into(),
             },
             profile.gid,
         )?;
@@ -291,15 +415,24 @@ impl Runtime {
             temporary_bytes: profile.temporary_bytes,
             temporary_inodes: profile.temporary_inodes,
         };
-        let mut command = limits.command(&unit, record, settings, root, timeout);
+        let mut writable = vec![root];
+        if let Some(workspace) = workspace {
+            writable.push(workspace);
+        }
         // One OOM ends the session, including its shell and background processes.
         // Do not inherit the host's DefaultOOMPolicy.
-        let properties = command.iter().position(|s| s == "/usr/bin/env").unwrap();
-        command.splice(
-            properties..properties,
-            ["-p".into(), "OOMPolicy=kill".into()],
+        let command = limits.command_with_args(
+            &unit,
+            &[record, settings],
+            &writable,
+            &[
+                self.executable.to_string_lossy().into(),
+                "__launch".into(),
+                record.to_string_lossy().into(),
+            ],
+            timeout,
+            &["OOMPolicy=kill".into()],
         );
-        command.insert(command.len() - 1, "__launch".into());
         Ok(Launch {
             command,
             cgroup: self.pool.join(format!("{unit}.service")),
@@ -398,7 +531,7 @@ pub fn launch(path: &Path) -> io::Result<()> {
         separator..separator,
         [
             "--bind".into(),
-            record.root.join("work").to_string_lossy().into(),
+            record.workspace.to_string_lossy().into(),
             "/workspace".into(),
             "--chdir".into(),
             "/workspace".into(),
@@ -417,11 +550,16 @@ pub fn launch(path: &Path) -> io::Result<()> {
 }
 
 /// Owns one persistent unit. Storage can be released only after its launcher and cgroup stop.
+pub struct OpenError {
+    pub code: &'static str,
+    pub contained: bool,
+}
 pub struct Shell {
     pub channel: Channel,
     launch: Launch,
     root: PathBuf,
     records: [PathBuf; 2],
+    attachment: Option<Attachment>,
 }
 impl Shell {
     pub fn ready(&mut self, cancelled: &AtomicBool) -> bool {
@@ -487,7 +625,11 @@ impl Shell {
         }
         empty_group(&self.launch.cgroup)?;
         let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
-        release(&self.root, &self.records)
+        release(&self.root, &self.records)?;
+        if let Some(attachment) = self.attachment.take() {
+            attachment.release();
+        }
+        Ok(())
     }
 
     pub fn execute(

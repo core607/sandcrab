@@ -16,3 +16,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 signal-hook = "=0.4.5"
 toml = { version = "=0.9.8", default-features = false, features = ["parse", "serde"] }
+sha2 = "0.10"

@@ -1,8 +1,8 @@
 # Sandcrab native service
 
-`sandcrab` is a standalone Linux daemon and CLI for finite commands and persistent
-bash sessions. It needs no Poketto account, workspace, repository, signing key or
-compiled extension. Both use a Unix socket; durable volumes, file transfer, SSE,
+`sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
+bash sessions and durable volumes. It needs no Poketto account, workspace, repository,
+signing key or compiled extension. The service uses a Unix socket; file transfer, SSE,
 TCP and the OpenSandbox adapter remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
@@ -10,7 +10,7 @@ TCP and the OpenSandbox adapter remain under the
 
 Build with `./gradlew buildExecutorRust`; the static binary is
 `build/executor-service/bin/sandcrab`. It is excluded from the Poketto worker bundle.
-Install it in a root-owned directory with root-owned ancestors. The host needs
+Install it with mode 0755 in a root-owned directory with root-owned ancestors. The host needs
 systemd, cgroup v2, unprivileged user namespaces, bubblewrap and the pinned seccomp
 helper from the executor's [tool preparation](../../prepare-tools.sh).
 
@@ -31,7 +31,7 @@ accounts and tools; it does not prove the runtime slice or sandbox works.
 Each run executes as the profile's account in a fresh bounded tmpfs at
 `/workspace`, with a private `/tmp`, isolated network and PID namespaces and
 seccomp. It shares the host kernel; this is not a microVM boundary. Workspace bytes
-are disposable after the run or session ends. Read mounts are the operator's responsibility.
+are disposable unless a session attaches a durable volume. Read mounts are the operator's responsibility.
 
 ## CLI
 
@@ -61,7 +61,7 @@ accepted, even if another account can connect to the socket.
 | Request | Result |
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
-| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json) |
+| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions` or `volumes` selects a bounded view with its referenced schemas |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
 | `POST /v1/runs/ID/cancel` with `{}` | Request cancellation; poll until terminal |
@@ -112,8 +112,8 @@ command cancellation, timeout, output overflow or runtime failure ends the sessi
 A kernel OOM kill ends the whole session and reports `resource_limit`, even when
 the shell catches a child's failure. Exit code 137 alone is not OOM evidence.
 The daemon never silently resets its state. Closing or expiry also stops background
-processes before releasing storage and admission. These workspaces are ephemeral;
-copying data into a session is not a durable save.
+processes before releasing storage and admission. Without a volume, copying data
+into a session is not a durable save.
 
 `session_ttl_millis` is the profile's default and maximum lifetime per open or
 renewal, from 100 ms through one day. Expiry uses a monotonic clock and includes
@@ -123,7 +123,7 @@ A run's timeout and output limits still apply to each command independently.
 
 | Request | Result |
 |---|---|
-| `POST /v1/sessions` | Open with `id`, `serverId`, `profile`, optional `ttlMillis`; returns 202 |
+| `POST /v1/sessions` | Open with `id`, `serverId`, `profile`, optional `ttlMillis` and `volumeId`; returns 202 |
 | `GET /v1/sessions/ID` | State, expiry estimate and any active run ID |
 | `POST /v1/sessions/ID/commands` | Execute `command` bash source with a fresh `id`, `serverId` and optional `timeoutMillis`/`outputLimitBytes`; returns 202 |
 | `POST /v1/sessions/ID/renew` | Renew with `ttlMillis` |
@@ -144,6 +144,69 @@ A restart terminates sessions and removes their ephemeral workspaces. The change
 server epoch refuses old create/command requests; a missing result does not prove
 that the command never ran.
 
+## Durable volumes
+
+Enable the optional `[storage]` section in the example configuration. Provision a
+dedicated XFS mount at `storage.root/data` with reflinks, enforced project quotas
+(`prjquota` or `pquota`), `nosuid` and `nodev`. Its filesystem size must not exceed
+`pool_bytes`. Install `xfsprogs` under `/usr/sbin`. The root and its ancestors must
+be root-owned, non-writable by other accounts and searchable by execution accounts.
+The daemon creates private control metadata at `root/state` on a different filesystem.
+It never formats a disk, remounts a filesystem or adopts a nonempty unowned store.
+Profiles cannot expose this storage through their read mounts.
+
+```sh
+sandcrab volume create --socket /run/sandcrab-demo/control.sock --profile python --bytes 8388608 --inodes 256
+sandcrab session open --socket /run/sandcrab-demo/control.sock --profile python --volume VOLUME_ID
+# Execute commands, then close the session before cloning or deleting its volume.
+sandcrab volume create --socket /run/sandcrab-demo/control.sock --profile python --clone-from VOLUME_ID
+sandcrab volume list --socket /run/sandcrab-demo/control.sock
+sandcrab volume get --socket /run/sandcrab-demo/control.sock VOLUME_ID
+sandcrab volume delete --socket /run/sandcrab-demo/control.sock VOLUME_ID
+sandcrab volume forget --socket /run/sandcrab-demo/control.sock VOLUME_ID
+```
+
+A volume is an ordinary directory mounted at `/workspace`. Session closure,
+expiry and daemon restart retain its files; shell state and `/tmp` remain
+ephemeral. Application writes follow normal filesystem synchronization semantics;
+closing a session is not an atomic snapshot or a power-loss commit for those writes.
+The selected profile must use the volume's execution UID/GID. One session owns a
+volume exclusively until confirmed cleanup; a failed cleanup retains that ownership.
+Cloning requires an unattached source and holds it for the operation. Reflinks
+preserve hard links and symlinks without following them, and subsequent writes
+are independent. Clone work uses the selected profile's bounded unit and timeout.
+
+Byte quotas count allocated XFS blocks, including managed metadata, rather than
+sparse logical lengths. Inode quotas also count managed metadata. Requests may
+only lower the configured maxima; byte limits are multiples of 1024. Quota failure
+can report `ENOSPC` or `EDQUOT` inside a session. `max_volumes` bounds live volumes;
+storage `max_records` separately bounds durable records. `STORAGE_CAPACITY`
+allows one mutation at a time. A full data pool still permits recording deletion
+on the separate control filesystem.
+
+| Request | Result |
+|---|---|
+| `POST /v1/volumes` | Create with a UUID `id`, current `serverId`, `profile`, optional `cloneFrom`, `byteLimit` and `inodeLimit`; returns 202 |
+| `GET /v1/volumes/ID` | Read state, quotas, plan digest and ownership |
+| `GET /v1/volumes?after=UUID` | Up to 100 records in UUID order; continue with `nextAfter` |
+| `POST /v1/volumes/ID/delete` with `{}` | Persist deletion intent, then remove an unattached volume |
+| `POST /v1/volumes/ID/forget` with `{}` | Forget a failed or deleted record after its data is absent |
+
+States are `creating`, `ready`, `deleting`, `deleted`, `failed` and `closing`.
+Only `ready` can attach. Creation IDs bind a normalized plan digest across daemon
+restarts; `serverId` is excluded. An existing ID with the same plan replays its
+current state, including failure or deletion; different plans conflict. An unknown
+ID needs the current server epoch. The CLI prints its recovery ID before submission;
+`--id UUID` permits an explicit replay. Never substitute a new ID after a lost response.
+Forgetting ends replay protection; never reuse that client ID.
+
+Startup contains prior units before recovering unfinished creation or deletion.
+Published volumes remain intact. Uncertain metadata or volume cleanup fences
+mutations (`STORAGE_UNCERTAIN`, `storage.available=false`) until restart and
+reconciliation; it never exposes uncommitted data as ready. Unexpected data,
+mounts or a changed cleanup namespace require operator reconciliation and are
+preserved. Keep the store and its matching runtime configuration together.
+
 ## Verification
 
 `executorRustCheck` checks the binary and its configuration/request tests.
@@ -153,5 +216,9 @@ containment, cancellation, replay, capacity, session build/repair, renewal, expi
 model API and reports deterministic evidence only. It does not establish agent
 usability, OpenSandbox compatibility or Poketto adoption. Injected cleanup failure
 must retain session admission, and delayed unit registration must remain cancellable.
+`volume_probe.py` takes the same binary/tools/report arguments and additionally
+requires `xfsprogs`. It owns a disposable 512 MiB XFS image, verifies file readback,
+reflinks, quotas, durable replay and failure recovery, and unmounts it only after
+its fixture's processes stop.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

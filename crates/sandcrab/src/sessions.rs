@@ -23,6 +23,7 @@ pub struct Open {
     pub server_id: String,
     pub profile: String,
     pub ttl_millis: Option<u64>,
+    pub volume_id: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -75,6 +76,7 @@ pub(crate) struct Session {
     reason: String,
     pending: Option<Work>,
     pub active_run: Option<String>,
+    code: Option<String>,
 }
 fn expires_at(ttl: u64) -> u64 {
     SystemTime::now()
@@ -96,7 +98,8 @@ impl Session {
     }
     fn value(&self) -> Value {
         json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
-            "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run})
+            "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,
+            "volumeId":self.request.volume_id,"code":self.code})
     }
 }
 impl Registry {
@@ -219,7 +222,12 @@ impl Service {
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
         }
-        if !sandcrab_core::uuid(&request.id) {
+        if !sandcrab_core::uuid(&request.id)
+            || request
+                .volume_id
+                .as_ref()
+                .is_some_and(|id| !sandcrab_core::uuid(id))
+        {
             return error(400, "INVALID_REQUEST");
         }
         let Some(profile) = self.runtime.config.profiles.get(&request.profile).cloned() else {
@@ -262,6 +270,7 @@ impl Service {
             reason: "closed".into(),
             pending: None,
             active_run: None,
+            code: None,
         };
         let accepted = session.value();
         registry.sessions.insert(id.clone(), session);
@@ -343,15 +352,24 @@ impl Service {
     }
 
     fn session_loop(&self, id: &str, profile: &Profile, cancelled: &AtomicBool) {
-        let mut shell = match self.runtime.open_shell(id, profile) {
+        let volume = self.registry.lock().unwrap().sessions[id]
+            .request
+            .volume_id
+            .clone();
+        let mut shell = match self.runtime.open_shell(id, profile, volume.as_deref()) {
             Ok(shell) => shell,
-            Err(contained) => {
-                self.end_session(id, "failed", contained);
+            Err(error) => {
+                self.end_session(id, "failed", error.contained, Some(error.code));
                 return;
             }
         };
         if !shell.ready(cancelled) {
-            self.end_session(id, "failed", shell.close().is_ok());
+            self.end_session(
+                id,
+                "failed",
+                shell.close().is_ok(),
+                Some("SESSION_UNAVAILABLE"),
+            );
             return;
         }
         {
@@ -419,10 +437,10 @@ impl Service {
                 false,
             );
         }
-        self.end_session(id, reason, contained);
+        self.end_session(id, reason, contained, None);
     }
 
-    fn end_session(&self, id: &str, fallback: &str, contained: bool) {
+    fn end_session(&self, id: &str, fallback: &str, contained: bool, code: Option<&str>) {
         let pending = self
             .registry
             .lock()
@@ -446,6 +464,11 @@ impl Service {
         }
         let mut registry = self.registry.lock().unwrap();
         let session = registry.sessions.get_mut(id).unwrap();
+        session.code = if contained {
+            code.map(str::to_owned)
+        } else {
+            Some("CONTAINMENT_UNCONFIRMED".into())
+        };
         session.state = if !contained {
             "closing".into()
         } else if session.state == "stopping" {

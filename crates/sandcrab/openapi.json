@@ -49,7 +49,21 @@
           "403": {
             "$ref": "#/components/responses/Error403"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "description": "Return only this capability and its referenced schemas. Prefer this bounded view for model tools.",
+            "schema": {
+              "enum": [
+                "runs",
+                "sessions",
+                "volumes"
+              ]
+            }
+          }
+        ]
       }
     },
     "/v1/runs": {
@@ -542,6 +556,237 @@
           }
         }
       }
+    },
+    "/v1/volumes": {
+      "get": {
+        "operationId": "listVolumes",
+        "description": "List at most 100 durable records in UUID order. Concurrent changes are not a snapshot. Continue with nextAfter.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Volume page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumePage"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createVolume",
+        "description": "Create empty persistent storage or a reflink clone of an unattached ready volume. Same ID and normalized plan replay across daemon restarts, including failure or deletion. An unknown ID requires the current serverId. Different plans conflict. Limits may only be lowered. A clone must use the same execution UID/GID as its source. Only one storage mutation runs at a time.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Volume200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Volume202"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/volumes/{id}": {
+      "get": {
+        "operationId": "getVolume",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Volume200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/volumes/{id}/delete": {
+      "post": {
+        "operationId": "deleteVolume",
+        "description": "Explicitly delete an unattached ready volume. Deletion intent is durable before data removal; deleted tombstones remain replayable. closing requires restart and reconciliation.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Volume200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Volume202"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/volumes/{id}/forget": {
+      "post": {
+        "operationId": "forgetVolume",
+        "description": "Forget only a deleted or failed record after its data is absent. Ends durable replay protection. Never reuse this client ID.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "200": {
+            "description": "Record forgotten",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "forgotten"
+                  ],
+                  "properties": {
+                    "forgotten": {
+                      "const": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -574,7 +819,8 @@
           "apiVersion",
           "serverId",
           "capabilities",
-          "profiles"
+          "profiles",
+          "storage"
         ],
         "properties": {
           "apiVersion": {
@@ -589,7 +835,8 @@
             "items": {
               "enum": [
                 "runs",
-                "sessions"
+                "sessions",
+                "volumes"
               ]
             }
           },
@@ -622,6 +869,42 @@
                   "minimum": 100,
                   "maximum": 86400000
                 }
+              }
+            }
+          },
+          "storage": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "maxVolumeBytes",
+              "maxVolumeInodes",
+              "maxVolumes",
+              "maxRecords",
+              "available"
+            ],
+            "properties": {
+              "maxVolumeBytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "maxVolumeInodes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "maxVolumes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "maxRecords": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "available": {
+                "type": "boolean",
+                "description": "False requires operator reconciliation and daemon restart before mutations."
               }
             }
           }
@@ -802,6 +1085,14 @@
             "minimum": 100,
             "maximum": 86400000,
             "description": "Cannot exceed the selected profile lifetime."
+          },
+          "volumeId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Optional ready volume mounted at /workspace exclusively until confirmed session cleanup. Omit for an ephemeral workspace."
           }
         }
       },
@@ -854,7 +1145,9 @@
           "profile",
           "state",
           "expiresAtMillis",
-          "activeRunId"
+          "activeRunId",
+          "volumeId",
+          "code"
         ],
         "properties": {
           "id": {
@@ -885,6 +1178,161 @@
             "description": "Wall-clock estimate of expiry; enforcement uses a monotonic deadline."
           },
           "activeRunId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "volumeId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opening or cleanup failure, including VOLUME_IN_USE, VOLUME_NOT_READY, VOLUME_PROFILE_MISMATCH or CONTAINMENT_UNCONFIRMED."
+          }
+        }
+      },
+      "VolumeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "profile"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "cloneFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "byteLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1048576,
+            "multipleOf": 1024,
+            "description": "XFS charged-byte quota, at most the advertised storage maximum; sparse logical lengths are not charged blocks."
+          },
+          "inodeLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 32,
+            "description": "Inode quota including the managed parent and data directories, at most the advertised maximum."
+          }
+        }
+      },
+      "Volume": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "profile",
+          "state",
+          "code",
+          "byteLimit",
+          "inodeLimit",
+          "cloneFrom",
+          "planDigest",
+          "busy",
+          "attachedTo"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "creating",
+              "ready",
+              "deleting",
+              "deleted",
+              "failed",
+              "closing"
+            ]
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteLimit": {
+            "type": "integer"
+          },
+          "inodeLimit": {
+            "type": "integer"
+          },
+          "cloneFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "planDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "SHA-256 of the normalized creation plan, excluding the transport serverId."
+          },
+          "busy": {
+            "type": "boolean",
+            "description": "Exclusively attached to a session or held as a clone source."
+          },
+          "attachedTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "VolumePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "volumes",
+          "nextAfter"
+        ],
+        "properties": {
+          "volumes": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Volume"
+            }
+          },
+          "nextAfter": {
             "type": [
               "string",
               "null"
@@ -991,6 +1439,26 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Session"
+            }
+          }
+        }
+      },
+      "Volume200": {
+        "description": "Current volume state",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Volume"
+            }
+          }
+        }
+      },
+      "Volume202": {
+        "description": "Durable operation accepted; poll the volume ID",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Volume"
             }
           }
         }

@@ -184,7 +184,12 @@ fn submit_run(socket: &Path, endpoint: &str, input: &Value) -> io::Result<i32> {
     result
 }
 
-pub fn open_session(socket: &Path, profile: &str, ttl: Option<u64>) -> io::Result<i32> {
+pub fn open_session(
+    socket: &Path,
+    profile: &str,
+    ttl: Option<u64>,
+    volume: Option<&str>,
+) -> io::Result<i32> {
     let info = request(socket, "GET", "/v1/info", None)?;
     let id = sandcrab_core::new_uuid()?;
     eprintln!("sessionId={id}");
@@ -192,9 +197,48 @@ pub fn open_session(socket: &Path, profile: &str, ttl: Option<u64>) -> io::Resul
         socket,
         "POST",
         "/v1/sessions",
-        Some(&json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl})),
+        Some(
+            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume}),
+        ),
     )?;
     wait_session(socket, &id, true)
+}
+
+pub fn create_volume(socket: &Path, plan: crate::storage::Plan) -> io::Result<i32> {
+    let info = request(socket, "GET", "/v1/info", None)?;
+    let id = plan.id.clone();
+    let mut input = serde_json::to_value(plan)?;
+    input["serverId"] = info["serverId"].clone();
+    eprintln!("volumeId={id}");
+    request(socket, "POST", "/v1/volumes", Some(&input))?;
+    wait_volume(socket, &id, true)
+}
+
+pub fn wait_volume(socket: &Path, id: &str, creating: bool) -> io::Result<i32> {
+    let deadline = Instant::now() + Duration::from_secs(340);
+    loop {
+        let state = request(socket, "GET", &format!("/v1/volumes/{id}"), None)?;
+        match state["state"].as_str() {
+            Some("creating" | "deleting") => (),
+            Some(status) => {
+                println!("{state}");
+                return Ok(
+                    if (creating && status == "ready") || (!creating && status == "deleted") {
+                        0
+                    } else {
+                        1
+                    },
+                );
+            }
+            None => return Err(invalid("Missing volume state")),
+        }
+        if Instant::now() >= deadline {
+            return Err(invalid(format!(
+                "Volume {id} observation timed out; inspect the existing ID"
+            )));
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 }
 
 pub fn wait_session(socket: &Path, id: &str, opening: bool) -> io::Result<i32> {

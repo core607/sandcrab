@@ -60,15 +60,15 @@ def grade(expected: dict, readback: tuple[int, dict], observations: list[dict], 
 @tool
 def native_api(endpoint: str, run_id: str):
     async def execute(method: str, path: str, body: str = '', wait_for_terminal: bool = False) -> str:
-        """Call the Sandcrab native API. Read GET /v1/info or /v1/openapi to discover it.
+        """Call the Sandcrab native API. Discover runs with GET /v1/info or /v1/openapi?capability=runs.
 
         Args:
             method: GET or POST.
-            path: /v1/info, /v1/openapi, /v1/runs, or a path under your assigned run ID.
+            path: /v1/info, /v1/openapi?capability=runs, /v1/openapi, /v1/runs, or a path under your assigned run ID.
             body: A JSON object for POST; empty for GET.
             wait_for_terminal: For GET of your run, poll for at most 15 seconds.
         """
-        allowed = ['/v1/info', '/v1/openapi', '/v1/runs', '/v1/runs/' + run_id,
+        allowed = ['/v1/info', '/v1/openapi', '/v1/openapi?capability=runs', '/v1/runs', '/v1/runs/' + run_id,
                    '/v1/runs/' + run_id + '/cancel', '/v1/runs/' + run_id + '/forget']
         if path not in allowed or method not in {'GET', 'POST'}:
             raise ToolError('Only the native API and this sample\'s run ID are available')

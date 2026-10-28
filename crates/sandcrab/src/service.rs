@@ -120,19 +120,33 @@ impl Service {
     }
 
     pub fn route(self: &Arc<Self>, method: &str, path: &str, body: &[u8]) -> (u16, Value) {
-        if method == "GET" && path == "/v1/openapi" {
-            return (
-                200,
-                serde_json::from_str(include_str!("../openapi.json")).expect("bundled OpenAPI"),
-            );
+        if method == "GET" && (path == "/v1/openapi" || path.starts_with("/v1/openapi?")) {
+            let capability = if path == "/v1/openapi" {
+                None
+            } else {
+                let Some(name) = path
+                    .strip_prefix("/v1/openapi?capability=")
+                    .filter(|s| ["runs", "sessions", "volumes"].contains(s))
+                else {
+                    return error(400, "INVALID_REQUEST");
+                };
+                Some(name)
+            };
+            return (200, crate::spec::document(capability));
         }
         if method == "GET" && path == "/v1/info" {
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"network":p.network})))
                 .collect::<serde_json::Map<_,_>>();
+            let mut capabilities = vec!["runs", "sessions"];
+            let storage=self.runtime.storage.as_ref().map(|s| {
+                capabilities.push("volumes");
+                json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
+                    "maxVolumes":s.config.max_volumes,"maxRecords":s.config.max_records,"available":s.available()})
+            });
             return (
                 200,
-                json!({"apiVersion":1,"serverId":self.id,"capabilities":["runs","sessions"],"profiles":profiles}),
+                json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage}),
             );
         }
         if method == "POST" && path == "/v1/runs" {
@@ -145,6 +159,12 @@ impl Service {
         }
         if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
             return self.session_route(method, path, body);
+        }
+        if path == "/v1/volumes"
+            || path.starts_with("/v1/volumes/")
+            || path.starts_with("/v1/volumes?")
+        {
+            return self.volume_route(method, path, body);
         }
         let Some(path) = path.strip_prefix("/v1/runs/") else {
             return error(404, "NOT_FOUND");
@@ -327,12 +347,19 @@ impl Service {
         loop {
             let registry = self.registry.lock().unwrap();
             if registry.runs.values().all(|r| r.state != "running")
+                && self.runtime.storage.as_ref().is_none_or(|s| s.finished())
                 && registry
                     .sessions
                     .values()
                     .all(|s| s.terminal() || s.state == "closing")
             {
-                if registry.active != 0 {
+                if registry.active != 0
+                    || self
+                        .runtime
+                        .storage
+                        .as_ref()
+                        .is_some_and(|s| !s.quiescent())
+                {
                     return Err(invalid("Containment unconfirmed; restart required"));
                 }
                 break;

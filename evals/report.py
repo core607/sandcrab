@@ -19,7 +19,7 @@ def summarize(log) -> dict:
             'limit': sample.limit.type if sample.limit else None,
             'apiCalls': len(observations),
             'refusedCalls': sum(o['status'] >= 400 for o in observations),
-            'helpReads': sum(o['path'] in {'/v1/info', '/v1/openapi'} for o in observations),
+            'helpReads': sum(o['path'] in {'/v1/info', '/v1/openapi', '/v1/openapi?capability=runs'} for o in observations),
             'toolCalls': sum(len(getattr(m, 'tool_calls', None) or []) for m in sample.messages),
             'failedToolCalls': sum(bool(getattr(m, 'error', None)) for m in sample.messages),
             'seconds': sample.total_time,

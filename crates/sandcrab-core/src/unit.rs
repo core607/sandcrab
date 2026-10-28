@@ -46,6 +46,30 @@ impl Profile {
         writable: &Path,
         runtime_max_millis: Option<u64>,
     ) -> Vec<String> {
+        self.command_with_args(
+            unit,
+            &[record, settings],
+            &[writable],
+            &[
+                self.launcher.to_string_lossy().into(),
+                record.to_string_lossy().into(),
+            ],
+            runtime_max_millis,
+            &[],
+        )
+    }
+
+    /// A bounded unit for a fixed trusted entry point. Bindings and argv are supplied by
+    /// the daemon, never by an unvalidated client. The unit stops with its supervisor.
+    pub fn command_with_args(
+        &self,
+        unit: &str,
+        read_only: &[&Path],
+        writable: &[&Path],
+        argv: &[String],
+        runtime_max_millis: Option<u64>,
+        extra_properties: &[String],
+    ) -> Vec<String> {
         let mut command: Vec<String> = vec![
             "systemd-run".into(),
             "--quiet".into(),
@@ -72,29 +96,41 @@ impl Profile {
                 self.temporary_bytes, self.temporary_inodes
             ),
             format!(
-                "BindReadOnlyPaths={} {} {} {}",
-                self.tools.display(),
-                self.launcher.display(),
-                record.display(),
-                settings.display()
+                "BindReadOnlyPaths={}",
+                [self.tools.as_path(), self.launcher.as_path()]
+                    .into_iter()
+                    .chain(read_only.iter().copied())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             ),
-            format!("BindPaths={}", writable.display()),
+            format!(
+                "BindPaths={}",
+                writable
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
             format!("BindsTo={}", self.supervisor_unit),
             format!("After={}", self.supervisor_unit),
         ];
-        for property in properties.into_iter().chain(
-            runtime_max_millis
-                .map(|millis| format!("RuntimeMaxSec={}.{:03}", millis / 1000, millis % 1000)),
-        ) {
+        for property in properties
+            .into_iter()
+            .chain(
+                runtime_max_millis
+                    .map(|millis| format!("RuntimeMaxSec={}.{:03}", millis / 1000, millis % 1000)),
+            )
+            .chain(extra_properties.iter().cloned())
+        {
             command.extend(["-p".into(), property]);
         }
         command.extend([
             "/usr/bin/env".into(),
             "-i".into(),
             "PATH=/usr/bin:/bin".into(),
-            self.launcher.to_string_lossy().into(),
-            record.to_string_lossy().into(),
         ]);
+        command.extend_from_slice(argv);
         command
     }
 }

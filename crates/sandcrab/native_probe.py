@@ -118,6 +118,8 @@ network = "none"
                     return
             except (OSError, ValueError, HTTPException):
                 pass
+            if call('systemctl', 'show', self.unit, '-p', 'ActiveState', '--value', check=False).stdout.strip() in ('failed', 'inactive'):
+                raise AssertionError('native service stopped before becoming ready')
             time.sleep(.1)
         raise AssertionError('native service did not become ready')
 
@@ -548,9 +550,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         mounts = [line.split()[4] for line in Path('/proc/self/mountinfo').read_text().splitlines()
                   if line.split()[4].startswith(str(self.root) + '/')]
         for mount in sorted(mounts, key=len, reverse=True):
-            assert Path(mount).parent == self.socket.parent / 'jobs'
-            uuid.UUID(Path(mount).name)
-            call('umount', mount)
+            self.unmount_fixture(Path(mount))
         assert not any(line.split()[4].startswith(str(self.root) + '/') for line in Path('/proc/self/mountinfo').read_text().splitlines())
         assert self.secret.read_text() == 'host-sentinel-is-not-mounted\n'
         call('systemctl', 'stop', self.slice, check=False)
@@ -560,6 +560,11 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         assert self.root.parent == Path('/var/lib') and self.root.name.startswith('sandcrab-native-') and not self.root.is_symlink()
         shutil.rmtree(self.root)
         self.receipt['cleanup'] = 'PASS'
+
+    def unmount_fixture(self, mount):
+        assert mount.parent == self.socket.parent / 'jobs'
+        uuid.UUID(mount.name)
+        call('umount', str(mount))
 
     def startup_cancellation(self, session=False):
         call('systemctl', 'stop', self.unit)

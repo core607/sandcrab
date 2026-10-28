@@ -13,6 +13,7 @@ use std::{
 pub struct Config {
     pub service: Service,
     pub profiles: BTreeMap<String, Profile>,
+    pub storage: Option<Storage>,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +29,17 @@ pub struct Service {
     pub max_sandboxes: usize,
     pub max_records: usize,
     pub max_output_bytes: usize,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Storage {
+    pub root: PathBuf,
+    pub pool_bytes: u64,
+    pub max_volume_bytes: u64,
+    pub max_volume_inodes: u64,
+    pub max_volumes: usize,
+    pub max_records: usize,
 }
 
 #[derive(Clone, Deserialize)]
@@ -99,6 +111,11 @@ impl Config {
                 {
                     return Err(invalid("Read mount resolves into runtime storage"));
                 }
+                if config.storage.as_ref().is_some_and(|storage| {
+                    resolved.starts_with(&storage.root) || storage.root.starts_with(&resolved)
+                }) {
+                    return Err(invalid("Read mount resolves into volume storage"));
+                }
                 let parent = if resolved.is_dir() {
                     resolved.as_path()
                 } else {
@@ -108,6 +125,9 @@ impl Config {
                 };
                 protected_directory(parent)?;
             }
+        }
+        if let Some(storage) = &config.storage {
+            crate::storage::verify_pool(storage)?;
         }
         Ok(config)
     }
@@ -153,12 +173,30 @@ impl Config {
                 "Use 1..64 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
             ));
         }
+        if let Some(storage) = &self.storage
+            && (!normal(&storage.root)
+                || storage.root.starts_with(&service.runtime_root)
+                || service.runtime_root.starts_with(&storage.root)
+                || !(1_048_576..=storage.pool_bytes).contains(&storage.max_volume_bytes)
+                || !storage.max_volume_bytes.is_multiple_of(1024)
+                || storage.pool_bytes > 1 << 50
+                || !(32..=1_000_000).contains(&storage.max_volume_inodes)
+                || !(1..=1024).contains(&storage.max_volumes)
+                || !(storage.max_volumes..=4096).contains(&storage.max_records))
+        {
+            return Err(invalid(
+                "Invalid storage root, pool, quota or record limits",
+            ));
+        }
         for (key, profile) in &self.profiles {
             if !name(key)
                 || !unit_name(&profile.exec_user)
                 || !normal(&profile.tools)
                 || profile.tools.starts_with(&service.runtime_root)
                 || service.runtime_root.starts_with(&profile.tools)
+                || self.storage.as_ref().is_some_and(|s| {
+                    profile.tools.starts_with(&s.root) || s.root.starts_with(&profile.tools)
+                })
                 || profile.network != "none"
             {
                 return Err(invalid(format!(
@@ -171,6 +209,10 @@ impl Config {
                     !normal(p)
                         || p.starts_with(&service.runtime_root)
                         || service.runtime_root.starts_with(p)
+                        || self
+                            .storage
+                            .as_ref()
+                            .is_some_and(|s| p.starts_with(&s.root) || s.root.starts_with(p))
                         || p.starts_with("/workspace")
                         || p.starts_with("/tmp")
                 })

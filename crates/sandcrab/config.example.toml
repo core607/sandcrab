@@ -10,6 +10,16 @@ max_sandboxes = 2
 max_records = 128
 max_output_bytes = 8388608
 
+# Optional: provision a separate bounded XFS mount at root/data with reflink,
+# enforced project quotas, nosuid and nodev. root/state stays on another filesystem.
+# [storage]
+# root = "/var/lib/sandcrab-demo/storage"
+# pool_bytes = 1073741824
+# max_volume_bytes = 67108864
+# max_volume_inodes = 4096
+# max_volumes = 8
+# max_records = 128
+
 [profiles.python]
 exec_user = "sandcrab-exec"
 tools = "/opt/sandcrab/tools"
