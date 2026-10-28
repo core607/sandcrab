@@ -1,0 +1,4 @@
+id: replay
+task: "Run the fixture using the python profile. Submit exactly the same request a second time to recover it, then confirm changing the command to ['false'] with that same ID is refused. Inspect the original outcome."
+fixture: {"command":["python3","-c","print('one outcome')"],"exercise":"replay"}
+expected: {"state":"succeeded","stdout":"one outcome\n","errors":["ID_CONFLICT"],"replay":true}

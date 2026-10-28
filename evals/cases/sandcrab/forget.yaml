@@ -1,0 +1,4 @@
+id: forget
+task: "Run the fixture using the python profile and read the terminal result. Then explicitly forget the result record."
+fixture: {"command":["python3","-c","print('read before forget')"],"exercise":"forget"}
+expected: {"state":"succeeded","stdout":"read before forget\n","forgotten":true}

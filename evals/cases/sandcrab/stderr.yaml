@@ -1,0 +1,4 @@
+id: stderr
+task: "Run this fixture and inspect its actual failure and stderr. Do not report a nonzero exit as a successful command."
+fixture: {"command":["python3","-c","import sys; print('deliberate failure', file=sys.stderr); sys.exit(7)"]}
+expected: {"state":"failed","stderr":"deliberate failure\n","exitCode":7}

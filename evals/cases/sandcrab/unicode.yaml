@@ -1,0 +1,4 @@
+id: unicode
+task: "Run the fixture using the python profile and verify that its Unicode output is returned intact."
+fixture: {"command":["python3","-c","print('猫咪与 café 🐾')"]}
+expected: {"state":"succeeded","stdout":"猫咪与 café 🐾\n","exitCode":0}

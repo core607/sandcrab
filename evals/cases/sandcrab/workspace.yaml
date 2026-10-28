@@ -1,0 +1,4 @@
+id: workspace
+task: "Run this command in a fresh sandbox using the python profile. It creates and reads a disposable workspace file."
+fixture: {"command":["python3","-c","from pathlib import Path; p=Path('message.txt'); p.write_text('sandbox file', encoding='utf-8'); print(p.read_text(encoding='utf-8'))"]}
+expected: {"state":"succeeded","stdout":"sandbox file\n","exitCode":0}

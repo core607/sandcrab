@@ -1,0 +1,4 @@
+id: arithmetic
+task: "Use the python profile to run the fixture command. Inspect its completed result."
+fixture: {"command":["python3","-c","print(sum([7, -3, 11, 2]))"]}
+expected: {"state":"succeeded","stdout":"17\n","exitCode":0}

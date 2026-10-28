@@ -1,0 +1,4 @@
+id: output-limit
+task: "Run the fixture with a combined output limit of 64 bytes. Inspect the resulting state and truncation flag."
+fixture: {"command":["python3","-c","print('x'*10000)"],"outputLimitBytes":64}
+expected: {"state":"output_limit","truncated":true}

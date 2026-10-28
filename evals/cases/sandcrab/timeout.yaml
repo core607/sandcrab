@@ -1,0 +1,4 @@
+id: timeout
+task: "Run the fixture with a 200 ms deadline using the python profile and confirm that it times out."
+fixture: {"command":["python3","-c","import time; time.sleep(20)"],"timeoutMillis":200}
+expected: {"state":"timed_out"}
