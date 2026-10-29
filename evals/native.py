@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Root controller creates a disposable native service; Inspect runs as its ordinary client."""
 import argparse
-import importlib.util
 import os
 from pathlib import Path
 import pwd
 import shutil
 import signal
 import subprocess
+import sys
 
 
 def main():
@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--python', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
+    parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
@@ -49,10 +50,11 @@ def main():
                     preflight.wait(timeout=10)
     client = pwd.getpwnam('daemon')
     os.chown(output, client.pw_uid, client.pw_gid)
-    spec = importlib.util.spec_from_file_location('native_probe', source / 'executor-service/rust/sandcrab/native_probe.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    fixture = module.Probe(args.binary.resolve(), args.tools.resolve(), output / 'fixture.json')
+    sys.path.insert(0, str(source / 'executor-service/rust/sandcrab'))
+    import native_probe as module
+    from volume_probe import VolumeProbe
+    fixture_type = module.Probe if args.suite == 'native' else VolumeProbe
+    fixture = fixture_type(args.binary.resolve(), args.tools.resolve(), output / 'fixture.json')
     try:
         fixture.setup()
         fixture.transport()
@@ -63,7 +65,15 @@ def main():
         fixture.example(source / 'examples/sandcrab-build-test.sh')
         fixture.session_cleanup_failure()
         fixture.startup_cancellation(session=True)
-        fixture.receipt['scope'] = 'Disposable native service for Inspect ' + args.mode + ' evaluation; no production endpoint'
+        if args.suite != 'native':
+            # Native lifecycle preflight keeps its short TTL assertions. Model work
+            # gets enough lifetime for generation, independent grading and cleanup.
+            fixture.config.write_text(fixture.config.read_text().replace('session_ttl_millis = 60000', 'session_ttl_millis = 600000', 1))
+            module.call('systemctl', 'restart', fixture.unit)
+            fixture.wait_ready()
+            assert fixture.info['profiles']['python']['sessionTtlMillis'] == 600000
+            fixture.receipt['evaluationSessionTtlMillis'] = 600000
+        fixture.receipt['scope'] = 'Disposable native service for Inspect ' + args.mode + ' ' + args.suite + ' evaluation; no production endpoint'
         revision = subprocess.run(['git', '-c', f'safe.directory={source}', 'rev-parse', 'HEAD'],
                                   cwd=source, check=True, capture_output=True, text=True).stdout.strip()
         client_home = fixture.root / 'client'
@@ -88,7 +98,7 @@ def main():
         # Preserve the venv path: resolving its python symlink selects the base interpreter.
         child = subprocess.Popen([str(args.python.absolute()), str(staged / 'run.py'),
                                   '--endpoint', str(fixture.socket), '--output', str(output), '--revision', revision,
-                                  '--mode', args.mode, '--epochs', str(args.epochs), '--model', args.model, '--budget-usd', args.budget_usd],
+                                  '--mode', args.mode, '--suite', args.suite, '--epochs', str(args.epochs), '--model', args.model, '--budget-usd', args.budget_usd],
                                  cwd=staged, env=child_env, start_new_session=True,
                                  user=client.pw_uid, group=client.pw_gid, extra_groups=[client.pw_gid])
         try:

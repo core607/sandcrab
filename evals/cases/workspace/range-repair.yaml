@@ -1,0 +1,78 @@
+id: workspace-range-repair
+task: >-
+  Repair merge_ranges.py and run its public tests. It must expose merge_ranges(items)
+  and also read a JSON list of integer endpoint pairs from stdin, printing the merged
+  list as JSON. Endpoints are inclusive. Normalize reversed pairs, sort ranges by
+  start, and merge both overlapping and adjacent ranges. Empty input returns an empty
+  list. Do not modify test_public.py. Export the repaired workspace.
+fixture:
+  files:
+    merge_ranges.py: |
+      import json
+      import sys
+
+      def merge_ranges(items):
+          result = []
+          for start, end in sorted(items):
+              if result and start < result[-1][1]:
+                  result[-1][1] = end
+              else:
+                  result.append([start, end])
+          return result
+
+      if __name__ == '__main__':
+          print(json.dumps(merge_ranges(json.load(sys.stdin))))
+    test_public.py: |
+      import unittest
+      from merge_ranges import merge_ranges
+
+      class Ranges(unittest.TestCase):
+          def test_adjacent(self):
+              self.assertEqual([[1, 5]], merge_ranges([[1, 2], [3, 5]]))
+          def test_contained(self):
+              self.assertEqual([[1, 9]], merge_ranges([[1, 9], [2, 3]]))
+          def test_empty(self):
+              self.assertEqual([], merge_ranges([]))
+
+      if __name__ == '__main__':
+          unittest.main()
+reference:
+  files:
+    merge_ranges.py: |
+      import json
+      import sys
+
+      def merge_ranges(items):
+          result = []
+          for start, end in sorted((min(a, b), max(a, b)) for a, b in items):
+              if result and start <= result[-1][1] + 1:
+                  result[-1][1] = max(end, result[-1][1])
+              else:
+                  result.append([start, end])
+          return result
+
+      if __name__ == '__main__':
+          print(json.dumps(merge_ranges(json.load(sys.stdin))))
+  check: [python3 -m unittest -v test_public]
+expected:
+  artifacts: [merge_ranges.py]
+  preserve: [test_public.py]
+  steps:
+    - argv: [python3, check_function.py]
+      files:
+        check_function.py: |
+          import json
+          import sys
+          from merge_ranges import merge_ranges
+          print(json.dumps(merge_ranges(json.load(sys.stdin))))
+      stdin: '[[9,5],[1,2],[4,3],[20,20]]'
+      stdoutJson: [[1,9],[20,20]]
+    - argv: [python3, merge_ranges.py]
+      stdin: '[[-5,-3],[-2,0],[1,1],[7,4],[6,6]]'
+      stdoutJson: [[-5,1],[4,7]]
+    - argv: [python3, merge_ranges.py]
+      stdin: '[[1,100],[2,3],[1,100],[100,101]]'
+      stdoutJson: [[1,101]]
+    - argv: [python3, merge_ranges.py]
+      stdin: '[]'
+      stdoutJson: []

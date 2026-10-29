@@ -1,0 +1,62 @@
+id: workspace-multi-file-build
+task: >-
+  Build a small standard-library Python project. Put count_words(text) in
+  project/words.py, and put the stdin-to-JSON CLI in project/main.py, importing that
+  function. Split on Unicode whitespace, strip only these ASCII punctuation characters
+  from both ends of each token: . , ; : ! ? double-quote single-quote ( ) [ ] { }.
+  Casefold the remaining tokens, discard empty tokens, and print a JSON list sorted by
+  word, with word and count fields. Keep internal punctuation such as a hyphen.
+  Add project/README.md showing the exact invocation python3 project/main.py.
+  Run the project on sample.txt, preserve that input, and export the finished workspace.
+fixture:
+  files:
+    sample.txt: |
+      Hello, hello world!
+reference:
+  files:
+    project/words.py: |
+      from collections import Counter
+
+      def count_words(text):
+          counts = Counter()
+          for token in text.split():
+              token = token.strip('.,;:!?"\'()[]{}').casefold()
+              if token:
+                  counts[token] += 1
+          return [{'word': word, 'count': counts[word]} for word in sorted(counts)]
+    project/main.py: |
+      import json
+      import sys
+      from words import count_words
+
+      print(json.dumps(count_words(sys.stdin.read())))
+    project/README.md: |
+      # Word counts
+
+      Run `python3 project/main.py < sample.txt` from the workspace root.
+      Python's standard library is sufficient.
+  check: [python3 project/main.py < sample.txt]
+expected:
+  artifacts: [project/words.py, project/main.py, project/README.md]
+  preserve: [sample.txt]
+  textContains:
+    project/README.md: [python3 project/main.py]
+  steps:
+    - argv: [python3, check_function.py]
+      files:
+        check_function.py: |
+          import json
+          import sys
+          from project.words import count_words
+          print(json.dumps(count_words(sys.stdin.read())))
+      stdin: 'Hello, HELLO world! (world) x-y.'
+      stdoutJson: [{word: hello, count: 2}, {word: world, count: 2}, {word: x-y, count: 1}]
+    - argv: [python3, project/main.py]
+      stdin: 'Straße STRASSE 猫 猫...'
+      stdoutJson: [{word: strasse, count: 2}, {word: 猫, count: 2}]
+    - argv: [python3, project/main.py]
+      stdin: '... !!! []'
+      stdoutJson: []
+    - argv: [python3, project/main.py]
+      stdin: "A a\tB\nb"
+      stdoutJson: [{word: a, count: 2}, {word: b, count: 2}]

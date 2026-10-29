@@ -7,6 +7,9 @@ on:
       evidence_mode:
         type: string
         default: scripted
+      suite:
+        type: string
+        default: all
       model:
         type: string
         default: deepseek-flash
@@ -58,6 +61,7 @@ jobs:
       - name: Run Inspect against the disposable native service
         env:
           EVIDENCE_MODE: ${{ inputs.evidence_mode || 'scripted' }}
+          EVAL_SUITE: ${{ inputs.suite || 'all' }}
           EVAL_MODEL: ${{ inputs.model || 'deepseek-flash' }}
           EVAL_REPEATS: ${{ inputs.repeats || 3 }}
           EVAL_BUDGET: ${{ inputs.budget_usd || '1.00' }}
@@ -65,8 +69,14 @@ jobs:
         run: |
           sudo --preserve-env=DEEPSEEK_API_KEY python3 evals/native.py --binary build/executor-service/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/python/bin/python \
-            --output /var/lib/sandcrab-evals/results --mode "$EVIDENCE_MODE" --model "$EVAL_MODEL" \
+            --output /var/lib/sandcrab-evals/results --mode "$EVIDENCE_MODE" --suite "$EVAL_SUITE" --model "$EVAL_MODEL" \
             --epochs "$EVAL_REPEATS" --budget-usd "$EVAL_BUDGET"
+      - name: Hand retained reports to the artifact collector
+        if: always()
+        run: |
+          if [ -d /var/lib/sandcrab-evals/results ]; then
+            sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-evals/results
+          fi
       - name: Publish the readable summary
         if: always()
         run: |

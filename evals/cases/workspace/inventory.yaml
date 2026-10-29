@@ -1,0 +1,85 @@
+id: workspace-inventory
+task: >-
+  Implement inventory.py, a standard-library CLI that reads one JSON command from stdin
+  and persists stock quantities in inventory.json between separate invocations. Missing
+  state means an empty inventory. Commands are list, add and remove (in the op field).
+  Add/remove require a nonempty string sku and an integer qty from 1 through 1000000; booleans are not
+  quantities. Preserve SKU case and Unicode. Successful commands print {"items": [[sku,
+  quantity], ...]} sorted by SKU. Remove deletes a SKU when its quantity reaches zero.
+  Insufficient stock prints {"error":"INSUFFICIENT_STOCK"}; any invalid command prints
+  {"error":"INVALID_INPUT"}. Errors must leave the state file byte-for-byte unchanged,
+  including leaving it absent if it did not exist. List must not create the state file.
+  The state file itself is a JSON object mapping SKUs to integer quantities. Export
+  your source after checking more than one invocation.
+fixture:
+  files: {}
+reference:
+  files:
+    inventory.py: |
+      import json
+      from pathlib import Path
+      import sys
+
+      path = Path('inventory.json')
+      inventory = json.loads(path.read_text()) if path.exists() else {}
+      command = json.load(sys.stdin)
+      error = None
+      if not isinstance(command, dict) or not isinstance(command.get('op'), str) or command['op'] not in {'list', 'add', 'remove'}:
+          error = 'INVALID_INPUT'
+      elif command['op'] != 'list':
+          sku, qty = command.get('sku'), command.get('qty')
+          if not isinstance(sku, str) or not sku or type(qty) is not int or not 1 <= qty <= 1000000:
+              error = 'INVALID_INPUT'
+          elif command['op'] == 'remove' and inventory.get(sku, 0) < qty:
+              error = 'INSUFFICIENT_STOCK'
+          else:
+              inventory[sku] = inventory.get(sku, 0) + (qty if command['op'] == 'add' else -qty)
+              if not inventory[sku]:
+                  del inventory[sku]
+              temporary = path.with_suffix('.tmp')
+              temporary.write_text(json.dumps(inventory, sort_keys=True))
+              temporary.replace(path)
+      print(json.dumps({'error': error} if error else {'items': [[k, inventory[k]] for k in sorted(inventory)]}))
+  check:
+    - "printf '%s' '{\"op\":\"add\",\"sku\":\"example\",\"qty\":2}' | python3 inventory.py"
+    - "printf '%s' '{\"op\":\"list\"}' | python3 inventory.py"
+expected:
+  artifacts: [inventory.py]
+  preserve: []
+  steps:
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"list"}'
+      stdoutJson: {items: []}
+      absentFiles: [inventory.json]
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"add","sku":"A","qty":2}'
+      stdoutJson: {items: [[A, 2]]}
+      filesJson:
+        inventory.json: {A: 2}
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"add","sku":"a","qty":1}'
+      stdoutJson: {items: [[A, 2], [a, 1]]}
+      filesJson:
+        inventory.json: {A: 2, a: 1}
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"remove","sku":"A","qty":3}'
+      stdoutJson: {error: INSUFFICIENT_STOCK}
+      unchangedFiles: [inventory.json]
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"add","sku":"A","qty":true}'
+      stdoutJson: {error: INVALID_INPUT}
+      unchangedFiles: [inventory.json]
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"remove","sku":"A","qty":2}'
+      stdoutJson: {items: [[a, 1]]}
+      filesJson:
+        inventory.json: {a: 1}
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"replace","sku":"a","qty":4}'
+      stdoutJson: {error: INVALID_INPUT}
+      unchangedFiles: [inventory.json]
+    - argv: [python3, inventory.py]
+      stdin: '{"op":"list"}'
+      stdoutJson: {items: [[a, 1]]}
+      filesJson:
+        inventory.json: {a: 1}

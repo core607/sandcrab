@@ -1,0 +1,90 @@
+id: workspace-binary-index
+task: Implement index_files.py using the Python standard library. It takes a directory argument, recursively
+  indexes regular files, and ignores symlinks (including symlinks to regular files). Read file bytes without
+  text decoding. Print one JSON list sorted by the exact case-sensitive relative POSIX path; each object
+  has path, bytes (byte count), and sha256 (lowercase hexadecimal). Preserve Unicode names and distinct
+  filename case. Test against data, keep the supplied files unchanged, and export your workspace.
+fixture:
+  files:
+    data/example.bin:
+      base64: AP9leGFtcGxlCg==
+    data/notes.txt: |
+      示例
+reference:
+  files:
+    index_files.py: |
+      import hashlib
+      import json
+      from pathlib import Path
+      import sys
+
+      root = Path(sys.argv[1])
+      rows = []
+      for item in root.rglob('*'):
+          if item.is_symlink() or not item.is_file():
+              continue
+          data = item.read_bytes()
+          rows.append({'path': item.relative_to(root).as_posix(), 'bytes': len(data),
+                       'sha256': hashlib.sha256(data).hexdigest()})
+      print(json.dumps(sorted(rows, key=lambda row: row['path'])))
+  check:
+  - python3 index_files.py data
+expected:
+  artifacts:
+  - index_files.py
+  preserve:
+  - data/example.bin
+  - data/notes.txt
+  steps:
+  - argv:
+    - python3
+    - index_files.py
+    - data
+    stdin: ''
+    reset:
+    - data
+    files:
+      data/README.md:
+        base64: VVBQRVIK
+      data/Readme.md:
+        base64: bG93ZXIK
+      data/sub/猫.txt:
+        base64: 54yrCg==
+    stdoutJson:
+    - path: README.md
+      bytes: 6
+      sha256: 6b8e8d36d042ba2f6e1e8841725ee5caed3b5cf1bf6f1428e0ffb598b992a116
+    - path: Readme.md
+      bytes: 6
+      sha256: b908e4daaf9d57fe9cb551a689a35c9a9e0fac85fdf11faaa0a1ba0e5efc06fd
+    - path: sub/猫.txt
+      bytes: 4
+      sha256: 0996d9bfc4a8bdb1f6b7e744b3ba3acaa9e18882ae08096a41ebe9c7356f325a
+  - argv:
+    - python3
+    - index_files.py
+    - data
+    stdin: ''
+    reset:
+    - data
+    files:
+      data/empty.bin:
+        base64: ''
+      data/nul.bin:
+        base64: AP9BCg==
+      data/name with spaces.txt:
+        base64: dHdvCg==
+      outside.txt: |
+        outside
+    links:
+      data/ignored-link: ../outside.txt
+    stdoutJson:
+    - path: empty.bin
+      bytes: 0
+      sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    - path: name with spaces.txt
+      bytes: 4
+      sha256: 27dd8ed44a83ff94d557f9fd0412ed5a8cbca69ea04922d88c01184a07300a5a
+    - path: nul.bin
+      bytes: 4
+      sha256: 46a1fda4b60882b250ae85357e3b3e51fa7fe529c67f246b36eb16a702c7dfd6

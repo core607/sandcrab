@@ -3,8 +3,13 @@ name: Agent evaluations
 on:
   workflow_dispatch:
     inputs:
+      suite:
+        description: Native API cases, programming/file tasks, or both
+        type: choice
+        options: [workspace, all, native]
+        default: workspace
       model:
-        description: Model for the independent Sandcrab native API tasks
+        description: Model for the independent Sandcrab tasks
         type: choice
         options: [deepseek-flash]
         default: deepseek-flash
@@ -37,6 +42,7 @@ jobs:
     uses: ./.github/workflows/evals.yml
     with:
       evidence_mode: model
+      suite: ${{ inputs.suite }}
       model: ${{ inputs.model }}
       repeats: ${{ fromJSON(inputs.repeats) }}
       budget_usd: ${{ inputs.budget_usd }}

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -122,9 +123,9 @@ max_records = 12
         assert http(self.socket, 'POST', '/v1/volumes/' + volume['id'] + '/forget', {})[1]['error']['code'] == 'VOLUME_ACTIVE'
         self.done('volume-authority-quotas-request-identity-and-explicit-forget')
 
-        self.write(volume, "python3 - <<'PY'\nfrom pathlib import Path\nimport os\np=Path('source.bin')\np.write_bytes(b'A'*(2*1024*1024))\nos.link(p,'same.bin')\nPath('unicode.txt').write_text('hello 世界')\nPath('link').symlink_to('/etc/host-sentinel')\nPY")
+        self.write(volume, "python3 - <<'PY'\nfrom pathlib import Path\nimport os\np=Path('0x-source.bin')\np.write_bytes(b'A'*(2*1024*1024))\nos.link(p,'same.bin')\nPath('unicode.txt').write_text('hello 世界')\nPath('link').symlink_to('/etc/host-sentinel')\nPY")
         original = self.data / 'volumes' / volume['id'] / 'data'
-        assert (original / 'source.bin').read_bytes() == b'A' * (2 * 1024 * 1024)
+        assert (original / '0x-source.bin').read_bytes() == b'A' * (2 * 1024 * 1024)
         session = self.session_open(volumeId=volume['id'])
         assert http(self.socket, 'GET', '/v1/volumes/' + volume['id'])[1]['attachedTo'] == session['id']
         denied = {**session, 'id': str(uuid.uuid4())}
@@ -145,23 +146,25 @@ max_records = 12
         clone, result = self.volume(cloneFrom=volume['id'])
         assert result['state'] == 'ready', result
         copied = self.data / 'volumes' / clone['id'] / 'data'
-        assert (copied / 'source.bin').read_bytes() == (original / 'source.bin').read_bytes()
+        assert (copied / '0x-source.bin').read_bytes() == (original / '0x-source.bin').read_bytes()
         assert (copied / 'unicode.txt').read_text() == 'hello 世界'
         assert os.readlink(copied / 'link') == '/etc/host-sentinel'
-        assert (copied / 'source.bin').stat().st_ino == (copied / 'same.bin').stat().st_ino
-        assert (copied / 'source.bin').stat().st_ino != (original / 'source.bin').stat().st_ino
-        before = call('xfs_io', '-r', '-c', 'fiemap -v', str(original / 'source.bin')).stdout
-        flags = [int(line.split()[-1], 16) for line in before.splitlines() if '0x' in line]
+        assert (copied / '0x-source.bin').stat().st_ino == (copied / 'same.bin').stat().st_ino
+        assert (copied / '0x-source.bin').stat().st_ino != (original / '0x-source.bin').stat().st_ino
+        before = call('xfs_io', '-r', '-c', 'fiemap -v', str(original / '0x-source.bin')).stdout
+        # The header's filename deliberately contains 0x; only the final flag field is hexadecimal.
+        flags = [int(fields[-1], 16) for line in before.splitlines()
+                 if (fields := line.split()) and re.fullmatch(r'0x[0-9a-fA-F]+', fields[-1])]
         assert flags and any(flag & 0x2000 for flag in flags), before  # FIEMAP_EXTENT_SHARED.
-        self.write(clone, "python3 -c \"from pathlib import Path; f=Path('source.bin').open('r+b'); f.write(b'B')\"")
-        assert (copied / 'source.bin').read_bytes()[0:1] == b'B'
-        assert (original / 'source.bin').read_bytes()[0:1] == b'A'
+        self.write(clone, "python3 -c \"from pathlib import Path; f=Path('0x-source.bin').open('r+b'); f.write(b'B')\"")
+        assert (copied / '0x-source.bin').read_bytes()[0:1] == b'B'
+        assert (original / '0x-source.bin').read_bytes()[0:1] == b'A'
         self.done('volume-reflink-preserves-links-and-independent-copy-on-write')
 
         small, result = self.volume(cloneFrom=volume['id'], byteLimit=1048576)
         assert result['state'] == 'failed' and result['code'] == 'CLONE_FAILED', result
         assert not (self.data / 'volumes' / small['id']).exists()
-        assert (original / 'source.bin').read_bytes()[0:1] == b'A'
+        assert (original / '0x-source.bin').read_bytes()[0:1] == b'A'
         assert not http(self.socket, 'GET', '/v1/volumes/' + volume['id'])[1]['busy']
         self.volume_forget(small)
         self.done('volume-clone-quota-failure-removes-only-the-unpublished-target')
@@ -176,7 +179,7 @@ max_records = 12
         assert self.info['serverId'] != old_epoch
         assert http(self.socket, 'POST', '/v1/volumes', volume)[0] == 200
         assert http(self.socket, 'GET', '/v1/sessions/' + session['id'])[0] == 404
-        self.write(volume, 'test "$(head -c 1 source.bin)" = A; printf survived > restart.txt')
+        self.write(volume, 'test "$(head -c 1 0x-source.bin)" = A; printf survived > restart.txt')
         assert (original / 'restart.txt').read_text() == 'survived'
         self.done('volume-supervisor-loss-retains-published-data-and-durable-replay')
         self.fault_tests(volume)
@@ -201,7 +204,7 @@ max_records = 12
         denied = self.session_open(wait=False, volumeId=volume['id'])
         assert self.session_wait(denied, terminal=True)['code'] == 'VOLUME_IN_USE'
         self.session_forget(denied)
-        assert (original / 'source.bin').read_bytes()[0:1] == b'A'
+        assert (original / '0x-source.bin').read_bytes()[0:1] == b'A'
         self.session_close(session)
         self.session_forget(session)
         self.volume_forget(clone)
@@ -218,6 +221,7 @@ max_records = 12
 import errno
 import fcntl
 import os
+import re
 import struct
 from pathlib import Path
 fd=os.open('.',os.O_RDONLY|os.O_DIRECTORY)
@@ -409,7 +413,7 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
         self.session_forget(waiting)
         failure.unlink()
         self.restart()
-        self.write(source, 'test "$(head -c 1 source.bin)" = A')
+        self.write(source, 'test "$(head -c 1 0x-source.bin)" = A')
         self.done('volume-attachment-survives-unconfirmed-session-cleanup')
 
         # The store's owner binds the cleanup namespace; changing it cannot expose
@@ -432,7 +436,7 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
             self.unit = original_unit
             self.config.write_text(original)
         self.restart()
-        assert (self.data / 'volumes' / source['id'] / 'data/source.bin').read_bytes()[0:1] == b'A'
+        assert (self.data / 'volumes' / source['id'] / 'data/0x-source.bin').read_bytes()[0:1] == b'A'
         self.done('volume-namespace-change-preserves-data-and-refuses-startup')
 
     def unmount_fixture(self, mount):

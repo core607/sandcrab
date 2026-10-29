@@ -1,0 +1,54 @@
+id: workspace-csv-report
+task: >-
+  Implement report.py using Python's standard library. Read CSV from stdin with
+  department and amount headers. Strip whitespace around department names and skip
+  rows whose department is empty. Other amounts are valid decimal numbers with at
+  most two decimal places. Aggregate row count and exact monetary total per department,
+  sort departments case-sensitively, and print one JSON list of objects with department,
+  count, and total (a string with exactly two decimal places). Do not use binary
+  floating-point arithmetic for money. Check the supplied example and export your work.
+fixture:
+  files:
+    example.csv: |
+      department,amount
+      Operations,1.10
+      Operations,2.20
+      Sales,4.50
+reference:
+  files:
+    report.py: |
+      import csv
+      from decimal import Decimal
+      import json
+      import sys
+
+      totals = {}
+      for row in csv.DictReader(sys.stdin):
+          name = row['department'].strip()
+          if not name:
+              continue
+          count, amount = totals.get(name, (0, Decimal('0')))
+          totals[name] = (count + 1, amount + Decimal(row['amount']))
+      print(json.dumps([{'department': name, 'count': totals[name][0],
+                         'total': format(totals[name][1], '.2f')}
+                        for name in sorted(totals)]))
+  check:
+    - python3 report.py < example.csv
+expected:
+  artifacts: [report.py]
+  preserve: [example.csv]
+  steps:
+    - argv: [python3, report.py]
+      stdin: "department,amount\nOperations,1.10\n Operations ,-0.30\nOperations,2.20\n"
+      stdoutJson: [{department: Operations, count: 3, total: '3.00'}]
+    - argv: [python3, report.py]
+      stdin: "department,amount\n研发,0.05\n研发,0.10\n,999.00\n"
+      stdoutJson: [{department: 研发, count: 2, total: '0.15'}]
+    - argv: [python3, report.py]
+      stdin: "department,amount\n\"Sales, EU\",9.99\nops,-2.50\n\"Sales, EU\",0.01\n"
+      stdoutJson:
+        - {department: 'Sales, EU', count: 2, total: '10.00'}
+        - {department: ops, count: 1, total: '-2.50'}
+    - argv: [python3, report.py]
+      stdin: "department,amount\n"
+      stdoutJson: []

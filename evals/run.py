@@ -19,12 +19,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
+    parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
     baseline = args.mode == 'scripted'
-    task = sandcrab_native(args.endpoint, baseline=baseline)
+    task = sandcrab_native(args.endpoint, baseline=baseline, suite=args.suite, artifacts=str(args.output / 'artifacts'))
     task.metadata['revision'] = args.revision
     ledger = None
     costs = None

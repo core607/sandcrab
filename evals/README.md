@@ -6,26 +6,28 @@ transcript viewer. The application has no dependency on it. Install the pinned
 
 ## Current entrance
 
-The **Evaluation preflight** workflow runs ten independent Sandcrab cases three
-times each. It is available from GitHub Actions' Run workflow button and is also
+The **Evaluation preflight** workflow runs ten native API cases and six programming
+tasks three times each. It is available from GitHub Actions' Run workflow button and is also
 required by the code-change CI matrix. It builds the requested checkout, starts a
 disposable native service and runs Inspect as an ordinary client. No production
 endpoint, product account, model key or model API is used. The root controller
 owns only its fixture's units, slice and temporary directory; cleanup verifies
 containment before deleting them.
-Native HTTP framing and connection reuse, session lifecycle, file transfers, volume durability and quotas, startup cancellation, cleanup-failure and CLI recovery probes must pass before Inspect runs. The file and volume probes each own a separate 512 MiB XFS image. These deterministic checks do not measure model-directed session, file or volume use.
+Native HTTP framing and connection reuse, session lifecycle, file transfers, volume durability and quotas, startup cancellation, cleanup-failure and CLI recovery probes must pass before Inspect runs. The file and volume probes and the programming fixture each own a separate 512 MiB XFS image. These deterministic probes do not measure model usability.
 
 The workflow summary lists every case and all attempts. Its artifact contains
 the machine-readable summary, complete Inspect log, static transcript viewer and
-fixture cleanup receipt. To browse the downloaded transcript, run
+fixture cleanup receipt. Programming attempts also retain their exported tar files,
+including failed submissions. To browse the downloaded transcript, run
 `python -m http.server --directory viewer` from the artifact directory and open
 the local URL. Summary links are relative to the downloaded artifact; GitHub's
 job summary does not host the viewer.
 
 These scripted results establish that the harness can drive and score the API.
-The **Agent evaluations** workflow runs the same cases with a plain tool-calling
-DeepSeek Flash agent. Start it on `main`, choose the repeat count and batch budget,
-then read the workflow summary. Incorrect task results are measurements; missing
+The **Agent evaluations** workflow runs a selected suite with a plain tool-calling
+DeepSeek Flash agent. Start it on `main`, choose `workspace` (the default), `native`
+or `all`, the repeat count and batch budget, then read the workflow summary.
+Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
 
@@ -37,7 +39,7 @@ inspect its ledger and start a new run explicitly. Non-main refs, other provider
 automatic baseline comparison, scheduled runs, Poketto MCP tasks and creator QA remain under the
 [evaluation proposal](../notes/proposed/2026-10-28-agent-evaluation-entrance.md).
 
-## Cases and scoring
+## Native API cases
 
 Each file in [cases/sandcrab](cases/sandcrab/) is YAML with four fields:
 
@@ -66,6 +68,51 @@ Missing usage prices are unknown, not zero. Scripted runs have zero model calls.
 The corpus hash, source revision, model, evidence kind, attempts, usage, duration,
 failures and limit exits remain in the result. A cleanup failure fails preflight.
 
+## Programming tasks
+
+[cases/workspace](cases/workspace/) covers CSV aggregation, interval and log-parser
+repairs, binary file indexing, a multi-file program and a persistent inventory CLI.
+The agent receives the task, initial files and required artifact paths. It writes
+and tests Python using an ordinary consumer client with five tools: shell, text
+upload, session restart, receipt inspection and tar export. The client owns one
+volume and its session identities; it requires no Poketto account, repository or
+content semantics. These results measure this client and corpus, not an agent's
+ability to discover the raw HTTP API or general programming ability.
+
+Each case has `id`, `task`, `fixture.files`, `reference` and `expected`. File maps
+hold UTF-8 strings or a single `base64` field for binary bytes. `reference.files`
+and `reference.check` drive the scripted client through the same tools; reference
+code and hidden checks never enter model messages. Expected checks are:
+
+| Field | Meaning |
+|---|---|
+| `artifacts` | Required regular source files; must match the reference file paths |
+| `preserve` | Supplied inputs or public tests that must remain byte-identical |
+| `textContains` | Required literal snippets in a submitted text file |
+| `steps` | One to eight ordered checks, each invoking submitted Python or a supplied check driver with `argv`, `stdin` and exact `stdoutJson` |
+| Step `files`, `links`, `reset` | New inputs, opaque symlink targets and paths to remove inside the grading sandbox; cannot replace submitted source |
+| Step `filesJson`, `absentFiles`, `unchangedFiles` | Independent stored-JSON, absence or byte-preservation checks |
+
+The last successful export is the submission. The client verifies response length
+and SHA-256 before sealing it. The host reads bounded regular files from the tar
+without extracting or executing them. After closing the producing session, the
+grader copies only the required sources into a fresh sandbox, provides hidden
+inputs and compares stdout and file readback on the host. A final-answer claim,
+changed public test or matching stdout with incorrect stored data cannot pass.
+Every hidden check uses real Sandcrab execution; there is no model judge.
+
+A task has an 8 MiB volume, at most 20 shell commands, 16 text uploads, three
+session restarts and four exports. Commands have ten-second and 4096-byte output
+limits; text files are at most 64 KiB and exports at most 2 MiB. A restart retains
+files and resets shell state. An uncertain upload is queried by its original ID
+without replay. Cleanup joins outstanding client work before releasing resources;
+an unresolved identity fails cleanup and stops later programming samples.
+
+Reports separate agent tool traffic from setup, grading and cleanup API calls.
+Transport failures and output-size refusals have separate counts. Evaluator and
+sandbox Python versions, pinned client packages and source/corpus revisions are
+recorded. Legacy native-case harness traffic is labelled uncounted.
+
 ## Paid-run limits
 
 [pricing.yaml](pricing.yaml) owns the verified provider context ceiling and peak
@@ -80,7 +127,8 @@ Model tasks reject an unbudgeted provider before generation.
 
 The default batch limit is USD 1 and the maximum is USD 5. A batch must cover one
 maximum request reservation calculated from the catalog. A 64 KiB
-request limit, bounded output, twelve turns per sample and a thirty-minute
+request limit, bounded output, twelve turns for the native suite or twenty for
+workspace/all, 32,000 tokens and 180 seconds per sample, and a thirty-minute
 controller deadline also bound the work. Model calls use text and client-side
 native tools only; no provider search, fetch or other separately billed tools are
 enabled. Unknown costs stay labelled unknown and keep their reserved upper bound.
@@ -116,8 +164,12 @@ The output directory must be new. Its ancestors and the virtual environment must
 be readable by the `daemon` client account; source files are copied into the
 root-owned fixture. Keep every attempt in a separate directory. The harness never
 falls back to an unrestricted host subprocess for a sandbox command.
+Export directories belong to `daemon` and are private. After a local run, use a
+privileged copy to collect them. The workflow transfers report ownership to its
+runner after the controller exits, including on failure.
 
-For a paid local run, supply `DEEPSEEK_API_KEY` through the environment, preserve
-only that variable through sudo, and add `--mode model --epochs 3 --budget-usd 1.00`.
+Use `--suite native`, `workspace` or `all` (default) to select cases. For a paid
+local run, supply `DEEPSEEK_API_KEY` through the environment, preserve only that
+variable through sudo, and add `--mode model --suite workspace --epochs 3 --budget-usd 1.00`.
 Keep the key out of arguments, cases and artifacts. Inspect the complete ledger
 after any interrupted run before authorizing another batch.

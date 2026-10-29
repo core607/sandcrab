@@ -1,7 +1,10 @@
 """Inspect task and independent readback grader for the native Sandcrab API."""
 import asyncio
+import hashlib
+from importlib.metadata import version
 import json
 from pathlib import Path
+import platform
 import time
 import uuid
 
@@ -16,6 +19,8 @@ from inspect_ai.util import store
 from cases import load
 from budget import Ledger
 from native_http import request, wait
+import workspace
+from workspace_cases import load as load_workspace
 
 CASES = Path(__file__).parent / 'cases' / 'sandcrab'
 
@@ -92,7 +97,7 @@ def native_api(endpoint: str, run_id: str):
 
 
 @solver
-def prepare(endpoint: str, baseline: bool):
+def prepare(endpoint: str, baseline: bool, artifacts: str | None = None):
     async def solve(state, generate):
         if not baseline and not isinstance(getattr(get_model().api, 'ledger', None), Ledger):
             raise ValueError('Model tasks require the budgeted runner; direct unbudgeted Inspect generation is disabled')
@@ -101,6 +106,10 @@ def prepare(endpoint: str, baseline: bool):
         store().set('native_observations', [])
         store().set('cleanup', 'PENDING')
         store().set('sample_key', f'{state.sample_id}:{state.epoch}')
+        if state.metadata.get('kind') == 'workspace':
+            if artifacts is None:
+                raise ValueError('Workspace tasks require an artifact output directory')
+            return await workspace.prepare(state, endpoint, artifacts)
         state.messages.append(ChatMessageUser(content=f'Your assigned run ID is {run_id}. Use it for all requests. '
                                                      'Leave the result record for verification unless the task explicitly asks you to forget it.'))
         state.tools = [native_api(endpoint, run_id)]
@@ -112,6 +121,8 @@ def prepare(endpoint: str, baseline: bool):
 def scripted(endpoint: str):
     """Wiring baseline. This solver contains no model call and is labelled as scripted."""
     async def solve(state, generate):
+        if state.metadata.get('kind') == 'workspace':
+            return await workspace.scripted(state)
         async def api(method, path, body='', wait_for_terminal=False):
             state.messages.append(ChatMessageAssistant(content='Scripted baseline action', tool_calls=[
                 ToolCall(id=str(uuid.uuid4()), function='native_api',
@@ -148,6 +159,8 @@ def scripted(endpoint: str):
 @scorer(metrics=[accuracy()])
 def native_state(endpoint: str):
     async def score(state, target):
+        if state.metadata.get('kind') == 'workspace':
+            return await workspace.score(state)
         run_id = store().get('run_id')
         if not run_id:
             return Score(value=INCORRECT, explanation='Sample setup did not complete')
@@ -161,6 +174,8 @@ def native_state(endpoint: str):
 
 def cleanup(endpoint: str):
     async def clean(state):
+        if state.metadata.get('kind') == 'workspace':
+            return await workspace.cleanup(state)
         run_id = store().get('run_id')
         if not run_id:
             return
@@ -183,16 +198,31 @@ def cleanup(endpoint: str):
 
 
 @task
-def sandcrab_native(endpoint: str, baseline: bool = False):
-    cases, digest = load(CASES)
-    samples = [Sample(id=c['id'], input=c['task'] + '\nFixture: ' + json.dumps({k: v for k, v in c['fixture'].items() if k != 'exercise'}, ensure_ascii=False),
-                      metadata={'fixture': c['fixture'], 'expected': c['expected']}) for c in cases]
-    return Task(dataset=samples, setup=prepare(endpoint, baseline),
+def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native', artifacts: str | None = None):
+    if suite not in {'native', 'workspace', 'all'}:
+        raise ValueError('Unknown Sandcrab evaluation suite')
+    samples, digests = [], {}
+    if suite in {'native', 'all'}:
+        cases, digests['native'] = load(CASES)
+        samples.extend(Sample(id=c['id'], input=c['task'] + '\nFixture: ' + json.dumps({k: v for k, v in c['fixture'].items() if k != 'exercise'}, ensure_ascii=False),
+                              metadata={'kind': 'native', 'fixture': c['fixture'], 'expected': c['expected']}) for c in cases)
+    if suite in {'workspace', 'all'}:
+        if artifacts is None:
+            raise ValueError('Workspace tasks require an artifact output directory')
+        cases, digests['workspace'] = load_workspace(CASES.parent / 'workspace')
+        samples.extend(Sample(id=c['id'], input=c['task'], metadata={'kind': 'workspace', **c}) for c in cases)
+    digest = next(iter(digests.values())) if len(digests) == 1 else hashlib.sha256(json.dumps(digests, sort_keys=True).encode()).hexdigest()
+    programming = suite != 'native'
+    return Task(dataset=samples, setup=prepare(endpoint, baseline, artifacts),
                 solver=scripted(endpoint) if baseline else generate(),
                 cleanup=cleanup(endpoint), scorer=native_state(endpoint), epochs=3,
-                time_limit=180, message_limit=30, turn_limit=12, token_limit=32000,
+                time_limit=180, message_limit=50 if programming else 30, turn_limit=20 if programming else 12, token_limit=32000,
                 config=GenerateConfig(max_tokens=2048, max_retries=0, max_connections=1, parallel_tool_calls=False, max_tool_output=20000, cache=False),
                 fail_on_error=False, score_on_error=True,
-                metadata={'suite': 'sandcrab-native', 'corpusSha256': digest,
+                metadata={'suite': 'sandcrab-' + suite, 'corpusSha256': digest, 'corporaSha256': digests,
                           'evidenceKind': 'scripted' if baseline else 'model-directed',
-                          'clientVersion': 2, 'sampling': {'thinking': 'disabled', 'temperature': 0, 'maxOutputTokens': 2048}}, version=2)
+                          'clientVersion': 3, 'workspaceInterface': 'sample-owned native consumer client' if programming else None,
+                          'evaluatorPython': platform.python_version(),
+                          'clientPackages': {name: version(name) for name in ('inspect-ai', 'httpx', 'PyYAML')},
+                          'sampling': {'thinking': 'disabled', 'temperature': 0, 'maxOutputTokens': 2048},
+                          'turnLimit': 20 if programming else 12}, version=3)
