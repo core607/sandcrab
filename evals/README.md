@@ -104,7 +104,9 @@ Every hidden check uses real Sandcrab execution; there is no model judge.
 A task has an 8 MiB volume, at most 20 shell commands, 16 text uploads, three
 session restarts and four exports. Commands have ten-second and 4096-byte output
 limits; text files are at most 64 KiB and exports at most 2 MiB. A restart retains
-files and resets shell state. An uncertain upload is queried by its original ID
+files and resets shell state. Archive members require unique relative paths;
+unrelated drafts and directories are allowed within the export byte bound.
+An uncertain upload is queried by its original ID
 without replay. Cleanup joins outstanding client work before releasing resources;
 an unresolved identity fails cleanup and stops later programming samples.
 

@@ -20,7 +20,7 @@ import yaml
 import native_http
 from report import summarize
 from sandcrab import sandcrab_native
-from workspace_cases import content, load, same_json, strict_json, submitted
+from workspace_cases import MAX_ARTIFACT, content, load, same_json, strict_json, submitted
 from workspace_client import Rejected, Workspace
 
 CASES = Path(__file__).parent / 'cases' / 'workspace'
@@ -34,6 +34,9 @@ def archive(entries):
             if isinstance(value, bytes):
                 member.size = len(value)
                 target.addfile(member, io.BytesIO(value))
+            elif value is None:
+                member.type = tarfile.DIRTYPE
+                target.addfile(member)
             else:
                 member.type, member.linkname = tarfile.SYMTYPE, value
                 target.addfile(member)
@@ -102,6 +105,19 @@ class CasesAndArtifacts(unittest.TestCase):
         for raw in ['{"a":1,"a":1}', 'NaN', '{"a":Infinity}']:
             with self.assertRaises(ValueError):
                 strict_json(raw)
+
+    def test_draft_files_within_export_byte_limit_do_not_invalidate_required_sources(self):
+        case = next(c for c in load(CASES)[0] if c['id'] == 'workspace-range-repair')
+        sources = {p: content(v) for p, v in case['reference']['files'].items()}
+        inputs = {p: content(case['fixture']['files'][p]) for p in case['expected']['preserve']}
+        drafts = [('drafts', None)] + [(f'drafts/attempt-{i}.txt', b'scratch') for i in range(192)]
+        raw = archive(drafts + list((sources | inputs).items()))
+        self.assertLess(len(raw), MAX_ARTIFACT)
+        self.assertEqual(sources, submitted(raw, case))
+        with self.assertRaisesRegex(ValueError, 'Preserved input changed'):
+            submitted(archive(drafts + list(sources.items()) + [(p, b'changed') for p in inputs]), case)
+        with self.assertRaisesRegex(ValueError, 'exceeds 2 MiB'):
+            submitted(archive(list((sources | inputs).items()) + [('oversized-draft', b'x' * MAX_ARTIFACT)]), case)
 
 
 class ConsumerLifecycle(unittest.TestCase):

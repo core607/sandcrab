@@ -141,8 +141,10 @@ def submitted(raw: bytes, case: dict) -> dict[str, bytes]:
     with tarfile.open(fileobj=io.BytesIO(raw), mode='r:') as archive:
         for member in archive:
             name = member.name.rstrip('/')
-            if not path(name) or name in entries or len(entries) >= 128:
-                raise ValueError('Invalid or excessive artifact entries')
+            # The archive byte bound also bounds traversal: every member needs a
+            # 512-byte tar header. Draft files need no additional entry quota.
+            if not path(name) or name in entries:
+                raise ValueError('Invalid artifact entries')
             entries.add(name)
             if name in wanted:
                 if not member.isfile() or member.issparse() or member.size > MAX_FILE:
