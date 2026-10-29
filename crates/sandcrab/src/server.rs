@@ -2,6 +2,7 @@
 use crate::{
     config::invalid,
     service::{Service, error},
+    transport::Stream,
 };
 use rustix::fs::{Gid, Uid, chown};
 use sandcrab_core::http;
@@ -9,9 +10,10 @@ use std::{
     cell::Cell,
     fs,
     io::{self, Read, Write},
+    net::TcpListener,
     os::unix::{
         fs::{FileTypeExt, MetadataExt, PermissionsExt},
-        net::{UnixListener, UnixStream},
+        net::UnixListener,
     },
     sync::{
         Arc,
@@ -34,7 +36,7 @@ const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 // A socket timeout alone resets with every read/write. One deadline prevents a
 // peer from holding admission indefinitely by sending a byte before each timeout.
 struct Timed<'a> {
-    stream: &'a UnixStream,
+    stream: &'a Stream,
     deadline: &'a Cell<Instant>,
     slice: &'a Cell<Duration>,
     received: &'a Cell<bool>,
@@ -69,7 +71,7 @@ impl Write for Timed<'_> {
     }
 }
 
-fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
+fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
     for index in 0..REQUEST_LIMIT {
         if service.stopped.load(Ordering::SeqCst) {
             return Ok(());
@@ -89,6 +91,19 @@ fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
             Err(_) if !received.get() => return Ok(()),
             Err(_) => return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true),
         };
+        if stream.tcp()
+            && !service
+                .runtime
+                .config
+                .tcp
+                .as_ref()
+                .and_then(|tcp| tcp.token.as_ref())
+                .is_some_and(|token| token.authorizes(head.header("authorization")))
+        {
+            // Authenticate before body allocation, upload admission or 100 Continue.
+            drop(body);
+            return json_reply(stream, 401, &error(401, "AUTH_REQUIRED").1, true);
+        }
         let expect = head.header("expect");
         if expect.is_some_and(|value| !value.eq_ignore_ascii_case("100-continue")) {
             drop(body);
@@ -174,7 +189,7 @@ fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
 }
 
 fn json_reply(
-    stream: &mut UnixStream,
+    stream: &mut Stream,
     status: u16,
     reply: &serde_json::Value,
     close: bool,
@@ -188,16 +203,25 @@ fn json_reply(
         slice: &slice,
         received: &received,
     };
-    http::respond(
+    let body = serde_json::to_vec(reply)?;
+    let headers = if status == 401 {
+        &[("WWW-Authenticate", "Bearer")][..]
+    } else {
+        &[]
+    };
+    http::response_head_with(
         &mut output,
         status,
         "application/json",
-        &serde_json::to_vec(reply)?,
+        body.len() as u64,
         close,
-    )
+        headers,
+    )?;
+    output.write_all(&body)?;
+    output.flush()
 }
 struct Download<'a> {
-    stream: &'a mut UnixStream,
+    stream: &'a mut Stream,
     cancelled: &'a std::sync::atomic::AtomicBool,
     deadline: Instant,
 }
@@ -232,7 +256,7 @@ impl Write for Download<'_> {
         self.stream.flush()
     }
 }
-fn snapshot(stream: &mut UnixStream, service: &Service, id: &str, body: &[u8]) -> io::Result<()> {
+fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io::Result<()> {
     let mut snapshot = match service.capture(id, body) {
         Ok(s) => s,
         Err((status, code)) => return json_reply(stream, status, &error(status, code).1, true),
@@ -291,7 +315,57 @@ fn snapshot(stream: &mut UnixStream, service: &Service, id: &str, body: &[u8]) -
     output.flush()
 }
 
+fn accept(
+    unix: &UnixListener,
+    tcp: Option<&TcpListener>,
+    tcp_first: bool,
+) -> io::Result<Option<Stream>> {
+    for use_tcp in [tcp_first, !tcp_first] {
+        let accepted = if use_tcp {
+            let Some(listener) = tcp else {
+                continue;
+            };
+            listener.accept().and_then(|(stream, peer)| {
+                if !peer.ip().is_loopback() {
+                    return Ok(None);
+                }
+                stream.set_nodelay(true)?;
+                Ok(Some(Stream::Tcp(stream)))
+            })
+        } else {
+            unix.accept().map(|(stream, _)| Some(Stream::Unix(stream)))
+        };
+        match accepted {
+            Ok(Some(stream)) => return Ok(Some(stream)),
+            Ok(None) => (),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::Interrupted
+                        | io::ErrorKind::ConnectionAborted
+                ) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(None)
+}
+
 pub fn serve(service: Arc<Service>) -> io::Result<()> {
+    let tcp = service
+        .runtime
+        .config
+        .tcp
+        .as_ref()
+        .map(|config| {
+            if config.token.is_none() {
+                return Err(invalid("TCP credentials were not loaded"));
+            }
+            let listener = TcpListener::bind(crate::transport::local_address(&config.listen)?)?;
+            listener.set_nonblocking(true)?;
+            Ok(listener)
+        })
+        .transpose()?;
     let socket = &service.runtime.config.service.socket;
     match fs::symlink_metadata(socket) {
         Ok(info) if info.file_type().is_socket() && info.uid() == 0 => fs::remove_file(socket)?,
@@ -314,25 +388,27 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     listener.set_nonblocking(true)?;
     let active = Arc::new(AtomicUsize::new(0));
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
+    let mut tcp_first = false;
     println!("{{\"ready\":true,\"apiVersion\":1}}");
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
             service.registry.lock().unwrap().expire_sessions();
             workers.retain(|worker| !worker.is_finished());
-            let (mut stream, _) = match listener.accept() {
-                Ok(pair) => pair,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+            let mut stream = match accept(&listener, tcp.as_ref(), tcp_first) {
+                Ok(Some(stream)) => stream,
+                Ok(None) => {
                     thread::sleep(Duration::from_millis(10));
                     continue;
                 }
-                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(e),
             };
+            tcp_first = !stream.tcp();
             stream.set_write_timeout(Some(Duration::from_secs(1)))?;
-            if rustix::net::sockopt::socket_peercred(&stream)
-                .map(|c| c.uid.as_raw())
-                .ok()
-                != Some(service.runtime.config.service.client_uid)
+            if let Stream::Unix(socket) = &stream
+                && rustix::net::sockopt::socket_peercred(socket)
+                    .map(|c| c.uid.as_raw())
+                    .ok()
+                    != Some(service.runtime.config.service.client_uid)
             {
                 let _ = http::write(&mut stream, 403, br#"{"error":{"code":"PEER_REJECTED"}}"#);
                 continue;
@@ -363,6 +439,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     })();
     service.stopped.store(true, Ordering::SeqCst);
     drop(listener);
+    drop(tcp);
     let shutdown = service.shutdown();
     for worker in workers {
         let _ = worker.join();

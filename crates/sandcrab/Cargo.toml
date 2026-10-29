@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 base64.workspace = true
+subtle = "2.6.1"
 sandcrab-core = { path = "../sandcrab-core" }
 sandcrab-daemon = { path = "../sandcrab-daemon" }
 sandcrab-launch = { path = "../sandcrab-launch" }

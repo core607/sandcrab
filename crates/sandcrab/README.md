@@ -2,8 +2,8 @@
 
 `sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
 bash sessions, durable volumes, streamed files and live command output. It needs no Poketto account, workspace, repository,
-signing key or compiled extension. The service uses a Unix socket; host calls,
-TCP and the OpenSandbox adapter remain under the
+signing key or compiled extension. The service uses a Unix socket or optional
+authenticated loopback TCP; host calls and the OpenSandbox adapter remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
 ## Installation
@@ -48,9 +48,50 @@ result, prints JSON and forgets the record. Exit zero means the command succeede
 other outcomes exit nonzero. SIGINT/SIGTERM requests cancellation. A lost response
 does not submit a new run: inspect the printed ID. `closing` means containment or
 workspace cleanup was not confirmed; its admission remains held until restart.
-The CLI authenticates the root-owned socket and root peer before sending commands.
+For Unix transport, the CLI authenticates the root-owned socket and root peer before sending commands.
 If forgetting a terminal record fails, the CLI warns on stderr and preserves the
 command's exit result. Inspect or forget the printed ID instead of rerunning it.
+
+## Loopback TCP
+
+Enable `[tcp]` in [config.example.toml](config.example.toml) with a literal
+loopback address and nonzero port. Wildcard addresses, nonlocal IPs and DNS names
+are refused. The Unix socket remains available; both listeners share the same
+server epoch, records, connection limit and observer limit. Failure to bind either
+listener fails startup.
+
+`token_file` must be outside runtime and volume storage, owned by root, singly
+linked and mode 0600 or 0400, beneath protected nonsymlink directories. Generate
+its 64 lowercase hexadecimal bytes with `openssl rand -hex 32` under `umask 077`.
+An optional final newline is accepted. Read mounts cannot expose this file.
+Distribute a private copy to each authorized client; holders can use every
+configured profile and control every record in this service.
+
+Every TCP request requires `Authorization: Bearer TOKEN`, including info,
+OpenAPI, events and file bodies. Missing or incorrect credentials return 401
+`AUTH_REQUIRED` and close the connection before body admission or `100 Continue`.
+Authentication is checked again on each reused connection request. The daemon
+loads the token at startup; replacing its file takes effect after restart, which
+also ends live runs and sessions under the existing lifecycle contract.
+
+Any client command can replace `--socket PATH` with `--endpoint URL`:
+
+```sh
+sandcrab --token-file ./client.token info --endpoint http://127.0.0.1:9011
+sandcrab --token-file ./client.token run --endpoint http://127.0.0.1:9011 --profile python --stream -- python3 -c 'print(6 * 7)'
+```
+
+`SANDCRAB_TOKEN_FILE` supplies the client path when the global flag is absent.
+The client copy and every directory above it must belong to root or that client;
+the file has no group/other permissions and directories are not writable by other
+accounts. Symlinks, hard-linked files and parent traversal are refused. Credentials
+are read once per command and sent only to a literal loopback TCP endpoint; there
+is no transport fallback or automatic request replay.
+
+TCP uses plaintext HTTP and does not attest the listener's process identity.
+The operator must keep the selected endpoint exclusive and trust other host
+processes; the sandbox's isolated network cannot reach host loopback. Token
+authentication does not provide remote TLS, per-client roles or tenant isolation.
 
 ## HTTP
 
@@ -63,7 +104,7 @@ without replay. `max_connections` defaults to 32. POST bodies declare a content
 length of 1 to 65536 bytes; GET requests have no body. Headers are at most 8192 bytes
 and 32 fields. Only event responses use chunked framing; requests and other responses
 require fixed lengths. Duplicate headers and upgrades are rejected; pipelining is unsupported. Only `client_uid` is accepted, even if another
-account can connect to the socket.
+account can connect to the socket. TCP uses the bearer credential above.
 
 | Request | Result |
 |---|---|
@@ -338,5 +379,7 @@ its fixture's processes stop.
 readback, safe local CLI installation, quotas, cancellation and publication recovery.
 `events_probe.py` uses those arguments for live command output, binary resume,
 observer admission, CLI cancellation and containment faults in a disposable native fixture.
+`tcp_probe.py` additionally exercises authentication, private credential files,
+both IP families, TCP CLI/files/events and data retention through token rotation.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

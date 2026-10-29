@@ -1,11 +1,13 @@
 //! Bounded observers of retained command bytes. Connections own no command lifetime.
-use crate::service::{Run, Service, error};
+use crate::{
+    service::{Run, Service, error},
+    transport::Stream,
+};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use sandcrab_core::http;
 use serde_json::{Value, json};
 use std::{
     io::{self, Write},
-    os::unix::net::UnixStream,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -176,7 +178,7 @@ fn next(
 // A five-second deadline covers a whole frame, not each successive byte. A slow reader
 // releases only its observer; the command still has its original limits and owner.
 struct Output<'a> {
-    stream: &'a UnixStream,
+    stream: &'a Stream,
     deadline: Instant,
 }
 impl Write for Output<'_> {
@@ -194,7 +196,7 @@ impl Write for Output<'_> {
     }
 }
 impl Subscription {
-    fn frame(&self, stream: &UnixStream, kind: &str, value: &Value) -> io::Result<()> {
+    fn frame(&self, stream: &Stream, kind: &str, value: &Value) -> io::Result<()> {
         let bytes = format!(
             "id: {}\nevent: {kind}\ndata: {}\n\n",
             self.cursor.text(),
@@ -211,7 +213,7 @@ impl Subscription {
             bytes.as_bytes(),
         )
     }
-    pub fn write(mut self, stream: &UnixStream, close: bool) -> io::Result<()> {
+    pub fn write(mut self, stream: &Stream, close: bool) -> io::Result<()> {
         http::event_head(
             &mut Output {
                 stream,

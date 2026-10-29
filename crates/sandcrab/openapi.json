@@ -3,12 +3,16 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Isolated finite commands, persistent sessions, optional durable volumes, raw/tar files and resumable command events over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential control requests and completed chunked event responses; follow Connection: close. Server epochs guard new operations, while retained volume and upload identities remain separate from transport lifetime. No TCP listener is provided."
+    "description": "Isolated commands, persistent sessions, durable volumes, files and command events. Unix sockets require the configured peer UID; optional loopback TCP requires a bearer token on every request. The empty HTTP security alternative applies only to authenticated Unix transport. Sequential HTTP/1.1 exchanges follow Connection: close; consume a complete chunked event response before reuse. Server epochs guard new operations; retained volume and upload identities have separate lifetimes. TCP provides no TLS or listener identity attestation."
   },
   "servers": [
     {
+      "url": "http://127.0.0.1:9011",
+      "description": "Replace with the configured literal loopback address and port; bearer authentication is required."
+    },
+    {
       "url": "http://localhost",
-      "description": "HTTP transport over the configured Unix socket."
+      "description": "Host placeholder for Unix socket transport; authentication is the configured operating-system peer UID."
     }
   ],
   "paths": {
@@ -28,6 +32,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Error403"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -48,6 +55,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Error403"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         },
         "parameters": [
@@ -103,6 +113,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -130,6 +143,9 @@
           },
           "404": {
             "$ref": "#/components/responses/Error404"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -175,6 +191,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Error409"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -236,6 +255,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Error409"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -268,6 +290,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         },
         "requestBody": {
@@ -318,6 +343,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -361,6 +389,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         },
         "requestBody": {
@@ -411,6 +442,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         },
         "requestBody": {
@@ -472,6 +506,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         },
         "requestBody": {
@@ -555,6 +592,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Error409"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -586,6 +626,9 @@
           },
           "404": {
             "$ref": "#/components/responses/Error404"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       },
@@ -626,6 +669,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -665,6 +711,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -719,6 +768,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -786,6 +838,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -820,6 +875,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Error403"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       },
@@ -863,6 +921,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -890,6 +951,9 @@
           },
           "404": {
             "$ref": "#/components/responses/Error404"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -953,6 +1017,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -1003,6 +1070,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -1069,6 +1139,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -1154,6 +1227,9 @@
           },
           "507": {
             "$ref": "#/components/responses/Error507"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -1239,6 +1315,9 @@
           },
           "503": {
             "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
           }
         }
       }
@@ -2470,7 +2549,39 @@
             }
           }
         }
+      },
+      "Error401": {
+        "description": "TCP credentials are missing or incorrect. AUTH_REQUIRED closes the connection before body admission or 100 Continue.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string",
+              "const": "Bearer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "64 lowercase hexadecimal bytes",
+        "description": "Required on every TCP request, including discovery and streaming. The no-HTTP-credential alternative applies only to Unix sockets authenticated by peer UID."
       }
     }
-  }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {}
+  ]
 }

@@ -15,6 +15,16 @@ pub struct Config {
     pub service: Service,
     pub profiles: BTreeMap<String, Profile>,
     pub storage: Option<Storage>,
+    pub tcp: Option<Tcp>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Tcp {
+    pub listen: String,
+    pub token_file: PathBuf,
+    #[serde(skip)]
+    pub token: Option<crate::auth::Token>,
 }
 
 #[derive(Deserialize)]
@@ -107,8 +117,9 @@ impl Config {
         if text.len() > 65536 {
             return Err(invalid("Configuration exceeds 65536 bytes"));
         }
-        let config: Self =
-            toml::from_str(text).map_err(|e| invalid(format!("Invalid TOML: {e}")))?;
+        // Display includes source excerpts, which can disclose a misplaced inline secret.
+        let config: Self = toml::from_str(text)
+            .map_err(|e: toml::de::Error| invalid(format!("Invalid TOML: {}", e.message())))?;
         config.validate()?;
         Ok(config)
     }
@@ -122,6 +133,9 @@ impl Config {
         let mut config = Self::parse(
             std::str::from_utf8(&bytes).map_err(|_| invalid("Configuration is not UTF-8"))?,
         )?;
+        if let Some(tcp) = &mut config.tcp {
+            tcp.token = Some(crate::auth::read_token(&tcp.token_file, 0)?);
+        }
         for profile in config.profiles.values_mut() {
             (profile.uid, profile.gid) = execution_account(
                 &profile.exec_user,
@@ -142,6 +156,13 @@ impl Config {
                 }) {
                     return Err(invalid("Read mount resolves into volume storage"));
                 }
+                if config
+                    .tcp
+                    .as_ref()
+                    .is_some_and(|tcp| tcp.token_file.starts_with(&resolved))
+                {
+                    return Err(invalid("Read mount exposes the TCP token file"));
+                }
                 let parent = if resolved.is_dir() {
                     resolved.as_path()
                 } else {
@@ -160,6 +181,28 @@ impl Config {
 
     fn validate(&self) -> io::Result<()> {
         let service = &self.service;
+        if let Some(tcp) = &self.tcp {
+            crate::transport::local_address(&tcp.listen)?;
+            if !normal(&tcp.token_file)
+                || tcp.token_file.starts_with(&service.runtime_root)
+                || self
+                    .storage
+                    .as_ref()
+                    .is_some_and(|s| tcp.token_file.starts_with(&s.root))
+            {
+                return Err(invalid(
+                    "TCP token file must be a normalized absolute path outside runtime and volume storage",
+                ));
+            }
+            if self.profiles.values().any(|p| {
+                tcp.token_file.starts_with(&p.tools)
+                    || p.read_only
+                        .iter()
+                        .any(|mount| tcp.token_file.starts_with(mount))
+            }) {
+                return Err(invalid("Read mount exposes the TCP token file"));
+            }
+        }
         if !normal(&service.runtime_root)
             || !normal(&service.socket)
             || service.socket.parent() != Some(service.runtime_root.as_path())
@@ -303,5 +346,32 @@ mod tests {
         ] {
             assert!(Config::parse(&input).is_err(), "accepted {input}");
         }
+    }
+    #[test]
+    fn tcp_requires_a_local_listener_and_an_unmounted_credential_path() {
+        assert!(Config::parse(EXAMPLE).unwrap().tcp.is_none());
+        let enabled = format!(
+            "{EXAMPLE}\n[tcp]\nlisten = \"127.0.0.1:9011\"\ntoken_file = \"/etc/sandcrab-demo/token\"\n"
+        );
+        assert!(Config::parse(&enabled).unwrap().tcp.is_some());
+        for input in [
+            enabled.replace("127.0.0.1:9011", "0.0.0.0:9011"),
+            enabled.replace("127.0.0.1:9011", "localhost:9011"),
+            enabled.replace("/etc/sandcrab-demo/token", "/run/sandcrab-demo/token"),
+            enabled.replace("/etc/sandcrab-demo/token", "/usr/token"),
+            enabled.replace("/etc/sandcrab-demo/token", "/opt/sandcrab/tools/token"),
+            enabled.replace("/etc/sandcrab-demo/token", "token"),
+        ] {
+            assert!(Config::parse(&input).is_err());
+        }
+        let secret = "abcdef0123456789".repeat(4);
+        let misplaced = format!("{enabled}token = \"{secret}\"\n");
+        assert!(
+            !Config::parse(&misplaced)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains(&secret)
+        );
     }
 }

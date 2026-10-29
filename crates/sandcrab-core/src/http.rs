@@ -10,6 +10,17 @@ pub const MAX_HEAD: usize = 8192;
 const MAX_HEADERS: usize = 32;
 const INVALID: &str = "INVALID_HTTP";
 
+// A signal does not invalidate bytes already read. Continue the same source;
+// this retries only the interrupted syscall, never the HTTP request.
+fn read_part(source: &mut impl Read, bytes: &mut [u8]) -> io::Result<usize> {
+    loop {
+        match source.read(bytes) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
+            result => return result,
+        }
+    }
+}
+
 pub struct Head {
     pub method: String,
     pub path: String,
@@ -84,8 +95,8 @@ fn token(text: &str) -> bool {
 }
 
 /// Parse only the bounded head, retaining at most one 1 KiB read's body prefix.
-/// Callers authenticate first, bound the selected operation's length, and impose
-/// socket deadlines. PUT permits an explicitly declared empty file.
+/// Callers authenticate the peer or parsed headers before dispatch, bound the
+/// body length and impose I/O deadlines. PUT permits an explicitly empty file.
 fn envelope(source: &mut impl Read, chunked: bool) -> Result<Option<Envelope>, &'static str> {
     let mut buffer = Vec::with_capacity(1024);
     let end = loop {
@@ -96,9 +107,11 @@ fn envelope(source: &mut impl Read, chunked: bool) -> Result<Option<Envelope>, &
             return Err(INVALID);
         }
         let mut chunk = [0; 1024];
-        let size = source
-            .read(&mut chunk[..(MAX_HEAD + 4 - buffer.len()).min(1024)])
-            .map_err(|_| INVALID)?;
+        let size = read_part(
+            source,
+            &mut chunk[..(MAX_HEAD + 4 - buffer.len()).min(1024)],
+        )
+        .map_err(|_| INVALID)?;
         if size == 0 {
             return if buffer.is_empty() {
                 Ok(None)
@@ -314,7 +327,7 @@ impl<R: Read> Chunks<'_, R> {
         let count = if self.prefix.position() < self.prefix.get_ref().len() as u64 {
             self.prefix.read(bytes)?
         } else {
-            self.source.read(bytes)?
+            read_part(self.source, bytes)?
         };
         if count == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
@@ -485,6 +498,7 @@ pub fn response_head_with(
         202 => "Accepted",
         204 => "No Content",
         400 => "Bad Request",
+        401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
         409 => "Conflict",
@@ -817,5 +831,65 @@ mod tests {
         assert!(bytes.ends_with(b"}}"));
         assert!(chunk(&mut Vec::new(), b"").is_err());
         assert!(chunk(&mut Vec::new(), &vec![0; 65537]).is_err());
+    }
+
+    #[test]
+    fn signals_preserve_partial_headers_and_chunk_boundaries_without_replay() {
+        struct Signals<'a> {
+            bytes: &'a [u8],
+            interrupt: bool,
+        }
+        impl Read for Signals<'_> {
+            fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+                self.interrupt = !self.interrupt;
+                if self.interrupt {
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                if output.is_empty() {
+                    return Ok(0);
+                }
+                self.bytes.read(&mut output[..1])
+            }
+        }
+        let request = b"POST /v1/runs/id/cancel HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}";
+        let parsed = read(
+            &mut Signals {
+                bytes: request,
+                interrupt: false,
+            },
+            64,
+        )
+        .unwrap();
+        assert_eq!(parsed.path, "/v1/runs/id/cancel");
+        assert_eq!(parsed.body, b"{}");
+        let wire = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}";
+        let mut source = Signals {
+            bytes: wire,
+            interrupt: false,
+        };
+        let (head, mut body) = response(&mut source).unwrap();
+        assert_eq!(head.status, 200);
+        let mut bytes = Vec::new();
+        body.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"{}");
+        let mut wire = Vec::new();
+        event_head(&mut wire, true).unwrap();
+        chunk(&mut wire, b"\x00\xffcomplete").unwrap();
+        end_chunks(&mut wire).unwrap();
+        let mut source = Signals {
+            bytes: &wire,
+            interrupt: false,
+        };
+        let (_, mut body) = event_response(&mut source).unwrap();
+        bytes.clear();
+        body.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"\x00\xffcomplete");
+        struct Failed;
+        impl Read for Failed {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::TimedOut.into())
+            }
+        }
+        assert!(response(&mut Failed).is_err());
     }
 }

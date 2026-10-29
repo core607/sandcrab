@@ -374,6 +374,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signal-hook",
+ "subtle",
  "tar",
  "toml",
 ]

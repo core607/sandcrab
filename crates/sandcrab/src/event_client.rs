@@ -1,22 +1,21 @@
 //! An observer never resubmits a command. Complete frames carry the cursor for an explicit resume.
 use crate::{
-    client,
+    client::{self, Endpoint},
     config::invalid,
     events::{BLOCK, Cursor, FRAME, TIMEOUT},
+    transport::Stream,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
-    os::unix::net::UnixStream,
-    path::Path,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 struct Source<'a> {
-    socket: &'a Path,
-    stream: UnixStream,
+    socket: &'a Endpoint,
+    stream: Stream,
     id: &'a str,
     stopped: Option<&'a AtomicBool>,
     cancel_sent: bool,
@@ -128,7 +127,7 @@ fn read_frame(reader: &mut impl BufRead) -> io::Result<Option<Frame>> {
 }
 
 pub fn observe(
-    socket: &Path,
+    socket: &Endpoint,
     id: &str,
     after: Option<&str>,
     stopped: Option<&AtomicBool>,
@@ -140,8 +139,9 @@ pub fn observe(
     let mut stream = client::connect(socket)?;
     write!(
         stream,
-        "GET /v1/runs/{id}/events HTTP/1.1\r\nHost: sandcrab\r\nContent-Length: 0\r\nConnection: close\r\n"
+        "GET /v1/runs/{id}/events HTTP/1.1\r\nContent-Length: 0\r\nConnection: close\r\n"
     )?;
+    socket.headers(&mut stream)?;
     if let Some(cursor) = &cursor {
         write!(stream, "Last-Event-ID: {}\r\n", cursor.text())?;
     }
@@ -271,7 +271,7 @@ pub fn decode(data: &Value) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub fn events(socket: &Path, id: &str, after: Option<&str>) -> io::Result<i32> {
+pub fn events(socket: &Endpoint, id: &str, after: Option<&str>) -> io::Result<i32> {
     observe(socket, id, after, None, |kind, cursor, data| {
         let line = json!({"event":kind,"id":cursor,"data":data});
         let mut output = io::stdout().lock();

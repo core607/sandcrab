@@ -22,12 +22,14 @@ from native_probe import Probe, call, connect, http
 
 
 class Events:
-    def __init__(self, endpoint, run, after=None):
-        self.socket = socket.socket(socket.AF_UNIX)
+    def __init__(self, endpoint, run, after=None, *, connection=None, headers=None):
+        self.socket = connection or socket.socket(socket.AF_UNIX)
         self.socket.settimeout(8)
-        connect(self.socket, endpoint)
+        if connection is None:
+            connect(self.socket, endpoint)
         cursor = f'Last-Event-ID: {after}\r\n' if after else ''
-        self.socket.sendall(f'GET /v1/runs/{run["id"]}/events HTTP/1.1\r\nHost: sandcrab\r\n{cursor}\r\n'.encode())
+        extra = ''.join(f'{key}: {value}\r\n' for key, value in (headers or {}).items())
+        self.socket.sendall(f'GET /v1/runs/{run["id"]}/events HTTP/1.1\r\nHost: sandcrab\r\n{cursor}{extra}\r\n'.encode())
         self.response = HTTPResponse(self.socket)
         self.response.begin()
         assert self.response.status == 200, self.response.read()
@@ -422,6 +424,112 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         assert not list((self.socket.parent / 'jobs').iterdir())
         self.done('daemon-loss-does-not-acknowledge-completion-or-replay-command')
 
+    def cli_repeated_cancel(self):
+        # Hold the cancellation response while delivering real signals. This root
+        # peer tests client I/O only; finite() separately proves sandbox containment.
+        endpoint = self.root / 'signal-peer.sock'
+        requests, errors = [], []
+        cancelled, release = threading.Event(), threading.Event()
+        with socket.socket(socket.AF_UNIX) as listener:
+            listener.bind(str(endpoint))
+            os.chown(endpoint, 0, native_probe.CLIENT[1])
+            endpoint.chmod(0o660)
+            listener.listen()
+            listener.settimeout(8)
+
+            def receive():
+                stream, _ = listener.accept()
+                stream.settimeout(8)
+                with stream.makefile('rb') as reader:
+                    method, path, _ = reader.readline(65537).decode().split()
+                    headers = {}
+                    while True:
+                        line = reader.readline(65537)
+                        if line == b'\r\n':
+                            break
+                        key, value = line.decode().split(':', 1)
+                        headers[key.lower()] = value.strip()
+                    size = int(headers.get('content-length', '0'))
+                    assert 0 <= size <= 65536
+                    body = json.loads(reader.read(size)) if size else None
+                requests.append((method, path))
+                return stream, path, body
+
+            def reply(stream, value):
+                body = json.dumps(value).encode()
+                stream.sendall(f'HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n'.encode() + body)
+
+            def serve():
+                try:
+                    stream, path, _ = receive()
+                    with stream:
+                        assert path == '/v1/info'
+                        reply(stream, self.info)
+                    stream, path, body = receive()
+                    run_id = body['id']
+                    state = {'id': run_id, 'serverId': self.info['serverId'], 'profile': 'python', 'state': 'running', 'result': None}
+                    with stream:
+                        assert path == '/v1/runs'
+                        reply(stream, state)
+                    stream, path, _ = receive()
+                    with stream:
+                        assert path == f'/v1/runs/{run_id}/events'
+                        stream.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n')
+                        incarnation = str(uuid.uuid4())
+                        def frame(kind, offset, value):
+                            data = f'id: {incarnation}:{offset}:0\nevent: {kind}\ndata: {json.dumps(value)}\n\n'.encode()
+                            stream.sendall(f'{len(data):x}\r\n'.encode() + data + b'\r\n')
+                        frame('state', 0, state)
+                        frame('stdout', 5, {'offset': 0, 'base64': 'cmVhZHk='})
+                        control, path, _ = receive()
+                        with control:
+                            assert path == f'/v1/runs/{run_id}/cancel'
+                            cancelled.set()
+                            assert release.wait(8)
+                            reply(control, state)
+                        frame('result', 5, {**state, 'state': 'cancelled', 'stdoutBytes': 5, 'stderrBytes': 0,
+                                           'result': {'exitCode': 137, 'truncated': False}})
+                        # A complete result lets the CLI close before the HTTP terminator.
+                    stream, path, _ = receive()
+                    with stream:
+                        assert path == f'/v1/runs/{run_id}/forget'
+                        reply(stream, {'forgotten': True})
+                except BaseException as error:
+                    errors.append(type(error).__name__)
+
+            server = threading.Thread(target=serve)
+            server.start()
+            process = subprocess.Popen([str(self.binary), 'run', '--socket', str(endpoint), '--profile', 'python', '--stream', '--', 'true'],
+                                       user=native_probe.CLIENT[0], group=native_probe.CLIENT[1], extra_groups=[native_probe.CLIENT[1]],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            try:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                    assert selector.select(8)
+                    assert os.read(process.stdout.fileno(), 5) == b'ready'
+                process.send_signal(signal.SIGTERM)
+                assert cancelled.wait(8)
+                time.sleep(.05)
+                for _ in range(5):
+                    if process.poll() is not None:
+                        break
+                    process.send_signal(signal.SIGTERM)
+                    time.sleep(.02)
+                release.set()
+                stdout, stderr = process.communicate(timeout=12)
+                assert process.returncode == 1 and stdout == b'' and b'runState="cancelled"' in stderr, stderr
+                assert b'observation failed' not in stderr, stderr
+            finally:
+                release.set()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=5)
+                server.join(timeout=20)
+            assert not server.is_alive() and not errors, errors
+            assert len(requests) == 5 and sum(path.endswith('/cancel') for _, path in requests) == 1, requests
+        endpoint.unlink()
+        self.done('cli-repeated-cancellation-signals-preserve-the-original-response')
+
     def tests(self):
         self.finite()
         self.session_resume()
@@ -429,6 +537,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         self.observer_bounds()
         self.cli()
         self.cli_lost_terminator()
+        self.cli_repeated_cancel()
         self.daemon_loss()
         self.containment_fault()
 

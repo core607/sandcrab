@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 //! Native Sandcrab service and client; consumer-specific identities and extensions are absent.
+mod auth;
 mod client;
 mod config;
 mod event_client;
@@ -15,18 +16,32 @@ mod service;
 mod sessions;
 mod spec;
 mod storage;
+mod transport;
 mod volumes;
 
+use client::Endpoint;
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     process::ExitCode,
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+
+fn connection_flag(flag: &str) -> bool {
+    matches!(flag, "--socket" | "--endpoint")
+}
 
 fn execute(args: &[String]) -> io::Result<i32> {
+    let (token_file, args) = match args {
+        [flag, path, rest @ ..] if flag == "--token-file" => (Some(PathBuf::from(path)), rest),
+        _ => (
+            std::env::var_os("SANDCRAB_TOKEN_FILE").map(PathBuf::from),
+            args,
+        ),
+    };
+    let token_file = token_file.as_deref();
     match args {
         [] => {
             print!("{HELP}{FILE_HELP}");
@@ -86,15 +101,20 @@ fn execute(args: &[String]) -> io::Result<i32> {
             server::serve(Arc::new(service::Service::new(runtime, stopped)?))?;
             Ok(0)
         }
-        [mode, flag, path] if mode == "info" && flag == "--socket" => {
+        [mode, flag, path] if mode == "info" && connection_flag(flag) => {
             println!(
                 "{}",
-                client::request(Path::new(path), "GET", "/v1/info", None)?
+                client::request(
+                    &Endpoint::parse(flag, path, token_file)?,
+                    "GET",
+                    "/v1/info",
+                    None
+                )?
             );
             Ok(0)
         }
         [mode, flag, path, id]
-            if ["get", "cancel", "forget"].contains(&mode.as_str()) && flag == "--socket" =>
+            if ["get", "cancel", "forget"].contains(&mode.as_str()) && connection_flag(flag) =>
         {
             if !sandcrab_core::uuid(id) {
                 return Err(config::invalid("RUN_ID must be a UUID"));
@@ -110,12 +130,17 @@ fn execute(args: &[String]) -> io::Result<i32> {
             };
             println!(
                 "{}",
-                client::request(Path::new(path), method, &route, body.as_ref())?
+                client::request(
+                    &Endpoint::parse(flag, path, token_file)?,
+                    method,
+                    &route,
+                    body.as_ref()
+                )?
             );
             Ok(0)
         }
         [mode, flag, socket, id, rest @ ..]
-            if mode == "events" && flag == "--socket" && sandcrab_core::uuid(id) =>
+            if mode == "events" && connection_flag(flag) && sandcrab_core::uuid(id) =>
         {
             let after = match rest {
                 [] => None,
@@ -126,16 +151,16 @@ fn execute(args: &[String]) -> io::Result<i32> {
                     ));
                 }
             };
-            event_client::events(Path::new(socket), id, after)
+            event_client::events(&Endpoint::parse(flag, socket, token_file)?, id, after)
         }
-        [mode, rest @ ..] if mode == "run" => run(rest),
-        [mode, rest @ ..] if mode == "session" => session(rest),
-        [mode, rest @ ..] if mode == "volume" => volume(rest),
-        [mode, rest @ ..] if mode == "files" => file_command(rest),
+        [mode, rest @ ..] if mode == "run" => run(rest, token_file),
+        [mode, rest @ ..] if mode == "session" => session(rest, token_file),
+        [mode, rest @ ..] if mode == "volume" => volume(rest, token_file),
+        [mode, rest @ ..] if mode == "files" => file_command(rest, token_file),
         _ => Err(config::invalid(HELP)),
     }
 }
-fn run(args: &[String]) -> io::Result<i32> {
+fn run(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     let split = args
         .iter()
         .position(|s| s == "--")
@@ -152,7 +177,7 @@ fn run(args: &[String]) -> io::Result<i32> {
             .next()
             .ok_or_else(|| config::invalid("Every run option except --stream needs a value"))?;
         match key.as_str() {
-            "--socket" if socket.is_none() => socket = Some(value),
+            "--socket" | "--endpoint" if socket.is_none() => socket = Some((key, value)),
             "--profile" if profile.is_none() => profile = Some(value),
             "--timeout-ms" if timeout.is_none() => {
                 timeout = Some(
@@ -171,18 +196,20 @@ fn run(args: &[String]) -> io::Result<i32> {
     if command.is_empty() {
         return Err(config::invalid("COMMAND is required"));
     }
+    let (flag, value) =
+        socket.ok_or_else(|| config::invalid("--socket or --endpoint is required"))?;
     client::run(
-        Path::new(socket.ok_or_else(|| config::invalid("--socket is required"))?),
+        &Endpoint::parse(flag, value, token_file)?,
         profile.ok_or_else(|| config::invalid("--profile is required"))?,
         command,
         timeout,
         streaming,
     )
 }
-fn session(args: &[String]) -> io::Result<i32> {
+fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     match args {
-        [mode, socket_flag, socket, profile_flag, profile, rest @ ..]
-            if mode == "open" && socket_flag == "--socket" && profile_flag == "--profile" =>
+        [mode, flag, socket, profile_flag, profile, rest @ ..]
+            if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
             let (mut ttl, mut volume) = (None, None);
             for pair in rest.chunks(2) {
@@ -202,9 +229,16 @@ fn session(args: &[String]) -> io::Result<i32> {
                     }
                 }
             }
-            client::open_session(Path::new(socket), profile, ttl, volume)
+            client::open_session(
+                &Endpoint::parse(flag, socket, token_file)?,
+                profile,
+                ttl,
+                volume,
+            )
         }
-        [mode, flag, socket, id, rest @ ..] if flag == "--socket" && sandcrab_core::uuid(id) => {
+        [mode, flag, socket, id, rest @ ..] if connection_flag(flag) && sandcrab_core::uuid(id) => {
+            let endpoint = Endpoint::parse(flag, socket, token_file)?;
+            let socket = &endpoint;
             let path = format!("/v1/sessions/{id}");
             match mode.as_str() {
                 "exec" => {
@@ -215,7 +249,7 @@ fn session(args: &[String]) -> io::Result<i32> {
                         return Err(config::invalid("Pass one quoted shell source argument"));
                     };
                     let (timeout, streaming) = command_options(&rest[..split])?;
-                    client::execute_session(Path::new(socket), id, source, timeout, streaming)
+                    client::execute_session(socket, id, source, timeout, streaming)
                 }
                 "renew" => {
                     let ttl = numeric_option(rest, "--ttl-ms")?
@@ -223,7 +257,7 @@ fn session(args: &[String]) -> io::Result<i32> {
                     println!(
                         "{}",
                         client::request(
-                            Path::new(socket),
+                            socket,
                             "POST",
                             &format!("{path}/renew"),
                             Some(&serde_json::json!({"ttlMillis":ttl}))
@@ -232,21 +266,18 @@ fn session(args: &[String]) -> io::Result<i32> {
                     Ok(0)
                 }
                 "get" if rest.is_empty() => {
-                    println!(
-                        "{}",
-                        client::request(Path::new(socket), "GET", &path, None)?
-                    );
+                    println!("{}", client::request(socket, "GET", &path, None)?);
                     Ok(0)
                 }
                 "close" | "forget" if rest.is_empty() => {
                     let result = client::request(
-                        Path::new(socket),
+                        socket,
                         "POST",
                         &format!("{path}/{mode}"),
                         Some(&serde_json::json!({})),
                     )?;
                     if mode == "close" {
-                        client::wait_session(Path::new(socket), id, false)
+                        client::wait_session(socket, id, false)
                     } else {
                         println!("{result}");
                         Ok(0)
@@ -282,14 +313,15 @@ fn command_options(args: &[String]) -> io::Result<(Option<u64>, bool)> {
     }
     Ok((timeout, streaming))
 }
-fn volume(args: &[String]) -> io::Result<i32> {
+fn volume(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     let [mode, flag, socket, rest @ ..] = args else {
         return Err(config::invalid(HELP));
     };
-    if flag != "--socket" {
+    if !connection_flag(flag) {
         return Err(config::invalid(HELP));
     }
-    let socket = Path::new(socket);
+    let endpoint = Endpoint::parse(flag, socket, token_file)?;
+    let socket = &endpoint;
     if mode == "create" {
         let mut options = std::collections::BTreeMap::new();
         for pair in rest.chunks(2) {
@@ -386,7 +418,7 @@ fn numeric_option(args: &[String], name: &str) -> io::Result<Option<u64>> {
 }
 
 const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--no-freeze] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace] [--no-freeze]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
-fn file_command(args: &[String]) -> io::Result<i32> {
+fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     use file_io::Format;
     match args {
         [flag] if ["--help", "-h"].contains(&flag.as_str()) => {
@@ -395,7 +427,7 @@ fn file_command(args: &[String]) -> io::Result<i32> {
         }
         [mode, flag, socket, id]
             if ["status", "cancel", "forget"].contains(&mode.as_str())
-                && flag == "--socket"
+                && connection_flag(flag)
                 && sandcrab_core::uuid(id) =>
         {
             let (method, path, body) = if mode == "status" {
@@ -409,11 +441,16 @@ fn file_command(args: &[String]) -> io::Result<i32> {
             };
             println!(
                 "{}",
-                client::request(Path::new(socket), method, &path, body.as_ref())?
+                client::request(
+                    &Endpoint::parse(flag, socket, token_file)?,
+                    method,
+                    &path,
+                    body.as_ref()
+                )?
             );
             Ok(0)
         }
-        [mode, flag, socket, rest @ ..] if mode == "list" && flag == "--socket" => {
+        [mode, flag, socket, rest @ ..] if mode == "list" && connection_flag(flag) => {
             let path = match rest {
                 [] => "/v1/uploads".into(),
                 [flag, id] if flag == "--after" && sandcrab_core::uuid(id) => {
@@ -423,13 +460,18 @@ fn file_command(args: &[String]) -> io::Result<i32> {
             };
             println!(
                 "{}",
-                client::request(Path::new(socket), "GET", &path, None)?
+                client::request(
+                    &Endpoint::parse(flag, socket, token_file)?,
+                    "GET",
+                    &path,
+                    None
+                )?
             );
             Ok(0)
         }
         [mode, flag, socket, session, source, destination, rest @ ..]
             if ["put", "get"].contains(&mode.as_str())
-                && flag == "--socket"
+                && connection_flag(flag)
                 && sandcrab_core::uuid(session) =>
         {
             let (mut format, mut replace, mut freeze, mut keep, mut id, mut permissions) =
@@ -469,7 +511,7 @@ fn file_command(args: &[String]) -> io::Result<i32> {
             }
             if mode == "put" {
                 file_client::put(
-                    Path::new(socket),
+                    &Endpoint::parse(flag, socket, token_file)?,
                     session,
                     Path::new(source),
                     destination,
@@ -484,7 +526,7 @@ fn file_command(args: &[String]) -> io::Result<i32> {
                 )
             } else {
                 file_client::get(
-                    Path::new(socket),
+                    &Endpoint::parse(flag, socket, token_file)?,
                     session,
                     source,
                     Path::new(destination),

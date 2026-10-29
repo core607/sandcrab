@@ -47,7 +47,8 @@ pub fn document(capability: Option<&str>) -> Value {
                 }
         });
     let source = document["components"].take();
-    document["components"] = json!({});
+    // Security requirements name schemes without a $ref; every view keeps them.
+    document["components"] = json!({"securitySchemes": source["securitySchemes"]});
     let mut pending = BTreeSet::new();
     references(&document, &mut pending);
     let mut seen = BTreeSet::new();
@@ -88,6 +89,15 @@ mod tests {
             };
             assert!(document["paths"].get(path).is_some());
             assert!(serde_json::to_vec(&document).unwrap().len() < 18000);
+            for requirement in document["security"].as_array().unwrap() {
+                for name in requirement.as_object().unwrap().keys() {
+                    assert!(
+                        document["components"]["securitySchemes"]
+                            .get(name)
+                            .is_some()
+                    );
+                }
+            }
             let mut found = BTreeSet::new();
             references(&document, &mut found);
             for reference in found {

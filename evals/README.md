@@ -13,7 +13,7 @@ disposable native service and runs Inspect as an ordinary client. No production
 endpoint, product account, model key or model API is used. The root controller
 owns only its fixture's units, slice and temporary directory; cleanup verifies
 containment before deleting them.
-Native HTTP framing and connection reuse, live command events and resume, session lifecycle, file transfers, volume durability and quotas, startup cancellation, cleanup-failure and CLI recovery probes must pass before Inspect runs. The file and volume probes and the programming fixture each own a separate 512 MiB XFS image. These deterministic probes do not measure model usability.
+Native HTTP framing, authenticated loopback TCP, connection reuse, live command events and resume, session lifecycle, file transfers, volume durability and quotas, startup cancellation, cleanup-failure and CLI recovery probes must pass before Inspect runs. The file, volume and TCP probes and the programming fixture each own a separate 512 MiB XFS image. These deterministic probes do not measure model usability.
 
 The workflow summary lists every case and all attempts. Its artifact contains
 the machine-readable summary, complete Inspect log, static transcript viewer and

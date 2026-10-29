@@ -1,10 +1,16 @@
-//! CLI transport verifies the daemon's root-owned socket before sending command bytes.
-use crate::{config::invalid, service::Request};
+//! CLI transport verifies Unix peers or authenticates to an operator-selected local TCP endpoint.
+use crate::{
+    auth::{self, Token},
+    config::invalid,
+    service::Request,
+    transport::{self, Stream},
+};
 use sandcrab_core::fs::protected_directory;
 use serde_json::{Value, json};
 use std::{
     fs,
     io::{self, Read, Write},
+    net::{SocketAddr, TcpStream},
     os::unix::{
         fs::{FileTypeExt, MetadataExt},
         net::UnixStream,
@@ -18,18 +24,64 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub fn request(socket: &Path, method: &str, path: &str, body: Option<&Value>) -> io::Result<Value> {
+#[derive(Clone)]
+pub enum Endpoint {
+    Unix(PathBuf),
+    Tcp {
+        address: SocketAddr,
+        token: Arc<Token>,
+    },
+}
+impl Endpoint {
+    pub fn parse(flag: &str, value: &str, token_file: Option<&Path>) -> io::Result<Self> {
+        match flag {
+            "--socket" => Ok(Self::Unix(value.into())),
+            "--endpoint" => {
+                let address = value.strip_prefix("http://").ok_or_else(|| {
+                    invalid("TCP endpoint must use http:// with a literal loopback address")
+                })?;
+                let address =
+                    transport::local_address(address.strip_suffix('/').unwrap_or(address))?;
+                let path = token_file.ok_or_else(|| {
+                    invalid(
+                        "TCP requires --token-file FILE before the command or SANDCRAB_TOKEN_FILE",
+                    )
+                })?;
+                let token = Arc::new(auth::read_token(path, rustix::process::geteuid().as_raw())?);
+                Ok(Self::Tcp { address, token })
+            }
+            _ => Err(invalid("Expected --socket PATH or --endpoint URL")),
+        }
+    }
+    pub fn headers(&self, stream: &mut impl Write) -> io::Result<()> {
+        match self {
+            Self::Unix(_) => stream.write_all(b"Host: sandcrab\r\n"),
+            Self::Tcp { address, token } => write!(
+                stream,
+                "Host: {address}\r\nAuthorization: Bearer {}\r\n",
+                token.text()
+            ),
+        }
+    }
+}
+
+pub fn request(
+    socket: &Endpoint,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> io::Result<Value> {
     Client::new(socket).request(method, path, body)
 }
 
 struct Client {
-    socket: PathBuf,
-    stream: Option<UnixStream>,
+    socket: Endpoint,
+    stream: Option<Stream>,
 }
 impl Client {
-    fn new(socket: &Path) -> Self {
+    fn new(socket: &Endpoint) -> Self {
         Self {
-            socket: socket.into(),
+            socket: socket.clone(),
             stream: None,
         }
     }
@@ -46,9 +98,11 @@ impl Client {
             .unwrap_or_default();
         write!(
             stream,
-            "{method} {path} HTTP/1.1\r\nHost: sandcrab\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+            "{method} {path} HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n",
             body.len()
         )?;
+        self.socket.headers(&mut stream)?;
+        stream.write_all(b"\r\n")?;
         stream.write_all(&body)?;
         let (head, mut body) = sandcrab_core::http::response(&mut stream).map_err(|_| {
             invalid("Invalid or incomplete HTTP response; inspect the existing ID before retrying")
@@ -80,7 +134,17 @@ impl Client {
     }
 }
 
-pub(crate) fn connect(socket: &Path) -> io::Result<UnixStream> {
+pub(crate) fn connect(endpoint: &Endpoint) -> io::Result<Stream> {
+    if let Endpoint::Tcp { address, .. } = endpoint {
+        let stream = TcpStream::connect_timeout(address, Duration::from_secs(10))?;
+        stream.set_nodelay(true)?;
+        stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(10)))?;
+        return Ok(Stream::Tcp(stream));
+    }
+    let Endpoint::Unix(socket) = endpoint else {
+        unreachable!()
+    };
     protected_directory(
         socket
             .parent()
@@ -100,11 +164,11 @@ pub(crate) fn connect(socket: &Path) -> io::Result<UnixStream> {
     {
         return Err(invalid("Daemon peer must be root"));
     }
-    Ok(stream)
+    Ok(Stream::Unix(stream))
 }
 
 pub fn run(
-    socket: &Path,
+    socket: &Endpoint,
     profile: &str,
     command: &[String],
     timeout: Option<u64>,
@@ -133,7 +197,7 @@ pub fn run(
 }
 
 pub fn execute_session(
-    socket: &Path,
+    socket: &Endpoint,
     session: &str,
     command: &str,
     timeout: Option<u64>,
@@ -252,7 +316,7 @@ fn forget_outcome(client: &mut Client, id: &str) {
 }
 
 pub fn open_session(
-    socket: &Path,
+    socket: &Endpoint,
     profile: &str,
     ttl: Option<u64>,
     volume: Option<&str>,
@@ -271,7 +335,7 @@ pub fn open_session(
     wait_session(socket, &id, true)
 }
 
-pub fn create_volume(socket: &Path, plan: crate::storage::Plan) -> io::Result<i32> {
+pub fn create_volume(socket: &Endpoint, plan: crate::storage::Plan) -> io::Result<i32> {
     let info = request(socket, "GET", "/v1/info", None)?;
     let id = plan.id.clone();
     let mut input = serde_json::to_value(plan)?;
@@ -281,7 +345,7 @@ pub fn create_volume(socket: &Path, plan: crate::storage::Plan) -> io::Result<i3
     wait_volume(socket, &id, true)
 }
 
-pub fn wait_volume(socket: &Path, id: &str, creating: bool) -> io::Result<i32> {
+pub fn wait_volume(socket: &Endpoint, id: &str, creating: bool) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let deadline = Instant::now() + Duration::from_secs(340);
     loop {
@@ -309,7 +373,7 @@ pub fn wait_volume(socket: &Path, id: &str, creating: bool) -> io::Result<i32> {
     }
 }
 
-pub fn wait_session(socket: &Path, id: &str, opening: bool) -> io::Result<i32> {
+pub fn wait_session(socket: &Endpoint, id: &str, opening: bool) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let deadline = Instant::now() + Duration::from_secs(45);
     loop {

@@ -1,7 +1,7 @@
 //! Streaming CLI file operations. A lost upload response keeps its recovery ID;
 //! a failed download never replaces an existing local destination.
 use crate::{
-    client,
+    client::{self, Endpoint},
     config::invalid,
     file_io::{Format, digest, valid_path},
 };
@@ -41,7 +41,7 @@ fn hash(file: &mut File) -> io::Result<(u64, String)> {
     }
     Ok((bytes, format!("{:x}", hash.finalize())))
 }
-fn outcome(socket: &Path, result: Value, keep: bool) -> io::Result<i32> {
+fn outcome(socket: &Endpoint, result: Value, keep: bool) -> io::Result<i32> {
     println!("{result}");
     let id = result["id"]
         .as_str()
@@ -67,7 +67,7 @@ fn outcome(socket: &Path, result: Value, keep: bool) -> io::Result<i32> {
     Ok(if state == "succeeded" { 0 } else { 1 })
 }
 pub fn put(
-    socket: &Path,
+    socket: &Endpoint,
     session: &str,
     source: &Path,
     destination: &str,
@@ -99,8 +99,10 @@ pub fn put(
     stream.set_read_timeout(Some(Duration::from_secs(75)))?;
     write!(
         stream,
-        "PUT /v1/uploads/{id}/content HTTP/1.1\r\nHost: sandcrab\r\nContent-Type: application/octet-stream\r\nContent-Length: {bytes}\r\nConnection: close\r\n\r\n"
+        "PUT /v1/uploads/{id}/content HTTP/1.1\r\nContent-Type: application/octet-stream\r\nContent-Length: {bytes}\r\nConnection: close\r\n"
     )?;
+    socket.headers(&mut stream)?;
+    stream.write_all(b"\r\n")?;
     let sent = io::copy(&mut (&mut file).take(bytes), &mut stream);
     if sent.as_ref().is_err() || sent.as_ref().is_ok_and(|n| *n != bytes) {
         return Err(invalid(format!(
@@ -171,7 +173,7 @@ pub struct Get {
     pub replace: bool,
 }
 pub fn get(
-    socket: &Path,
+    socket: &Endpoint,
     session: &str,
     path: &str,
     destination: &Path,
@@ -186,9 +188,11 @@ pub fn get(
         serde_json::to_vec(&json!({"path":path,"format":options.format,"freeze":options.freeze}))?;
     write!(
         stream,
-        "POST /v1/sessions/{session}/snapshot HTTP/1.1\r\nHost: sandcrab\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST /v1/sessions/{session}/snapshot HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     )?;
+    socket.headers(&mut stream)?;
+    stream.write_all(b"\r\n")?;
     stream.write_all(&body)?;
     let (head, mut response) = sandcrab_core::http::response(&mut stream)
         .map_err(|_| invalid("Invalid snapshot response"))?;
