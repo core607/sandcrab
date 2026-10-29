@@ -3,7 +3,7 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Isolated finite commands, persistent shell sessions and optional durable volumes over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential requests; follow Connection: close. A serverId binds run and session retries to one daemon lifetime. Volumes persist across restarts; shell state and unattached ephemeral workspaces do not. No TCP listener is provided."
+    "description": "Isolated finite commands, persistent sessions, optional durable volumes and raw/tar files over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential control requests; follow Connection: close. Server epochs guard new operations, while retained volume and upload identities remain separate from transport lifetime. No TCP listener is provided."
   },
   "servers": [
     {
@@ -59,7 +59,8 @@
               "enum": [
                 "runs",
                 "sessions",
-                "volumes"
+                "volumes",
+                "files"
               ]
             }
           }
@@ -787,6 +788,374 @@
           }
         }
       }
+    },
+    "/v1/uploads": {
+      "get": {
+        "operationId": "listUploads",
+        "description": "Up to ten records in UUID order. Continue with nextAfter.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createUpload",
+        "description": "Register an upload plan. The ID binds its digest excluding serverId; changed plans conflict. Existing IDs replay across daemon restarts when metadata is retained. Unknown IDs require the current serverId and a live session. Waiting records hold no workspace. Never reuse a forgotten ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Upload200"
+          },
+          "201": {
+            "$ref": "#/components/responses/Upload201"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getUpload",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Upload200"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}/content": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "uploadContent",
+        "description": "Stream exactly the registered byte count and SHA-256. Content-Length is required; chunked bodies are refused. Expect: 100-continue is supported after admission. The private staging helper validates the full stream before any workspace mutation. Raw replaces one file; tar installs an ordinary directory tree. replace=false refuses an existing destination. Optional freezing covers publication only and always ends before the response. The response closes the connection, including replay and refusal before body consumption. A lost response requires inspecting this ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/x-tar": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Upload200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "417": {
+            "$ref": "#/components/responses/Error417"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "cancelUpload",
+        "description": "Cancel waiting or active ingestion. Publication is not rolled back; inspect the returned record until settled. An uncertain cleanup holds ownership.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Upload200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/uploads/{id}/forget": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "forgetUpload",
+        "description": "Release a waiting or terminal record only when no stage remains. End replay protection; never reuse this ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Record forgotten",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "forgotten"
+                  ],
+                  "properties": {
+                    "forgotten": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/snapshot": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "snapshotFiles",
+        "description": "Capture a raw file or an ordinary tar of a directory, then thaw before sending bytes. Symlinks in tar remain links and are never followed. The Content-Length and quoted SHA-256 ETag describe immutable captured bytes. Complete delivery confirms stage cleanup; a failure may truncate the body. Snapshots are request-scoped and are not retained for reconnect. This response closes its connection.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot bytes; validate both declared length and ETag before installing locally.",
+            "headers": {
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/x-tar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "417": {
+            "$ref": "#/components/responses/Error417"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error507"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -820,7 +1189,8 @@
           "serverId",
           "capabilities",
           "profiles",
-          "storage"
+          "storage",
+          "files"
         ],
         "properties": {
           "apiVersion": {
@@ -836,7 +1206,8 @@
               "enum": [
                 "runs",
                 "sessions",
-                "volumes"
+                "volumes",
+                "files"
               ]
             }
           },
@@ -848,7 +1219,8 @@
                 "timeoutMillis",
                 "outputLimitBytes",
                 "network",
-                "sessionTtlMillis"
+                "sessionTtlMillis",
+                "transferBytes"
               ],
               "properties": {
                 "timeoutMillis": {
@@ -868,6 +1240,11 @@
                   "type": "integer",
                   "minimum": 100,
                   "maximum": 86400000
+                },
+                "transferBytes": {
+                  "type": "integer",
+                  "minimum": 1024,
+                  "maximum": 1073741824
                 }
               }
             }
@@ -905,6 +1282,39 @@
               "available": {
                 "type": "boolean",
                 "description": "False requires operator reconciliation and daemon restart before mutations."
+              }
+            }
+          },
+          "files": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "available",
+              "maxRecords",
+              "maxTransfers",
+              "transferTimeoutMillis",
+              "entryLimit"
+            ],
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "description": "False requires reconciliation and daemon restart before file mutations."
+              },
+              "maxRecords": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024
+              },
+              "maxTransfers": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              },
+              "transferTimeoutMillis": {
+                "const": 30000
+              },
+              "entryLimit": {
+                "const": 10000
               }
             }
           }
@@ -1340,6 +1750,215 @@
             "format": "uuid"
           }
         }
+      },
+      "UploadRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "sessionId",
+          "path",
+          "format",
+          "bytes",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Relative workspace path; at most 64 components, each at most 255 UTF-8 bytes. Empty, dot, parent and backslash components and control characters are refused. Parents must exist."
+          },
+          "format": {
+            "enum": [
+              "raw",
+              "tar"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1073741824
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "replace": {
+            "type": "boolean",
+            "default": false
+          },
+          "freeze": {
+            "type": "boolean",
+            "default": true
+          },
+          "mode": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 511,
+            "description": "Ordinary permission bits; default 0644 for raw files or 0755 for the target tar directory. Archive member permissions lose special bits and ownership comes from the profile."
+          }
+        }
+      },
+      "Upload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "sessionId",
+          "profile",
+          "volumeId",
+          "path",
+          "format",
+          "bytes",
+          "sha256",
+          "planDigest",
+          "state",
+          "code",
+          "publication"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "volumeId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "Relative workspace path; at most 64 components, each at most 255 UTF-8 bytes. Empty, dot, parent and backslash components and control characters are refused. Parents must exist."
+          },
+          "format": {
+            "enum": [
+              "raw",
+              "tar"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1073741824
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "planDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "receiving",
+              "publishing",
+              "published",
+              "succeeded",
+              "failed",
+              "unknown",
+              "closing"
+            ]
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publication": {
+            "enum": [
+              "none",
+              "unknown",
+              "committed"
+            ],
+            "description": "committed confirms synchronized publication; unknown never authorizes another write."
+          }
+        }
+      },
+      "UploadPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "uploads",
+          "nextAfter"
+        ],
+        "properties": {
+          "uploads": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/Upload"
+            }
+          },
+          "nextAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "SnapshotRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "format"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "A relative file path for raw; a relative directory path or . for tar."
+          },
+          "format": {
+            "enum": [
+              "raw",
+              "tar"
+            ]
+          },
+          "freeze": {
+            "type": "boolean",
+            "default": true
+          }
+        }
       }
     },
     "responses": {
@@ -1459,6 +2078,66 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Volume"
+            }
+          }
+        }
+      },
+      "Error413": {
+        "description": "File operation refused or unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error417": {
+        "description": "File operation refused or unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error422": {
+        "description": "File operation refused or unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error507": {
+        "description": "File operation refused or unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Upload200": {
+        "description": "Retained identity or current outcome. A failed or unknown outcome is not a successful write.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Upload"
+            }
+          }
+        }
+      },
+      "Upload201": {
+        "description": "Identity registered; send content only while waiting.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Upload"
             }
           }
         }

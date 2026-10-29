@@ -57,7 +57,14 @@ impl Client {
             return Err(invalid("Response too large"));
         }
         let mut bytes = Vec::with_capacity(head.length as usize);
-        body.read_to_end(&mut bytes)?;
+        body.read_to_end(&mut bytes).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "Incomplete HTTP response ({error}); inspect the existing ID before retrying"
+                ),
+            )
+        })?;
         let value: Value = serde_json::from_slice(&bytes)?;
         if !head.close {
             self.stream = Some(stream);
@@ -73,7 +80,7 @@ impl Client {
     }
 }
 
-fn connect(socket: &Path) -> io::Result<UnixStream> {
+pub(crate) fn connect(socket: &Path) -> io::Result<UnixStream> {
     protected_directory(
         socket
             .parent()

@@ -55,7 +55,7 @@ fn directory(path: &Path, mode: u32) -> io::Result<()> {
     protected_directory(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
-fn create(path: &Path, value: &impl Serialize, gid: u32) -> io::Result<()> {
+fn create(path: &Path, value: &impl Serialize, gid: u32, mode: u32) -> io::Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -63,10 +63,11 @@ fn create(path: &Path, value: &impl Serialize, gid: u32) -> io::Result<()> {
         .custom_flags(OFlags::NOFOLLOW.bits() as i32)
         .open(path)?;
     file.write_all(&serde_json::to_vec(value)?)?;
-    owned(path, 0, gid, 0o440)
+    owned(path, 0, gid, mode)
 }
 
 pub struct Runtime {
+    pub files: crate::file_records::Store,
     pub storage: Option<Arc<Store>>,
     pub config: Config,
     pool: PathBuf,
@@ -104,9 +105,11 @@ impl Runtime {
         let lock = install::runtime_lock(root)?;
         directory(&root.join("jobs"), 0o711)?;
         directory(&root.join("records"), 0o711)?;
+        directory(&root.join("file-ops"), 0o700)?;
         let storage = config.storage.clone().map(|s| Store::open(s, json!({"version":1,
             "runtimeRoot":config.service.runtime_root,"resourceSlice":config.service.resource_slice,"unitPrefix":config.service.unit_prefix}))).transpose()?;
         let runtime = Self {
+            files: crate::file_records::Store::open(&config)?,
             storage,
             config,
             pool,
@@ -114,6 +117,10 @@ impl Runtime {
             _lock: lock,
         };
         runtime.cleanup()?;
+        for stage in runtime.files.pending_stages() {
+            runtime.clean_stage(&stage)?;
+        }
+        runtime.files.recovered()?;
         if let Some(storage) = &runtime.storage {
             storage.recover()?;
         }
@@ -136,7 +143,11 @@ impl Runtime {
             if !unit
                 .strip_prefix(prefix)
                 .and_then(|s| s.strip_suffix(".service"))
-                .is_some_and(|s| uuid(s) || s.strip_prefix("volume-").is_some_and(uuid))
+                .is_some_and(|s| {
+                    uuid(s)
+                        || s.strip_prefix("volume-").is_some_and(uuid)
+                        || s.strip_prefix("file-").is_some_and(uuid)
+                })
             {
                 return Err(invalid("Unexpected unit in Sandcrab namespace"));
             }
@@ -168,7 +179,175 @@ impl Runtime {
             }
             fs::remove_file(entry.path())?;
         }
+        for entry in fs::read_dir(root.join("file-ops"))? {
+            let entry = entry?;
+            if !entry
+                .file_name()
+                .to_str()
+                .and_then(|s| s.strip_suffix(".json"))
+                .is_some_and(uuid)
+            {
+                return Err(invalid("Unexpected file operation record"));
+            }
+            sandcrab_core::fs::protected_file(&entry.path(), 16384)?;
+            fs::remove_file(entry.path())?;
+        }
         Ok(())
+    }
+
+    pub fn file_helper(
+        &self,
+        job: &crate::file_io::Job,
+        profile: &Profile,
+        cancelled: &AtomicBool,
+        input: Stdio,
+    ) -> (io::Result<Value>, bool) {
+        let execute = || -> io::Result<(io::Result<Value>, bool)> {
+            sandcrab_core::unit::verify_resource_pool(&self.pool)?;
+            let operation = sandcrab_core::new_uuid()?;
+            let record = self
+                .config
+                .service
+                .runtime_root
+                .join("file-ops")
+                .join(format!("{operation}.json"));
+            create(&record, job, 0, 0o400)?;
+            let unit = format!("{}file-{operation}", self.config.service.unit_prefix);
+            let limits = sandcrab_core::unit::Profile {
+                tools: profile.tools.clone(),
+                launcher: self.executable.clone(),
+                exec_user: "root".into(),
+                resource_slice: self.config.service.resource_slice.clone(),
+                supervisor_unit: self.config.service.supervisor_unit.clone(),
+                cpu_quota_percent: profile.cpu_quota_percent,
+                memory_bytes: profile.memory_bytes,
+                tasks_max: profile.tasks_max,
+                temporary_bytes: profile.temporary_bytes,
+                temporary_inodes: profile.temporary_inodes,
+            };
+            let mut readonly = vec![record.as_path()];
+            let mut writable = vec![job.stage.as_path()];
+            if job.action == "snapshot" {
+                readonly.push(&job.workspace);
+            }
+            // Renaming across two bind mounts fails with EXDEV even on the same
+            // filesystem. Publication binds their protected common parent once.
+            if job.action == "publish" {
+                writable = vec![
+                    job.stage
+                        .parent()
+                        .ok_or_else(|| invalid("Missing file stage parent"))?,
+                ];
+            }
+            let timeout = if job.action == "cleanup" {
+                10000
+            } else {
+                30000
+            };
+            let command = limits.command_with_args(
+                &unit,
+                &readonly,
+                &writable,
+                &[
+                    self.executable.to_string_lossy().into(),
+                    "__file".into(),
+                    record.to_string_lossy().into(),
+                ],
+                Some(timeout),
+                &[
+                    "OOMPolicy=kill".into(),
+                    "ProtectSystem=strict".into(),
+                    format!(
+                        "ReadWritePaths={}",
+                        writable
+                            .iter()
+                            .map(|p| p.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                    "PrivateNetwork=yes".into(),
+                    "PrivateDevices=yes".into(),
+                    "CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER".into(),
+                ],
+            );
+            let (finished, contained) = job::run_input(
+                &Launch {
+                    command,
+                    unit: unit.clone(),
+                    cgroup: self.pool.join(format!("{unit}.service")),
+                },
+                cancelled,
+                Duration::from_millis(timeout),
+                16384,
+                input,
+            );
+            if contained.is_ok() {
+                fs::remove_file(record)?;
+            }
+            let value = finished.and_then(|f| {
+                if f.end != job::End::Normal {
+                    return Err(invalid(match f.end {
+                        job::End::Cancelled => "FILE_CANCELLED",
+                        job::End::ResourceLimit => "FILE_RESOURCE_LIMIT",
+                        _ => "FILE_HELPER_FAILED",
+                    }));
+                }
+                let value: Value = serde_json::from_slice(&f.output[0])?;
+                if f.exit_code != 0 {
+                    return Err(invalid(
+                        value["error"]
+                            .as_str()
+                            .filter(|s| {
+                                s.len() <= 64
+                                    && s.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+                            })
+                            .unwrap_or("FILE_FAILED"),
+                    ));
+                }
+                Ok(value)
+            });
+            Ok((value, contained.is_ok()))
+        };
+        match execute() {
+            Ok(value) => value,
+            Err(error) => (Err(error), true),
+        }
+    }
+
+    pub fn clean_stage(&self, stage: &crate::file_records::Stage) -> io::Result<()> {
+        if let Some(path) = self.files.validate_stage(stage, &self.config)? {
+            let profile = self
+                .config
+                .profiles
+                .get(&stage.profile)
+                .ok_or_else(|| invalid("File recovery profile unavailable"))?;
+            let job = crate::file_io::Job {
+                action: "cleanup".into(),
+                workspace: stage.workspace(&self.config)?,
+                stage: path,
+                path: "unused".into(),
+                format: crate::file_io::Format::Raw,
+                bytes: 0,
+                sha256: String::new(),
+                replace: false,
+                mode: 0o600,
+                uid: stage.uid,
+                gid: stage.gid,
+                byte_limit: profile.transfer_bytes,
+                entry_limit: 10000,
+            };
+            let (result, contained) =
+                self.file_helper(&job, profile, &AtomicBool::new(false), Stdio::null());
+            if !contained {
+                return Err(invalid("File cleanup containment unconfirmed"));
+            }
+            result?;
+            self.files.validate_stage(stage, &self.config)?;
+            fs::remove_file(job.stage.join("owner.json"))?;
+            fs::remove_dir(&job.stage)?;
+            fs::File::open(job.stage.parent().unwrap())?.sync_all()?;
+        }
+        self.files.finish_stage(&stage.id)
     }
 
     pub fn run(
@@ -203,10 +382,12 @@ impl Runtime {
     /// Prepare a persistent shell. Failed cleanup holds the caller's admission until restart.
     pub fn open_shell(
         &self,
-        id: &str,
+        request: &crate::sessions::Open,
         profile: &Profile,
-        volume: Option<&str>,
+        cancelled: Arc<AtomicBool>,
     ) -> Result<Shell, OpenError> {
+        let id = request.id.as_str();
+        let volume = request.volume_id.as_deref();
         let mut attachment = match volume {
             Some(volume) => Some(
                 self.storage
@@ -277,6 +458,16 @@ impl Runtime {
             contained: false,
         })?;
         Ok(Shell {
+            files: crate::file_access::Access::new(
+                request,
+                profile.clone(),
+                attachment
+                    .as_ref()
+                    .map(Attachment::path)
+                    .unwrap_or_else(|| root.join("work")),
+                launch.cgroup.clone(),
+                cancelled,
+            ),
             channel,
             launch,
             root,
@@ -389,6 +580,7 @@ impl Runtime {
                 workspace: workspace.unwrap_or(&root.join("work")).into(),
             },
             profile.gid,
+            0o440,
         )?;
         let mut read = profile.read_only.clone();
         for path in [&profile.tools, &root.join("bootstrap")] {
@@ -401,6 +593,7 @@ impl Runtime {
             &json!({"network":{"allowedDomains":[],"deniedDomains":[],"allowAllUnixSockets":false},
             "filesystem":{"denyRead":["/","/sys"],"allowRead":read,"allowWrite":["/tmp"],"denyWrite":[]},"enableWeakerNestedSandbox":false}),
             profile.gid,
+            0o440,
         )?;
         let unit = format!("{}{id}", self.config.service.unit_prefix);
         let limits = sandcrab_core::unit::Profile {
@@ -555,6 +748,7 @@ pub struct OpenError {
     pub contained: bool,
 }
 pub struct Shell {
+    pub files: Arc<crate::file_access::Access>,
     pub channel: Channel,
     launch: Launch,
     root: PathBuf,
@@ -581,6 +775,7 @@ impl Shell {
     }
 
     pub fn close(mut self) -> io::Result<()> {
+        self.files.stop();
         let deadline = Instant::now() + Duration::from_secs(15);
         while self.channel.process().try_wait()?.is_none() {
             let _ = call(&[
@@ -624,6 +819,7 @@ impl Shell {
             }
         }
         empty_group(&self.launch.cgroup)?;
+        self.files.wait()?;
         let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
         release(&self.root, &self.records)?;
         if let Some(attachment) = self.attachment.take() {

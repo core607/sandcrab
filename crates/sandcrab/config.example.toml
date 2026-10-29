@@ -9,6 +9,8 @@ unit_prefix = "sandcrab-demo-"
 max_sandboxes = 2
 max_records = 128
 max_output_bytes = 8388608
+max_file_records = 256
+max_file_transfers = 2
 
 # Optional: provision a separate bounded XFS mount at root/data with reflink,
 # enforced project quotas, nosuid and nodev. root/state stays on another filesystem.
@@ -32,4 +34,5 @@ cpu_quota_percent = 50
 timeout_millis = 30000
 session_ttl_millis = 60000
 output_limit_bytes = 65536
+transfer_bytes = 33554432
 network = "none"

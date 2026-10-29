@@ -1,8 +1,8 @@
 # Sandcrab native service
 
 `sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
-bash sessions and durable volumes. It needs no Poketto account, workspace, repository,
-signing key or compiled extension. The service uses a Unix socket; file transfer, SSE,
+bash sessions, durable volumes and streamed files. It needs no Poketto account, workspace, repository,
+signing key or compiled extension. The service uses a Unix socket; host calls, SSE,
 TCP and the OpenSandbox adapter remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
@@ -56,7 +56,8 @@ command's exit result. Inspect or forget the printed ID instead of rerunning it.
 
 HTTP/1.1 connections accept sequential requests until `Connection: close`, an
 invalid message, the 128th response or shutdown. Reading a request, including idle
-time, and writing its response each have a five-second deadline. The CLI reuses connections while
+time, and writing its JSON response each have a five-second deadline. An idle connection
+closes without sending an unsolicited error. File bodies use the limits below. The CLI reuses connections while
 polling and reconnects after a declared close; transport failures are returned
 without replay. Up to 32 connections are admitted. POST bodies declare a content
 length of 1 to 65536 bytes; GET requests have no body. Headers are at most 8192 bytes
@@ -67,7 +68,7 @@ account can connect to the socket.
 | Request | Result |
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
-| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions` or `volumes` selects a bounded view with its referenced schemas |
+| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes` or `files` selects a bounded view with its referenced schemas |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
 | `POST /v1/runs/ID/cancel` with `{}` | Request cancellation; poll until terminal |
@@ -213,6 +214,76 @@ reconciliation; it never exposes uncommitted data as ready. Unexpected data,
 mounts or a changed cleanup namespace require operator reconciliation and are
 preserved. Keep the store and its matching runtime configuration together.
 
+## Files
+
+```sh
+sandcrab files put --socket /run/sandcrab-demo/control.sock SESSION_ID ./input.bin input.bin
+tar -cf project.tar -C ./project .
+sandcrab files put --socket /run/sandcrab-demo/control.sock SESSION_ID ./project.tar project --tar
+sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'cd project; python3 main.py'
+sandcrab files get --socket /run/sandcrab-demo/control.sock SESSION_ID project ./result.tar --tar
+sandcrab files status --socket /run/sandcrab-demo/control.sock UPLOAD_ID
+sandcrab files cancel --socket /run/sandcrab-demo/control.sock UPLOAD_ID
+sandcrab files forget --socket /run/sandcrab-demo/control.sock UPLOAD_ID
+sandcrab files list --socket /run/sandcrab-demo/control.sock
+```
+
+Paths are relative to `/workspace`, preserving case and Unicode. Upload parents
+must already exist. Raw uploads install one file; tar uploads install one complete
+directory. Existing targets require `--replace`; tar replacement replaces the
+whole directory rather than merging its entries. `--mode OCTAL` chooses ordinary
+permission bits for a raw file or the tar root. Archive entries retain ordinary
+modes and links, with ownership assigned to the profile. Special nodes, sparse
+entries, traversal paths and writes through symlinks are refused. Symlinks remain
+opaque; snapshots never follow them. Hard links must name an earlier regular entry
+inside the archive. Extended attributes and original ownership are not preserved.
+
+Uploads stage and verify length and SHA-256 before publication. By default the
+session freezes briefly for atomic installation, and while a snapshot is captured.
+`--no-freeze` requires the caller to coordinate workspace writers; a snapshot can
+then observe different files at different times. The session is thawed before sending snapshot bytes.
+Command timeouts and session expiry continue while frozen. A transfer pins its
+session and volume until helper containment and staging cleanup finish; cancellation,
+expiry and shutdown cannot detach storage underneath it. Unconfirmed cleanup holds
+admission until restart. Temporary staging counts against workspace or volume quotas.
+
+| Request | Result |
+|---|---|
+| `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `freeze`, `mode`; returns 201 |
+| `PUT /v1/uploads/ID/content` | Send exactly the registered Content-Length; return the upload record |
+| `GET /v1/uploads/ID` | Read outcome and publication certainty |
+| `GET /v1/uploads?after=UUID` | Up to ten records in UUID order; continue with `nextAfter` |
+| `POST /v1/uploads/ID/cancel` with `{}` | Cancel pending or active work; inspect the final record |
+| `POST /v1/uploads/ID/forget` with `{}` | Forget a waiting or terminal record when no stage remains |
+| `POST /v1/sessions/ID/snapshot` | Send `path`, `format`, optional `freeze`; receive a fixed-length body with a quoted SHA-256 ETag |
+
+Bulk requests close their connection. Upload bodies support `Expect: 100-continue`
+after admission; other expectations are refused. Profile `transfer_bytes` bounds
+both stream bytes and expanded regular-file content. Archives also have a 10,000-entry
+limit including implicit parents. Upload body I/O, capture and publication each
+have a 30-second budget; snapshot body writes have a separate 30-second budget.
+Cleanup has a ten-second helper budget. Service `max_file_transfers` bounds active
+operations; each session allows only one file operation. `max_file_records` bounds
+retained upload identities independently of run and session records. Info exposes
+the configured limits and whether file metadata is writable.
+
+Records survive daemon restart while their configured storage survives. Reusing
+an ID with the same plan returns its record, excluding `serverId` from the digest;
+a different plan conflicts. Unknown IDs require the current epoch and a live session.
+States are `waiting`, `receiving`, `publishing`, `published`, `succeeded`, `failed`,
+`unknown` and `closing`. `publication` is `none`, `unknown` or `committed`.
+Cancellation does not undo a committed write. After an ambiguous publication,
+inspect the destination and receipt before choosing another write; replay never
+reexecutes it. Forgetting ends replay protection, so never reuse that ID.
+
+The CLI prints the upload ID before submission. It forgets successful or failed
+uploads unless `--keep-result` is set, and retains uncertain outcomes. `--id UUID`
+reconciles an explicit replay. Downloads verify length and ETag before atomically
+installing a local file; `--replace` is required to replace an existing regular
+file. A failed download preserves that file. A destination of `-` streams to stdout,
+where already-written bytes cannot be withdrawn after a failure. Snapshots are
+request-scoped and leave no retained artifact; consumers own downloaded copies.
+
 ## Verification
 
 `executorRustCheck` checks the binary and its configuration/request tests.
@@ -226,5 +297,7 @@ must retain session admission, and delayed unit registration must remain cancell
 requires `xfsprogs`. It owns a disposable 512 MiB XFS image, verifies file readback,
 reflinks, quotas, durable replay and failure recovery, and unmounts it only after
 its fixture's processes stop.
+`file_probe.py` uses the same arguments and an independent XFS fixture for raw/tar
+readback, safe local CLI installation, quotas, cancellation and publication recovery.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

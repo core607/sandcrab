@@ -77,6 +77,7 @@ pub(crate) struct Session {
     pending: Option<Work>,
     pub active_run: Option<String>,
     code: Option<String>,
+    pub files: Option<Arc<crate::file_access::Access>>,
 }
 fn expires_at(ttl: u64) -> u64 {
     SystemTime::now()
@@ -115,6 +116,9 @@ impl Registry {
         }
         session.state = "stopping".into();
         session.cancelled.store(true, Ordering::SeqCst);
+        if let Some(files) = &session.files {
+            files.stop();
+        }
         if let Some(run) = session.active_run.as_ref().and_then(|id| self.runs.get(id)) {
             run.cancelled.store(true, Ordering::SeqCst);
         }
@@ -271,6 +275,7 @@ impl Service {
             pending: None,
             active_run: None,
             code: None,
+            files: None,
         };
         let accepted = session.value();
         registry.sessions.insert(id.clone(), session);
@@ -351,12 +356,12 @@ impl Service {
         (202, accepted)
     }
 
-    fn session_loop(&self, id: &str, profile: &Profile, cancelled: &AtomicBool) {
-        let volume = self.registry.lock().unwrap().sessions[id]
-            .request
-            .volume_id
-            .clone();
-        let mut shell = match self.runtime.open_shell(id, profile, volume.as_deref()) {
+    fn session_loop(&self, id: &str, profile: &Profile, cancelled: &Arc<AtomicBool>) {
+        let request = self.registry.lock().unwrap().sessions[id].request.clone();
+        let mut shell = match self
+            .runtime
+            .open_shell(&request, profile, cancelled.clone())
+        {
             Ok(shell) => shell,
             Err(error) => {
                 self.end_session(id, "failed", error.contained, Some(error.code));
@@ -377,6 +382,7 @@ impl Service {
             registry.expire_sessions();
             let session = registry.sessions.get_mut(id).unwrap();
             if session.state == "starting" {
+                session.files = Some(shell.files.clone());
                 session.state = "ready".into();
             }
         }

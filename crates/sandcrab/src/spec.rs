@@ -34,8 +34,14 @@ pub fn document(capability: Option<&str>) -> Value {
         .retain(|path, _| {
             path == "/v1/info"
                 || path == "/v1/openapi"
-                || path == &prefix
-                || path.starts_with(&format!("{prefix}/"))
+                || if capability == "files" {
+                    path == "/v1/uploads"
+                        || path.starts_with("/v1/uploads/")
+                        || path == "/v1/sessions/{id}/snapshot"
+                } else {
+                    (path == &prefix || path.starts_with(&format!("{prefix}/")))
+                        && !path.ends_with("/snapshot")
+                }
         });
     let source = document["components"].take();
     document["components"] = json!({});
@@ -68,9 +74,14 @@ mod tests {
     use super::*;
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
-        for capability in ["runs", "sessions", "volumes"] {
+        for capability in ["runs", "sessions", "volumes", "files"] {
             let document = document(Some(capability));
-            assert!(document["paths"].get(format!("/v1/{capability}")).is_some());
+            let path = if capability == "files" {
+                "/v1/uploads".into()
+            } else {
+                format!("/v1/{capability}")
+            };
+            assert!(document["paths"].get(path).is_some());
             assert!(serde_json::to_vec(&document).unwrap().len() < 18000);
             let mut found = BTreeSet::new();
             references(&document, &mut found);
@@ -82,9 +93,14 @@ mod tests {
                     "{reference}"
                 );
             }
-            for other in ["runs", "sessions", "volumes"] {
+            for other in ["runs", "sessions", "volumes", "files"] {
                 if other != capability {
-                    assert!(document["paths"].get(format!("/v1/{other}")).is_none());
+                    let path = if other == "files" {
+                        "/v1/uploads".into()
+                    } else {
+                        format!("/v1/{other}")
+                    };
+                    assert!(document["paths"].get(path).is_none());
                 }
             }
         }

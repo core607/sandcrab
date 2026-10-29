@@ -6,6 +6,7 @@ use crate::{
 use rustix::fs::{Gid, Uid, chown};
 use sandcrab_core::http;
 use std::{
+    cell::Cell,
     fs,
     io::{self, Read, Write},
     os::unix::{
@@ -33,12 +34,15 @@ const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 // A socket timeout alone resets with every read/write. One deadline prevents a
 // peer from holding admission indefinitely by sending a byte before each timeout.
 struct Timed<'a> {
-    stream: &'a mut UnixStream,
-    deadline: Instant,
+    stream: &'a UnixStream,
+    deadline: &'a Cell<Instant>,
+    slice: &'a Cell<Duration>,
+    received: &'a Cell<bool>,
 }
 impl Timed<'_> {
     fn remaining(&self) -> io::Result<Duration> {
         self.deadline
+            .get()
             .checked_duration_since(Instant::now())
             .filter(|d| !d.is_zero())
             .ok_or_else(|| io::ErrorKind::TimedOut.into())
@@ -46,8 +50,13 @@ impl Timed<'_> {
 }
 impl Read for Timed<'_> {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.stream.set_read_timeout(Some(self.remaining()?))?;
-        self.stream.read(bytes)
+        self.stream
+            .set_read_timeout(Some(self.remaining()?.min(self.slice.get())))?;
+        let n = self.stream.read(bytes)?;
+        if n > 0 {
+            self.received.set(true);
+        }
+        Ok(n)
     }
 }
 impl Write for Timed<'_> {
@@ -65,54 +74,205 @@ fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
         if service.stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
+        let deadline = Cell::new(Instant::now() + EXCHANGE_TIMEOUT);
+        let slice = Cell::new(EXCHANGE_TIMEOUT);
+        let received = Cell::new(false);
         let mut input = Timed {
             stream,
-            deadline: Instant::now() + EXCHANGE_TIMEOUT,
+            deadline: &deadline,
+            slice: &slice,
+            received: &received,
         };
-        let request = match http::start(&mut input) {
-            Ok(Some((head, mut body)))
-                if ["GET", "POST"].contains(&head.method.as_str())
-                    && head.length <= 65536
-                    && (head.method == "POST") == (head.length > 0) =>
-            {
-                let mut bytes = Vec::with_capacity(head.length as usize);
-                body.read_to_end(&mut bytes).ok().map(|_| (head, bytes))
-            }
+        let (head, mut body) = match http::start(&mut input) {
+            Ok(Some(value)) => value,
             Ok(None) => return Ok(()),
-            _ => None,
+            Err(_) if !received.get() => return Ok(()),
+            Err(_) => return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true),
         };
-        let (status, reply, close) = match request {
-            Some((head, body)) => {
-                let (status, reply) = service.route(&head.method, &head.path, &body);
-                (
-                    status,
-                    reply,
-                    head.close
-                        || index + 1 == REQUEST_LIMIT
-                        || service.stopped.load(Ordering::SeqCst),
-                )
-            }
-            None => {
-                let (status, reply) = error(400, "INVALID_HTTP");
-                (status, reply, true)
-            }
-        };
-        let mut output = Timed {
-            stream,
-            deadline: Instant::now() + EXCHANGE_TIMEOUT,
-        };
-        http::respond(
-            &mut output,
-            status,
-            "application/json",
-            &serde_json::to_vec(&reply)?,
-            close,
-        )?;
+        let expect = head.header("expect");
+        if expect.is_some_and(|value| !value.eq_ignore_ascii_case("100-continue")) {
+            drop(body);
+            return json_reply(stream, 417, &error(417, "EXPECTATION_UNSUPPORTED").1, true);
+        }
+        if head.method == "PUT"
+            && let Some(id) = head
+                .path
+                .strip_prefix("/v1/uploads/")
+                .and_then(|p| p.strip_suffix("/content"))
+                .filter(|s| sandcrab_core::uuid(s))
+        {
+            deadline.set(Instant::now() + Duration::from_secs(30));
+            slice.set(Duration::from_millis(200));
+            let mut continuation = if expect.is_some() {
+                Some(stream.try_clone()?)
+            } else {
+                None
+            };
+            let (status, reply) =
+                service.receive_upload(id, head.length, &mut body, deadline.get(), || {
+                    if let Some(stream) = &mut continuation {
+                        stream.set_write_timeout(Some(EXCHANGE_TIMEOUT))?;
+                        stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n")?;
+                        stream.flush()?;
+                    }
+                    Ok(())
+                });
+            drop(body);
+            return json_reply(stream, status, &reply, true);
+        }
+        if expect.is_some() {
+            drop(body);
+            return json_reply(stream, 417, &error(417, "EXPECTATION_UNSUPPORTED").1, true);
+        }
+        if !["GET", "POST"].contains(&head.method.as_str())
+            || head.length > 65536
+            || (head.method == "POST") != (head.length > 0)
+        {
+            drop(body);
+            return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true);
+        }
+        let mut bytes = Vec::with_capacity(head.length as usize);
+        if body.read_to_end(&mut bytes).is_err() {
+            drop(body);
+            return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true);
+        }
+        drop(body);
+        if head.method == "POST"
+            && let Some(id) = head
+                .path
+                .strip_prefix("/v1/sessions/")
+                .and_then(|p| p.strip_suffix("/snapshot"))
+                .filter(|s| sandcrab_core::uuid(s))
+        {
+            return snapshot(stream, service, id, &bytes);
+        }
+        let (status, reply) = service.route(&head.method, &head.path, &bytes);
+        let close =
+            head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
+        json_reply(stream, status, &reply, close)?;
         if close {
             return Ok(());
         }
     }
     Ok(())
+}
+
+fn json_reply(
+    stream: &mut UnixStream,
+    status: u16,
+    reply: &serde_json::Value,
+    close: bool,
+) -> io::Result<()> {
+    let deadline = Cell::new(Instant::now() + EXCHANGE_TIMEOUT);
+    let slice = Cell::new(EXCHANGE_TIMEOUT);
+    let received = Cell::new(false);
+    let mut output = Timed {
+        stream,
+        deadline: &deadline,
+        slice: &slice,
+        received: &received,
+    };
+    http::respond(
+        &mut output,
+        status,
+        "application/json",
+        &serde_json::to_vec(reply)?,
+        close,
+    )
+}
+struct Download<'a> {
+    stream: &'a mut UnixStream,
+    cancelled: &'a std::sync::atomic::AtomicBool,
+    deadline: Instant,
+}
+impl Write for Download<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        loop {
+            if self.cancelled.load(Ordering::SeqCst) {
+                // write_all/copy retry Interrupted; cancellation must end the exchange.
+                return Err(io::ErrorKind::ConnectionAborted.into());
+            }
+            let remaining = self
+                .deadline
+                .checked_duration_since(Instant::now())
+                .filter(|d| !d.is_zero())
+                .ok_or(io::ErrorKind::TimedOut)?;
+            self.stream
+                .set_write_timeout(Some(remaining.min(Duration::from_millis(200))))?;
+            match self.stream.write(bytes) {
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                result => return result,
+            }
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+fn snapshot(stream: &mut UnixStream, service: &Service, id: &str, body: &[u8]) -> io::Result<()> {
+    let mut snapshot = match service.capture(id, body) {
+        Ok(s) => s,
+        Err((status, code)) => return json_reply(stream, status, &error(status, code).1, true),
+    };
+    let bytes = snapshot.bytes;
+    let etag = format!("\"{}\"", snapshot.sha256);
+    let content_type = if snapshot.format == crate::file_io::Format::Tar {
+        "application/x-tar"
+    } else {
+        "application/octet-stream"
+    };
+    let cancelled = snapshot.lease.cancelled.clone();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    if bytes == 0 {
+        if service.release_snapshot(snapshot).is_err() {
+            return json_reply(stream, 503, &error(503, "FILE_CLEANUP_UNCONFIRMED").1, true);
+        }
+        let mut output = Download {
+            stream,
+            cancelled: &cancelled,
+            deadline,
+        };
+        http::response_head_with(&mut output, 200, content_type, 0, true, &[("ETag", &etag)])?;
+        return output.flush();
+    }
+    let mut tail = [0u8; 1];
+    let sent = (|| {
+        let mut output = Download {
+            stream,
+            cancelled: &cancelled,
+            deadline,
+        };
+        http::response_head_with(
+            &mut output,
+            200,
+            content_type,
+            bytes,
+            true,
+            &[("ETag", &etag)],
+        )?;
+        if io::copy(&mut (&mut snapshot.file).take(bytes - 1), &mut output)? != bytes - 1 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        snapshot.file.read_exact(&mut tail)
+    })();
+    // Keep the final byte until the snapshot and its ownership are released.
+    // A fixed-length reader may act immediately after that byte, without waiting for EOF.
+    let cleanup = service.release_snapshot(snapshot);
+    sent.and(cleanup)?;
+    let mut output = Download {
+        stream,
+        cancelled: &cancelled,
+        deadline,
+    };
+    output.write_all(&tail)?;
+    output.flush()
 }
 
 pub fn serve(service: Arc<Service>) -> io::Result<()> {

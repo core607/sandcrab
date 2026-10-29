@@ -32,20 +32,21 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.mkdir(mode=0o755)  # Never overwrite an earlier attempt.
-    volume_probe = subprocess.Popen(['python3', str(source / 'executor-service/rust/sandcrab/volume_probe.py'),
+    for name, receipt in [('volume', 'volumes'), ('file', 'files')]:
+        preflight = subprocess.Popen(['python3', str(source / f'executor-service/rust/sandcrab/{name}_probe.py'),
                                      '--binary', str(args.binary.resolve()), '--tools', str(args.tools.resolve()),
-                                     '--report', str(output / 'volumes.json')])
-    try:
-        if volume_probe.wait(timeout=300) != 0:
-            raise RuntimeError('Native volume preflight failed; inspect its retained receipt')
-    finally:
-        if volume_probe.poll() is None:
-            volume_probe.terminate()
-            try:
-                volume_probe.wait(timeout=90)
-            except subprocess.TimeoutExpired:
-                volume_probe.kill()
-                volume_probe.wait(timeout=10)
+                                     '--report', str(output / f'{receipt}.json')])
+        try:
+            if preflight.wait(timeout=300) != 0:
+                raise RuntimeError(f'Native {name} preflight failed; inspect its retained receipt')
+        finally:
+            if preflight.poll() is None:
+                preflight.terminate()
+                try:
+                    preflight.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    preflight.kill()
+                    preflight.wait(timeout=10)
     client = pwd.getpwnam('daemon')
     os.chown(output, client.pw_uid, client.pw_gid)
     spec = importlib.util.spec_from_file_location('native_probe', source / 'executor-service/rust/sandcrab/native_probe.py')

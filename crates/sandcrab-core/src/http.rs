@@ -63,6 +63,12 @@ pub struct ResponseHead {
     pub status: u16,
     pub length: u64,
     pub close: bool,
+    headers: BTreeMap<String, String>,
+}
+impl ResponseHead {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).map(String::as_str)
+    }
 }
 struct Envelope {
     line: String,
@@ -118,7 +124,7 @@ fn envelope(source: &mut impl Read) -> Result<Option<Envelope>, &'static str> {
             return Err(INVALID);
         }
         let name = name.to_ascii_lowercase();
-        if ["transfer-encoding", "upgrade", "expect"].contains(&name.as_str())
+        if ["transfer-encoding", "upgrade"].contains(&name.as_str())
             || headers.insert(name, value.to_owned()).is_some()
         {
             return Err(INVALID);
@@ -217,6 +223,7 @@ pub fn response<R: Read>(source: &mut R) -> Result<(ResponseHead, Body<'_, R>), 
         status,
         length,
         close: raw.close(),
+        headers: raw.headers,
     };
     Ok((
         head,
@@ -233,6 +240,7 @@ pub fn response<R: Read>(source: &mut R) -> Result<(ResponseHead, Body<'_, R>), 
 pub fn read(stream: &mut impl Read, max_body: usize) -> Result<Request, &'static str> {
     let (head, mut body) = start(stream)?.ok_or(INVALID)?;
     if !["GET", "POST"].contains(&head.method.as_str())
+        || head.header("expect").is_some()
         || head.length > max_body as u64
         || (head.method == "POST") != (head.length > 0)
     {
@@ -283,6 +291,17 @@ pub fn response_head(
     length: u64,
     close: bool,
 ) -> io::Result<()> {
+    response_head_with(stream, status, content_type, length, close, &[])
+}
+
+pub fn response_head_with(
+    stream: &mut impl Write,
+    status: u16,
+    content_type: &str,
+    length: u64,
+    close: bool,
+    extra: &[(&str, &str)],
+) -> io::Result<()> {
     if content_type.bytes().any(|b| b.is_ascii_control()) {
         return Err(io::ErrorKind::InvalidInput.into());
     }
@@ -301,9 +320,34 @@ pub fn response_head(
         _ => "Error",
     };
     let connection = if close { "close" } else { "keep-alive" };
-    let head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\nConnection: {connection}\r\n\r\n"
+    let mut head = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\nConnection: {connection}\r\n"
     );
+    let mut names = BTreeMap::new();
+    if extra.len() > MAX_HEADERS - 3 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    for (key, value) in extra {
+        if head.len() + key.len() + value.len() + 6 > MAX_HEAD {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let normalized = key.to_ascii_lowercase();
+        if !token(key)
+            || [
+                "connection",
+                "content-length",
+                "content-type",
+                "transfer-encoding",
+            ]
+            .contains(&normalized.as_str())
+            || value.bytes().any(|b| b.is_ascii_control())
+            || names.insert(normalized, ()).is_some()
+        {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        head.push_str(&format!("{key}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
     stream.write_all(head.as_bytes())
 }
 
@@ -371,6 +415,48 @@ mod tests {
             output,
             b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{\"ok\":false}"
         );
+    }
+    #[test]
+    fn distinct_header_count_and_expectations_have_separate_bounds() {
+        for count in [32, 33] {
+            let fields = (0..count)
+                .map(|i| format!("X-{i}: value\r\n"))
+                .collect::<String>();
+            let message = format!("GET / HTTP/1.1\r\n{fields}\r\n");
+            assert_eq!(parse(message.as_bytes()).is_ok(), count == 32);
+        }
+        let bytes = b"POST / HTTP/1.1\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n{}";
+        assert!(parse(bytes).is_err());
+        let mut source = &bytes[..];
+        assert_eq!(
+            start(&mut source).unwrap().unwrap().0.header("expect"),
+            Some("100-continue")
+        );
+    }
+    #[test]
+    fn extra_response_headers_are_read_back_without_changing_framing() {
+        let mut bytes = Vec::new();
+        response_head_with(
+            &mut bytes,
+            200,
+            "application/octet-stream",
+            0,
+            true,
+            &[("ETag", "\"abc\"")],
+        )
+        .unwrap();
+        let mut source = bytes.as_slice();
+        let (head, _) = response(&mut source).unwrap();
+        assert_eq!(head.header("etag"), Some("\"abc\""));
+        assert_eq!(head.length, 0);
+        for extra in [[("Content-Length", "3")], [("ETag", "x\r\nInjected: y")]] {
+            let mut bytes = Vec::new();
+            assert!(
+                response_head_with(&mut bytes, 200, "application/octet-stream", 0, true, &extra)
+                    .is_err()
+            );
+            assert!(bytes.is_empty());
+        }
     }
     #[test]
     fn a_large_declared_upload_does_not_read_or_allocate_its_body() {

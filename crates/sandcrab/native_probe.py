@@ -109,6 +109,9 @@ network = "none"
              '-p', 'MemoryMax=128M', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=128',
              '-p', 'Environment=PATH=' + getattr(self, 'launch_path', '/usr/bin:/bin'),
              '-p', 'KillMode=control-group', str(self.binary), 'serve', '--config', str(self.config))
+        self.wait_ready()
+
+    def wait_ready(self):
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
             try:
@@ -161,7 +164,7 @@ network = "none"
         self.report.write_text(json.dumps(self.receipt, indent=2) + '\n')
 
     def tests(self):
-        assert self.info['capabilities'] == ['runs', 'sessions']
+        assert self.info['capabilities'] == ['runs', 'sessions', 'files']
         self.transport()
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'
@@ -707,6 +710,15 @@ raise SystemExit(result.returncode)
                 sender.join(timeout=2)
             assert not sender.is_alive()
         self.done('http-deadline-does-not-reset-on-progress')
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(10)
+            connect(stream, self.socket)
+            started = time.monotonic()
+            assert stream.recv(1) == b'', 'Idle expiry must not queue an unsolicited error response'
+            elapsed = time.monotonic() - started
+            assert 4.5 <= elapsed < 7, elapsed
+            self.receipt['idleDisconnectSeconds'] = round(elapsed, 3)
+        self.done('http-idle-expiry-closes-without-an-unsolicited-response')
 
     def cli_lost_response(self):
         endpoint = self.root / 'cli-lost.sock'
@@ -763,6 +775,7 @@ raise SystemExit(result.returncode)
             assert not server.is_alive() and not errors, errors
             assert len(requests) == 2 and result.returncode != 0, (requests, result)
             assert f'runId={requests[1][2]["id"]}' in result.stderr, result
+            assert 'inspect the existing ID before retrying' in result.stderr, result
             assert result.stdout == '', result
         endpoint.unlink()
         self.done('cli-reuses-connection-and-does-not-replay-incomplete-response')

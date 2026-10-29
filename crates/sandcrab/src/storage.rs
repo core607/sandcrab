@@ -151,7 +151,7 @@ fn directory(path: &Path, mode: u32) -> io::Result<()> {
     protected_directory(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
-fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
+pub(crate) fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| invalid("Metadata needs a parent"))?;

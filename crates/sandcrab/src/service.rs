@@ -12,7 +12,7 @@ use std::{
     io,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
 };
@@ -108,6 +108,8 @@ pub struct Service {
     pub id: String,
     pub(crate) registry: Mutex<Registry>,
     pub stopped: Arc<AtomicBool>,
+    pub(crate) file_count: Arc<AtomicUsize>,
+    pub(crate) file_cancellations: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
 }
 impl Service {
     pub fn new(runtime: Runtime, stopped: Arc<AtomicBool>) -> io::Result<Self> {
@@ -116,6 +118,8 @@ impl Service {
             id: sandcrab_core::new_uuid()?,
             registry: Mutex::new(Registry::new()),
             stopped,
+            file_count: Arc::new(AtomicUsize::new(0)),
+            file_cancellations: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -126,7 +130,7 @@ impl Service {
             } else {
                 let Some(name) = path
                     .strip_prefix("/v1/openapi?capability=")
-                    .filter(|s| ["runs", "sessions", "volumes"].contains(s))
+                    .filter(|s| ["runs", "sessions", "volumes", "files"].contains(s))
                 else {
                     return error(400, "INVALID_REQUEST");
                 };
@@ -136,9 +140,9 @@ impl Service {
         }
         if method == "GET" && path == "/v1/info" {
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
-                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"network":p.network})))
+                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network})))
                 .collect::<serde_json::Map<_,_>>();
-            let mut capabilities = vec!["runs", "sessions"];
+            let mut capabilities = vec!["runs", "sessions", "files"];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
@@ -146,7 +150,9 @@ impl Service {
             });
             return (
                 200,
-                json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage}),
+                json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
+                    "files":{"available":self.runtime.files.available(),"maxRecords":self.runtime.config.service.max_file_records,
+                    "maxTransfers":self.runtime.config.service.max_file_transfers,"transferTimeoutMillis":30000,"entryLimit":10000}}),
             );
         }
         if method == "POST" && path == "/v1/runs" {
@@ -156,6 +162,12 @@ impl Service {
             return request
                 .map(|r| self.submit(r))
                 .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
+        }
+        if path == "/v1/uploads"
+            || path.starts_with("/v1/uploads/")
+            || path.starts_with("/v1/uploads?")
+        {
+            return self.file_route(method, path, body);
         }
         if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
             return self.session_route(method, path, body);
@@ -343,7 +355,10 @@ impl Service {
                 run.cancelled.store(true, Ordering::SeqCst);
             }
         }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(45);
+        for flag in self.file_cancellations.lock().unwrap().values() {
+            flag.store(true, Ordering::SeqCst);
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(75);
         loop {
             let registry = self.registry.lock().unwrap();
             if registry.runs.values().all(|r| r.state != "running")
@@ -354,6 +369,7 @@ impl Service {
                     .all(|s| s.terminal() || s.state == "closing")
             {
                 if registry.active != 0
+                    || self.file_count.load(Ordering::SeqCst) != 0
                     || self
                         .runtime
                         .storage

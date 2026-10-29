@@ -29,6 +29,10 @@ pub struct Service {
     pub max_sandboxes: usize,
     pub max_records: usize,
     pub max_output_bytes: usize,
+    #[serde(default = "file_records")]
+    pub max_file_records: usize,
+    #[serde(default = "file_transfers")]
+    pub max_file_transfers: usize,
 }
 
 #[derive(Clone, Deserialize)]
@@ -57,10 +61,21 @@ pub struct Profile {
     pub session_ttl_millis: u64,
     pub output_limit_bytes: usize,
     pub network: String,
+    #[serde(default = "transfer_bytes")]
+    pub transfer_bytes: u64,
     #[serde(skip)]
     pub uid: u32,
     #[serde(skip)]
     pub gid: u32,
+}
+fn file_records() -> usize {
+    256
+}
+fn file_transfers() -> usize {
+    2
+}
+fn transfer_bytes() -> u64 {
+    32 * 1024 * 1024
 }
 
 pub fn invalid(message: impl Into<String>) -> io::Error {
@@ -168,6 +183,8 @@ impl Config {
             || !(65536..=64 * 1024 * 1024).contains(&service.max_output_bytes)
             || self.profiles.is_empty()
             || self.profiles.len() > 32
+            || !(1..=1024).contains(&service.max_file_records)
+            || !(1..=16).contains(&service.max_file_transfers)
         {
             return Err(invalid(
                 "Use 1..64 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
@@ -222,6 +239,7 @@ impl Config {
                 )));
             }
             if !(16 * 1024 * 1024..=1 << 40).contains(&profile.memory_bytes)
+                || !(1024..=1_073_741_824).contains(&profile.transfer_bytes)
                 || !(1024 * 1024..=profile.memory_bytes).contains(&profile.temporary_bytes)
                 || !(32..=1_000_000).contains(&profile.temporary_inodes)
                 || !(16..=4096).contains(&profile.tasks_max)

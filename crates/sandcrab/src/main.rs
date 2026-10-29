@@ -2,6 +2,11 @@
 //! Native Sandcrab service and client; consumer-specific identities and extensions are absent.
 mod client;
 mod config;
+mod file_access;
+mod file_client;
+mod file_io;
+mod file_records;
+mod files;
 mod runtime;
 mod server;
 mod service;
@@ -22,11 +27,11 @@ const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  san
 fn execute(args: &[String]) -> io::Result<i32> {
     match args {
         [] => {
-            print!("{HELP}");
+            print!("{HELP}{FILE_HELP}");
             Ok(0)
         }
         [flag] if ["--help", "-h"].contains(&flag.as_str()) => {
-            print!("{HELP}");
+            print!("{HELP}{FILE_HELP}");
             Ok(0)
         }
         [flag] if flag == "--version" => {
@@ -45,6 +50,20 @@ fn execute(args: &[String]) -> io::Result<i32> {
             storage::copy_tree(Path::new(source), Path::new(destination), Path::new(pool))?;
             Ok(0)
         }
+        [mode, path] if mode == "__file" => match file_io::execute(Path::new(path)) {
+            Ok(value) => {
+                println!("{value}");
+                Ok(0)
+            }
+            Err(error) => {
+                println!(
+                    "{}",
+                    serde_json::json!({"error":file_io::error_code(&error)})
+                );
+                eprintln!("{error}");
+                Ok(1)
+            }
+        },
         [mode, flag, path] if ["serve", "check"].contains(&mode.as_str()) && flag == "--config" => {
             if rustix::process::geteuid().as_raw() != 0 {
                 return Err(config::invalid(
@@ -96,6 +115,7 @@ fn execute(args: &[String]) -> io::Result<i32> {
         [mode, rest @ ..] if mode == "run" => run(rest),
         [mode, rest @ ..] if mode == "session" => session(rest),
         [mode, rest @ ..] if mode == "volume" => volume(rest),
+        [mode, rest @ ..] if mode == "files" => file_command(rest),
         _ => Err(config::invalid(HELP)),
     }
 }
@@ -320,6 +340,121 @@ fn numeric_option(args: &[String], name: &str) -> io::Result<Option<u64>> {
             .map(Some)
             .map_err(|_| config::invalid(format!("Invalid {name}"))),
         _ => Err(config::invalid(format!("Expected {name} VALUE"))),
+    }
+}
+
+const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--no-freeze] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace] [--no-freeze]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
+fn file_command(args: &[String]) -> io::Result<i32> {
+    use file_io::Format;
+    match args {
+        [flag] if ["--help", "-h"].contains(&flag.as_str()) => {
+            print!("{FILE_HELP}");
+            Ok(0)
+        }
+        [mode, flag, socket, id]
+            if ["status", "cancel", "forget"].contains(&mode.as_str())
+                && flag == "--socket"
+                && sandcrab_core::uuid(id) =>
+        {
+            let (method, path, body) = if mode == "status" {
+                ("GET", format!("/v1/uploads/{id}"), None)
+            } else {
+                (
+                    "POST",
+                    format!("/v1/uploads/{id}/{mode}"),
+                    Some(serde_json::json!({})),
+                )
+            };
+            println!(
+                "{}",
+                client::request(Path::new(socket), method, &path, body.as_ref())?
+            );
+            Ok(0)
+        }
+        [mode, flag, socket, rest @ ..] if mode == "list" && flag == "--socket" => {
+            let path = match rest {
+                [] => "/v1/uploads".into(),
+                [flag, id] if flag == "--after" && sandcrab_core::uuid(id) => {
+                    format!("/v1/uploads?after={id}")
+                }
+                _ => return Err(config::invalid("Expected optional --after UUID")),
+            };
+            println!(
+                "{}",
+                client::request(Path::new(socket), "GET", &path, None)?
+            );
+            Ok(0)
+        }
+        [mode, flag, socket, session, source, destination, rest @ ..]
+            if ["put", "get"].contains(&mode.as_str())
+                && flag == "--socket"
+                && sandcrab_core::uuid(session) =>
+        {
+            let (mut format, mut replace, mut freeze, mut keep, mut id, mut permissions) =
+                (Format::Raw, false, true, false, None, None);
+            let mut args = rest.iter();
+            let mut seen = std::collections::BTreeSet::new();
+            while let Some(flag) = args.next() {
+                if !seen.insert(flag) {
+                    return Err(config::invalid("Repeated file option"));
+                }
+                match flag.as_str() {
+                    "--tar" => format = Format::Tar,
+                    "--replace" => replace = true,
+                    "--no-freeze" => freeze = false,
+                    "--keep-result" if mode == "put" => keep = true,
+                    "--id" if mode == "put" => {
+                        id = Some(
+                            args.next()
+                                .filter(|s| sandcrab_core::uuid(s))
+                                .ok_or_else(|| config::invalid("--id requires a UUID"))?
+                                .clone(),
+                        )
+                    }
+                    "--mode" if mode == "put" => {
+                        let value = args
+                            .next()
+                            .ok_or_else(|| config::invalid("--mode requires octal permissions"))?;
+                        permissions = Some(
+                            u32::from_str_radix(value, 8)
+                                .ok()
+                                .filter(|m| *m <= 0o777)
+                                .ok_or_else(|| config::invalid("--mode must be 000..777"))?,
+                        );
+                    }
+                    _ => return Err(config::invalid("Unknown file option")),
+                }
+            }
+            if mode == "put" {
+                file_client::put(
+                    Path::new(socket),
+                    session,
+                    Path::new(source),
+                    destination,
+                    file_client::Put {
+                        id,
+                        format,
+                        replace,
+                        freeze,
+                        mode: permissions,
+                        keep_result: keep,
+                    },
+                )
+            } else {
+                file_client::get(
+                    Path::new(socket),
+                    session,
+                    source,
+                    Path::new(destination),
+                    file_client::Get {
+                        format,
+                        freeze,
+                        replace,
+                    },
+                )
+            }
+        }
+        _ => Err(config::invalid(FILE_HELP)),
     }
 }
 
