@@ -33,7 +33,7 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.mkdir(mode=0o755)  # Never overwrite an earlier attempt.
-    for name, receipt in [('volume', 'volumes'), ('file', 'files'), ('events', 'events'), ('tcp', 'tcp')]:
+    for name, receipt in [('volume', 'volumes'), ('file', 'files'), ('events', 'events'), ('tcp', 'tcp'), ('host_calls', 'host-calls')]:
         preflight = subprocess.Popen(['python3', str(source / f'executor-service/rust/sandcrab/{name}_probe.py'),
                                      '--binary', str(args.binary.resolve()), '--tools', str(args.tools.resolve()),
                                      '--report', str(output / f'{receipt}.json')])

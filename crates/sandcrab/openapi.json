@@ -71,7 +71,8 @@
                 "sessions",
                 "volumes",
                 "files",
-                "events"
+                "events",
+                "calls"
               ]
             }
           }
@@ -1321,6 +1322,210 @@
           }
         }
       }
+    },
+    "/v1/runs/{id}/calls": {
+      "get": {
+        "operationId": "listHostCalls",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Read per-command call metadata. Only the request stream carries payloads. Replied records confirm file publication, not guest consumption or an outside business commit. Pending calls become abandoned when their command ends; records last until the run is forgotten or the daemon restarts. HOST_CALLS_DISABLED means the profile did not enable this facility.",
+        "responses": {
+          "200": {
+            "description": "Current retained state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostCallList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/runs/{id}/calls/{callId}/reply": {
+      "post": {
+        "operationId": "replyHostCall",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Publish an opaque reply to one pending call. Identical replies return their existing receipt without republication, including after command completion; different reply bytes conflict. Cancellation or closure refuses a new reply. An uncertain publication returns CALL_REPLY_UNCERTAIN and cancels the command; an identical retry stays uncertain. Reply handles are allocated by the daemon, so guest-selected IDs cannot target a later command generation. JSON bodies have a 131072-byte bound; decoded payloads have a 65536-byte bound.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HostCallReply"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current retained state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HostCall"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
+    },
+    "/v1/runs/{id}/calls/events": {
+      "get": {
+        "operationId": "observeHostCalls",
+        "description": "Observe unresolved calls with state, call, result and error events. The daemon interprets neither request nor reply bytes and runs no host handler. Observations do not claim work: callers authorize requests and reconcile duplicate IDs before repeating outside effects. Reconnect explicitly without a cursor to re-offer pending calls, or with Last-Event-ID to continue after delivered requests. Replies already recorded before selection are skipped; in-flight observations may be stale. Host-call and output streams share observer capacity and the 350-second observation deadline. Each complete frame is at most 131072 bytes and may span HTTP chunks. Result requires confirmed command containment; an error or EOF does not prove completion.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HostCallCursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chunked SSE. Each data field is one JSON value; the event field selects its schema. An id is an opaque resume cursor. Comments are heartbeats. Consume the zero chunk before reusing the connection.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/HostCallState"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HostCallRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HostCallResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/HostCallError"
+                    }
+                  ]
+                },
+                "x-sse-events": {
+                  "state": {
+                    "$ref": "#/components/schemas/HostCallState"
+                  },
+                  "call": {
+                    "$ref": "#/components/schemas/HostCallRequest"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/HostCallResult"
+                  },
+                  "error": {
+                    "$ref": "#/components/schemas/HostCallError"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1357,7 +1562,8 @@
           "storage",
           "files",
           "limits",
-          "events"
+          "events",
+          "hostCalls"
         ],
         "properties": {
           "apiVersion": {
@@ -1375,7 +1581,8 @@
                 "sessions",
                 "volumes",
                 "files",
-                "events"
+                "events",
+                "calls"
               ]
             }
           },
@@ -1388,7 +1595,8 @@
                 "outputLimitBytes",
                 "network",
                 "sessionTtlMillis",
-                "transferBytes"
+                "transferBytes",
+                "hostCalls"
               ],
               "properties": {
                 "timeoutMillis": {
@@ -1413,6 +1621,10 @@
                   "type": "integer",
                   "minimum": 1024,
                   "maximum": 1073741824
+                },
+                "hostCalls": {
+                  "type": "boolean",
+                  "description": "Operator-enabled opaque host calls; false by default."
                 }
               }
             }
@@ -1544,6 +1756,30 @@
                 "minimum": 0,
                 "maximum": 128,
                 "description": "A concurrent snapshot, not a reservation."
+              }
+            }
+          },
+          "hostCalls": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "payloadBytes",
+              "maxCallsPerRun",
+              "maxPendingCalls",
+              "frameBytes"
+            ],
+            "properties": {
+              "payloadBytes": {
+                "const": 65536
+              },
+              "maxCallsPerRun": {
+                "const": 64
+              },
+              "maxPendingCalls": {
+                "const": 4
+              },
+              "frameBytes": {
+                "const": 131072
               }
             }
           }
@@ -2361,6 +2597,241 @@
             "enum": [
               "RUN_NOT_FOUND",
               "EVENT_CURSOR_MISMATCH",
+              "CONTAINMENT_UNCONFIRMED",
+              "OBSERVATION_TIMEOUT",
+              "STOPPING"
+            ]
+          }
+        }
+      },
+      "HostCall": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "requestId",
+          "sequence",
+          "state",
+          "requestSha256",
+          "replySha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Daemon-allocated reply handle, separate from the guest request ID."
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Guest-generated correlation ID printed by the in-sandbox CLI."
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "replied",
+              "uncertain",
+              "abandoned"
+            ]
+          },
+          "requestSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "replySha256": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            ]
+          }
+        }
+      },
+      "HostCallRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "requestId",
+          "sequence",
+          "state",
+          "requestSha256",
+          "replySha256",
+          "base64"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Daemon-allocated reply handle, separate from the guest request ID."
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Guest-generated correlation ID printed by the in-sandbox CLI."
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "state": {
+            "const": "pending"
+          },
+          "requestSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "replySha256": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            ]
+          },
+          "base64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 87384,
+            "description": "Canonical padded base64 of at most 65536 opaque bytes; empty bytes are allowed."
+          }
+        }
+      },
+      "HostCallList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "closed",
+          "error",
+          "calls"
+        ],
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "calls": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/HostCall"
+            }
+          }
+        }
+      },
+      "HostCallReply": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "base64"
+        ],
+        "properties": {
+          "base64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 87384,
+            "description": "Canonical padded base64 of at most 65536 opaque bytes; empty bytes are allowed."
+          }
+        }
+      },
+      "HostCallCursor": {
+        "type": "string",
+        "maxLength": 39,
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(0|[1-9]|[1-5][0-9]|6[0-4])$",
+        "description": "Opaque command incarnation and delivered request sequence. A cursor does not acknowledge outside effects."
+      },
+      "HostCallState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "runId",
+          "calls"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "calls": {
+            "$ref": "#/components/schemas/HostCallList"
+          }
+        }
+      },
+      "HostCallResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "run",
+          "calls"
+        ],
+        "properties": {
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EventState"
+              },
+              {
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "succeeded",
+                      "failed",
+                      "cancelled",
+                      "timed_out",
+                      "output_limit",
+                      "resource_limit"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "calls": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HostCallList"
+              },
+              {
+                "properties": {
+                  "closed": {
+                    "const": true
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "HostCallError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "RUN_NOT_FOUND",
+              "CALL_CURSOR_MISMATCH",
               "CONTAINMENT_UNCONFIRMED",
               "OBSERVATION_TIMEOUT",
               "STOPPING"

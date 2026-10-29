@@ -65,7 +65,7 @@ impl Cursor {
     }
 }
 
-struct Admission(Arc<AtomicUsize>);
+pub(crate) struct Admission(Arc<AtomicUsize>);
 impl Drop for Admission {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
@@ -79,6 +79,18 @@ pub struct Subscription {
     initial: Value,
     next_stream: usize,
     _admission: Admission,
+}
+pub(crate) fn admit(service: &Arc<Service>) -> Result<Admission, (u16, Value)> {
+    let count = service.event_count.clone();
+    if count
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+            (n < service.runtime.config.service.max_event_streams).then_some(n + 1)
+        })
+        .is_err()
+    {
+        return Err(error(429, "EVENT_CAPACITY"));
+    }
+    Ok(Admission(count))
 }
 pub fn subscribe(
     service: &Arc<Service>,
@@ -108,22 +120,14 @@ pub fn subscribe(
         }
         (cursor, run.summary())
     };
-    let count = service.event_count.clone();
-    if count
-        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-            (n < service.runtime.config.service.max_event_streams).then_some(n + 1)
-        })
-        .is_err()
-    {
-        return Err(error(429, "EVENT_CAPACITY"));
-    }
+    let admission = admit(service)?;
     Ok(Subscription {
         service: service.clone(),
         id: id.into(),
         cursor,
         initial,
         next_stream: 0,
-        _admission: Admission(count),
+        _admission: admission,
     })
 }
 
@@ -177,9 +181,9 @@ fn next(
 
 // A five-second deadline covers a whole frame, not each successive byte. A slow reader
 // releases only its observer; the command still has its original limits and owner.
-struct Output<'a> {
-    stream: &'a Stream,
-    deadline: Instant,
+pub(crate) struct Output<'a> {
+    pub stream: &'a Stream,
+    pub deadline: Instant,
 }
 impl Write for Output<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -289,7 +293,7 @@ mod tests {
 
     fn run() -> Run {
         Run::new(json!({"id":"11111111-1111-1111-1111-111111111111","serverId":"22222222-2222-2222-2222-222222222222"}),
-                 "python".into(), Arc::new(AtomicBool::new(false)), 8192).unwrap()
+                 "python".into(), Arc::new(AtomicBool::new(false)), 8192, false).unwrap()
     }
     #[test]
     fn cursor_binds_incarnation_and_both_byte_offsets() {

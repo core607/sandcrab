@@ -44,3 +44,5 @@ session_ttl_millis = 60000
 output_limit_bytes = 65536
 transfer_bytes = 33554432
 network = "none"
+# Allow opaque requests to a caller-supplied host service; no handler runs in the daemon.
+host_calls = false

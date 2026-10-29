@@ -76,6 +76,8 @@ pub struct Profile {
     pub session_ttl_millis: u64,
     pub output_limit_bytes: usize,
     pub network: String,
+    #[serde(default)]
+    pub host_calls: bool,
     #[serde(default = "transfer_bytes")]
     pub transfer_bytes: u64,
     #[serde(skip)]
@@ -97,6 +99,15 @@ fn file_transfers() -> usize {
 }
 fn transfer_bytes() -> u64 {
     32 * 1024 * 1024
+}
+fn host_call_mount(path: &Path) -> bool {
+    [
+        "/sandcrab",
+        "/sandcrab-driver",
+        crate::host_calls::DIRECTORY,
+    ]
+    .iter()
+    .any(|reserved| path.starts_with(reserved))
 }
 
 pub fn invalid(message: impl Into<String>) -> io::Error {
@@ -146,6 +157,11 @@ impl Config {
             sandcrab_launch::verify_tools(&profile.tools).map_err(io::Error::other)?;
             for path in &profile.read_only {
                 let resolved = path.canonicalize()?;
+                if profile.host_calls && host_call_mount(&resolved) {
+                    return Err(invalid(
+                        "Read mount resolves into a reserved host-call path",
+                    ));
+                }
                 if resolved.starts_with(&config.service.runtime_root)
                     || config.service.runtime_root.starts_with(&resolved)
                 {
@@ -281,6 +297,14 @@ impl Config {
                 return Err(invalid(format!(
                     "Profile {key} needs a name, execution account, absolute tools path and network=none"
                 )));
+            }
+            if profile.host_calls
+                && (host_call_mount(&profile.tools)
+                    || profile.read_only.iter().any(|path| host_call_mount(path)))
+            {
+                return Err(invalid(
+                    "Host-call profiles cannot mount /sandcrab, /sandcrab-driver or /sandcrab-calls",
+                ));
             }
             if profile.read_only.is_empty()
                 || profile.read_only.len() > 32

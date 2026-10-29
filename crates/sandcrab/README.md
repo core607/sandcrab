@@ -1,9 +1,9 @@
 # Sandcrab native service
 
 `sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
-bash sessions, durable volumes, streamed files and live command output. It needs no Poketto account, workspace, repository,
+bash sessions, durable volumes, streamed files, live command output and opaque host calls. It needs no Poketto account, workspace, repository,
 signing key or compiled extension. The service uses a Unix socket or optional
-authenticated loopback TCP; host calls and the OpenSandbox adapter remain under the
+authenticated loopback TCP; the OpenSandbox adapter remains under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
 ## Installation
@@ -51,6 +51,14 @@ workspace cleanup was not confirmed; its admission remains held until restart.
 For Unix transport, the CLI authenticates the root-owned socket and root peer before sending commands.
 If forgetting a terminal record fails, the CLI warns on stderr and preserves the
 command's exit result. Inspect or forget the printed ID instead of rerunning it.
+`--keep-result` on `run` or `session exec` retains the record for independent
+observers and explicit forgetting; it also works with `--stream`.
+
+## Host calls
+
+Profiles can enable opaque requests from a command to its caller. The
+[host-call reference](host-calls.md) owns caller authorization, CLI/HTTP operation,
+limits and recovery, with an independent build-signing example.
 
 ## Loopback TCP
 
@@ -100,8 +108,9 @@ invalid message, the 128th response or shutdown. Reading a request, including id
 time, and writing its JSON response each have a five-second deadline. An idle connection
 closes without sending an unsolicited error. File bodies use the limits below. The CLI reuses connections while
 polling and reconnects after a declared close; transport failures are returned
-without replay. `max_connections` defaults to 32. POST bodies declare a content
-length of 1 to 65536 bytes; GET requests have no body. Headers are at most 8192 bytes
+without replay. `max_connections` defaults to 32. Ordinary POST bodies declare a content
+length of 1 to 65536 bytes; [host-call replies](host-calls.md#http-and-observation) have a separate bound.
+GET requests have no body. Headers are at most 8192 bytes
 and 32 fields. Only event responses use chunked framing; requests and other responses
 require fixed lengths. Duplicate headers and upgrades are rejected; pipelining is unsupported. Only `client_uid` is accepted, even if another
 account can connect to the socket. TCP uses the bearer credential above.
@@ -381,5 +390,8 @@ readback, safe local CLI installation, quotas, cancellation and publication reco
 observer admission, CLI cancellation and containment faults in a disposable native fixture.
 `tcp_probe.py` additionally exercises authentication, private credential files,
 both IP families, TCP CLI/files/events and data retention through token rotation.
+`host_calls_probe.py` uses the same arguments from a repository checkout, or an
+explicit `--example FILE` for the build-signing caller. It checks opaque calls,
+ordinary caller/guest CLI use, isolation, bounded admission and failure recovery.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

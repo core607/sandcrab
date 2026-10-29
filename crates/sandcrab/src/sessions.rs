@@ -333,7 +333,13 @@ impl Service {
             return error(429, "RESULT_CAPACITY");
         }
         let cancelled = Arc::new(AtomicBool::new(false));
-        let run = match Run::new(input, profile_name, cancelled.clone(), output) {
+        let run = match Run::new(
+            input,
+            profile_name,
+            cancelled.clone(),
+            output,
+            profile.host_calls,
+        ) {
             Ok(run) => run,
             Err(_) => return error(503, "RUN_UNAVAILABLE"),
         };
@@ -391,12 +397,18 @@ impl Service {
                 registry.sessions.get_mut(id).unwrap().pending.take()
             };
             if let Some(work) = work {
+                let calls = self.registry.lock().unwrap().runs[&work.request.id]
+                    .calls
+                    .clone();
                 let (finished, reusable) = shell.execute(
                     &work.request.id,
                     &work.request.command,
                     work.timeout,
                     work.output,
-                    &work.cancelled,
+                    crate::runtime::Control {
+                        cancelled: &work.cancelled,
+                        calls,
+                    },
                     |stream, bytes| self.output(&work.request.id, stream, bytes),
                 );
                 if !reusable || cancelled.load(Ordering::SeqCst) {

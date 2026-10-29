@@ -35,6 +35,7 @@ struct Record {
     command: Vec<String>,
     shell: bool,
     workspace: PathBuf,
+    host_calls: bool,
 }
 
 fn command(args: &[String]) -> io::Result<std::process::Output> {
@@ -73,6 +74,10 @@ pub struct Runtime {
     pool: PathBuf,
     executable: PathBuf,
     _lock: fs::File,
+}
+pub struct Control<'a> {
+    pub cancelled: &'a AtomicBool,
+    pub calls: Option<Arc<crate::host_calls::Calls>>,
 }
 
 impl Runtime {
@@ -357,9 +362,10 @@ impl Runtime {
         profile: &Profile,
         argv: &[String],
         (timeout, limit): (u64, usize),
-        cancelled: &AtomicBool,
+        control: Control<'_>,
         on_output: impl FnMut(usize, &[u8]),
     ) -> (io::Result<job::Finished>, io::Result<()>) {
+        let Control { cancelled, calls } = control;
         let root = self.config.service.runtime_root.join("jobs").join(id);
         if let Err(e) = DirBuilder::new().mode(0o750).create(&root) {
             return (Err(e), Ok(()));
@@ -373,13 +379,24 @@ impl Runtime {
         });
         let (result, contained) =
             match self.prepare(&root, &records, profile, argv, Some(timeout), None) {
-                Ok(launch) => job::run(
-                    &launch,
-                    cancelled,
-                    Duration::from_millis(timeout),
-                    limit,
-                    on_output,
-                ),
+                Ok((launch, mailbox)) => match start_calls(calls.as_ref(), mailbox.as_ref(), id) {
+                    Ok(mut guard) => {
+                        let (result, contained) = job::run(
+                            &launch,
+                            cancelled,
+                            Duration::from_millis(timeout),
+                            limit,
+                            on_output,
+                        );
+                        let ended = guard.as_mut().map(|g| g.finish()).transpose().map(|_| ());
+                        let closed = mailbox.map(|m| m.close()).transpose().map(|_| ());
+                        (result, contained.and(ended).and(closed))
+                    }
+                    Err(error) => (
+                        Err(error),
+                        mailbox.map(|m| m.close()).transpose().map(|_| ()),
+                    ),
+                },
                 Err(error) => (Err(error), Ok(())),
             };
         let cleanup = contained.and_then(|()| release(&root, &records));
@@ -425,7 +442,7 @@ impl Runtime {
                 .join("records")
                 .join(format!("{id}.{kind}.json"))
         });
-        let launch = match self.prepare(
+        let (launch, mailbox) = match self.prepare(
             &root,
             &records,
             profile,
@@ -480,6 +497,7 @@ impl Runtime {
             root,
             records,
             attachment,
+            mailbox,
         })
     }
 
@@ -551,7 +569,7 @@ impl Runtime {
         argv: &[String],
         timeout: Option<u64>,
         workspace: Option<&Path>,
-    ) -> io::Result<Launch> {
+    ) -> io::Result<(Launch, Option<Arc<sandcrab_core::mailbox::Mailbox>>)> {
         let id = root
             .file_name()
             .and_then(|s| s.to_str())
@@ -575,6 +593,15 @@ impl Runtime {
         directory(&root.join("bootstrap"), 0o555)?;
         directory(&root.join("work"), 0o750)?;
         owned(&root.join("work"), profile.uid, profile.gid, 0o750)?;
+        let mailbox = if profile.host_calls {
+            Some(Arc::new(sandcrab_core::mailbox::Mailbox::create(
+                &root.join("calls"),
+                profile.gid,
+                &["call"],
+            )?))
+        } else {
+            None
+        };
         let [record, settings] = records;
         create(
             record,
@@ -586,6 +613,7 @@ impl Runtime {
                 command: argv.into(),
                 shell: timeout.is_none(),
                 workspace: workspace.unwrap_or(&root.join("work")).into(),
+                host_calls: profile.host_calls,
             },
             profile.gid,
             0o440,
@@ -634,12 +662,33 @@ impl Runtime {
             timeout,
             &["OOMPolicy=kill".into()],
         );
-        Ok(Launch {
-            command,
-            cgroup: self.pool.join(format!("{unit}.service")),
-            unit,
-        })
+        Ok((
+            Launch {
+                command,
+                cgroup: self.pool.join(format!("{unit}.service")),
+                unit,
+            },
+            mailbox,
+        ))
     }
+}
+
+fn start_calls(
+    calls: Option<&Arc<crate::host_calls::Calls>>,
+    mailbox: Option<&Arc<sandcrab_core::mailbox::Mailbox>>,
+    execution: &str,
+) -> io::Result<Option<crate::host_calls::Guard>> {
+    let result = match (calls, mailbox) {
+        (Some(calls), Some(mailbox)) => calls.start(mailbox.clone(), execution).map(Some),
+        (None, None) => Ok(None),
+        _ => Err(invalid("Host-call profile mismatch")),
+    };
+    if result.is_err()
+        && let Some(calls) = calls
+    {
+        calls.fail("HOST_CALL_UNAVAILABLE");
+    }
+    result
 }
 
 fn release(root: &Path, records: &[PathBuf]) -> io::Result<()> {
@@ -728,6 +777,23 @@ pub fn launch(path: &Path) -> io::Result<()> {
             ],
         );
     }
+    if record.host_calls {
+        let binary = std::env::current_exe()?.canonicalize()?;
+        sandcrab_launch::trusted_executable(&binary).map_err(io::Error::other)?;
+        args.splice(
+            separator..separator,
+            [
+                "--dir".into(),
+                "/sandcrab".into(),
+                "--ro-bind".into(),
+                binary.to_string_lossy().into(),
+                "/sandcrab/sandcrab".into(),
+                "--bind".into(),
+                record.root.join("calls").to_string_lossy().into(),
+                crate::host_calls::DIRECTORY.into(),
+            ],
+        );
+    }
     args.splice(
         separator..separator,
         [
@@ -738,15 +804,25 @@ pub fn launch(path: &Path) -> io::Result<()> {
             "/workspace".into(),
         ],
     );
-    let environment = vec![
+    let mut environment = vec![
         ("HOME".into(), "/workspace".into()),
         ("TMPDIR".into(), "/tmp".into()),
         (
             "PATH".into(),
-            format!("{}:/usr/bin:/bin", record.tools.display()),
+            format!(
+                "{}{}:/usr/bin:/bin",
+                if record.host_calls { "/sandcrab:" } else { "" },
+                record.tools.display()
+            ),
         ),
         ("SANDBOX_RUNTIME".into(), "1".into()),
     ];
+    if record.host_calls && !record.shell {
+        environment.push((
+            "SANDBOX_EXECUTION_ID".into(),
+            record.root.file_name().unwrap().to_string_lossy().into(),
+        ));
+    }
     Err(io::Error::other(sandcrab_launch::exec(&args, &environment)))
 }
 
@@ -762,6 +838,7 @@ pub struct Shell {
     root: PathBuf,
     records: [PathBuf; 2],
     attachment: Option<Attachment>,
+    mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
 }
 impl Shell {
     pub fn ready(&mut self, cancelled: &AtomicBool) -> bool {
@@ -829,6 +906,9 @@ impl Shell {
         }
         empty_group(&self.launch.cgroup)?;
         self.files.wait()?;
+        if let Some(mailbox) = &self.mailbox {
+            mailbox.close()?;
+        }
         let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
         release(&self.root, &self.records)?;
         if let Some(attachment) = self.attachment.take() {
@@ -843,9 +923,33 @@ impl Shell {
         command: &str,
         timeout: u64,
         limit: usize,
-        cancelled: &AtomicBool,
+        control: Control<'_>,
         on_output: impl FnMut(usize, &[u8]),
     ) -> (job::Finished, bool) {
+        let Control { cancelled, calls } = control;
+        let mut guard = match if self.mailbox.is_some() {
+            sandcrab_core::unit::frozen(&self.launch.cgroup, cancelled, || {
+                start_calls(calls.as_ref(), self.mailbox.as_ref(), id)
+            })
+        } else {
+            start_calls(calls.as_ref(), None, id)
+        } {
+            Ok(guard) => guard,
+            Err(_) => {
+                if let Some(calls) = &calls {
+                    calls.fail("HOST_CALL_UNAVAILABLE");
+                }
+                return (
+                    job::Finished {
+                        exit_code: 1,
+                        output: [Vec::new(), Vec::new()],
+                        truncated: false,
+                        end: job::End::Normal,
+                    },
+                    false,
+                );
+            }
+        };
         let result = self.channel.execute(
             CommandRequest {
                 execution: id,
@@ -884,6 +988,20 @@ impl Shell {
             }
             _ => job::End::Normal,
         };
+        let mut reusable = !result.shell_exited && end == job::End::Normal;
+        if let Some(guard) = &mut guard {
+            let ended = if reusable {
+                sandcrab_core::unit::frozen(&self.launch.cgroup, cancelled, || guard.finish())
+            } else {
+                guard.finish()
+            };
+            if ended.is_err() {
+                if let Some(calls) = &calls {
+                    calls.fail("HOST_CALL_CLEANUP_FAILED");
+                }
+                reusable = false;
+            }
+        }
         (
             job::Finished {
                 exit_code: i32::from(result.exit_code),
@@ -891,7 +1009,7 @@ impl Shell {
                 truncated: result.captured.truncated.into_iter().any(|t| t),
                 end,
             },
-            !result.shell_exited && end == job::End::Normal,
+            reusable,
         )
     }
 }

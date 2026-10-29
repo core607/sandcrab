@@ -173,6 +173,7 @@ pub fn run(
     command: &[String],
     timeout: Option<u64>,
     streaming: bool,
+    keep_result: bool,
 ) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
@@ -193,6 +194,7 @@ pub fn run(
         "/v1/runs",
         &serde_json::to_value(&input)?,
         streaming,
+        keep_result,
     )
 }
 
@@ -202,6 +204,7 @@ pub fn execute_session(
     command: &str,
     timeout: Option<u64>,
     streaming: bool,
+    keep_result: bool,
 ) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
@@ -212,6 +215,7 @@ pub fn execute_session(
         &format!("/v1/sessions/{session}/commands"),
         &input,
         streaming,
+        keep_result,
     )
 }
 
@@ -220,6 +224,7 @@ fn submit_run(
     endpoint: &str,
     input: &Value,
     streaming: bool,
+    keep_result: bool,
 ) -> io::Result<i32> {
     let stopped = Arc::new(AtomicBool::new(false));
     let signals = [
@@ -263,7 +268,9 @@ fn submit_run(
                     Ok(())
                 },
             )?;
-            forget_outcome(client, id);
+            if !keep_result {
+                forget_outcome(client, id);
+            }
             if state["state"] != "succeeded" {
                 eprintln!("runState={} result={}", state["state"], state["result"]);
             }
@@ -287,7 +294,9 @@ fn submit_run(
                 }
                 Some(_) => {
                     println!("{}", serde_json::to_string(&state)?);
-                    forget_outcome(client, id);
+                    if !keep_result {
+                        forget_outcome(client, id);
+                    }
                     return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
                 }
                 None => return Err(invalid("Missing run state")),

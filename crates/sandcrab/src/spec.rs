@@ -36,6 +36,8 @@ pub fn document(capability: Option<&str>) -> Value {
                 || path == "/v1/openapi"
                 || if capability == "events" {
                     path == "/v1/runs/{id}/events"
+                } else if capability == "calls" {
+                    path.starts_with("/v1/runs/{id}/calls")
                 } else if capability == "files" {
                     path == "/v1/uploads"
                         || path.starts_with("/v1/uploads/")
@@ -44,6 +46,7 @@ pub fn document(capability: Option<&str>) -> Value {
                     (path == &prefix || path.starts_with(&format!("{prefix}/")))
                         && !path.ends_with("/snapshot")
                         && !path.ends_with("/events")
+                        && !path.contains("/calls")
                 }
         });
     let source = document["components"].take();
@@ -78,12 +81,14 @@ mod tests {
     use super::*;
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
-        for capability in ["runs", "sessions", "volumes", "files", "events"] {
+        for capability in ["runs", "sessions", "volumes", "files", "events", "calls"] {
             let document = document(Some(capability));
             let path = if capability == "events" {
                 "/v1/runs/{id}/events".into()
             } else if capability == "files" {
                 "/v1/uploads".into()
+            } else if capability == "calls" {
+                "/v1/runs/{id}/calls".into()
             } else {
                 format!("/v1/{capability}")
             };

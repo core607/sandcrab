@@ -64,6 +64,7 @@ pub(crate) struct Run {
     pub reservation: usize,
     pub output: [Vec<u8>; 2],
     pub stream_id: String,
+    pub calls: Option<Arc<crate::host_calls::Calls>>,
 }
 impl Run {
     pub(crate) fn new(
@@ -71,12 +72,14 @@ impl Run {
         profile: String,
         cancelled: Arc<AtomicBool>,
         limit: usize,
+        host_calls: bool,
     ) -> io::Result<Self> {
         Ok(Self {
             request,
             profile,
             state: "running".into(),
             result: None,
+            calls: host_calls.then(|| crate::host_calls::Calls::new(cancelled.clone())),
             cancelled,
             reservation: limit,
             output: [Vec::new(), Vec::new()],
@@ -159,10 +162,9 @@ impl Service {
             let capability = if path == "/v1/openapi" {
                 None
             } else {
-                let Some(name) = path
-                    .strip_prefix("/v1/openapi?capability=")
-                    .filter(|s| ["runs", "sessions", "volumes", "files", "events"].contains(s))
-                else {
+                let Some(name) = path.strip_prefix("/v1/openapi?capability=").filter(|s| {
+                    ["runs", "sessions", "volumes", "files", "events", "calls"].contains(s)
+                }) else {
                     return error(400, "INVALID_REQUEST");
                 };
                 Some(name)
@@ -171,9 +173,9 @@ impl Service {
         }
         if method == "GET" && path == "/v1/info" {
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
-                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network})))
+                (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network,"hostCalls":p.host_calls})))
                 .collect::<serde_json::Map<_,_>>();
-            let mut capabilities = vec!["runs", "sessions", "files", "events"];
+            let mut capabilities = vec!["runs", "sessions", "files", "events", "calls"];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
@@ -187,6 +189,7 @@ impl Service {
                         "maxEventStreams":self.runtime.config.service.max_event_streams},
                     "events":{"blockBytes":crate::events::BLOCK,"streamTimeoutMillis":crate::events::TIMEOUT.as_millis(),
                         "activeStreams":self.event_count.load(Ordering::SeqCst)},
+                    "hostCalls":{"payloadBytes":crate::host_calls::BYTES,"maxCallsPerRun":crate::host_calls::COUNT,"maxPendingCalls":4,"frameBytes":crate::host_calls::FRAME},
                     "files":{"available":self.runtime.files.available(),"maxRecords":self.runtime.config.service.max_file_records,
                     "maxTransfers":self.runtime.config.service.max_file_transfers,"transferTimeoutMillis":30000,"entryLimit":10000}}),
             );
@@ -220,6 +223,9 @@ impl Service {
         let (id, action) = path.split_once('/').unwrap_or((path, ""));
         if !sandcrab_core::uuid(id) {
             return error(404, "RUN_NOT_FOUND");
+        }
+        if action == "calls" || action.starts_with("calls/") {
+            return self.call_route(method, id, action, body);
         }
         if method == "POST"
             && ["cancel", "forget"].contains(&action)
@@ -297,12 +303,14 @@ impl Service {
             request.profile.clone(),
             cancelled.clone(),
             limit,
+            profile.host_calls,
         ) {
             Ok(run) => run,
             Err(_) => return error(503, "RUN_UNAVAILABLE"),
         };
         registry.active += 1;
         registry.reserved += limit;
+        let calls = run.calls.clone();
         let accepted = run.value();
         registry.runs.insert(id.clone(), run);
         let service = self.clone();
@@ -313,7 +321,10 @@ impl Service {
                     &profile,
                     &request.command,
                     (timeout, limit),
-                    &cancelled,
+                    crate::runtime::Control {
+                        cancelled: &cancelled,
+                        calls,
+                    },
                     |stream, bytes| service.output(&request.id, stream, bytes),
                 );
                 service.complete(&request.id, finished, cleanup, true);
@@ -337,6 +348,9 @@ impl Service {
     ) {
         let mut registry = self.registry.lock().unwrap();
         let run = registry.runs.get_mut(id).unwrap();
+        if let Some(calls) = &run.calls {
+            calls.close();
+        }
         if cleanup.is_err() {
             run.state = "closing".into();
             run.result = Some(json!({"code":"CONTAINMENT_UNCONFIRMED"}));
@@ -366,6 +380,10 @@ impl Service {
                 run.state = if cancelled { "cancelled" } else { "failed" }.into();
                 run.result = Some(json!({"code":"RUN_FAILED"}));
             }
+        }
+        if let Some(code) = run.calls.as_ref().and_then(|c| c.failure()) {
+            run.state = "failed".into();
+            run.result = Some(json!({"code":code}));
         }
         if release_admission {
             registry.active -= 1;
@@ -485,6 +503,7 @@ mod tests {
         registry.runs.insert(
             id.clone(),
             Run {
+                calls: None,
                 request: serde_json::to_value(&request).unwrap(),
                 profile: request.profile.clone(),
                 state: "running".into(),

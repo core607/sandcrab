@@ -164,7 +164,7 @@ network = "none"
         self.report.write_text(json.dumps(self.receipt, indent=2) + '\n')
 
     def tests(self):
-        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'events']
+        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'events', 'calls']
         self.transport()
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'

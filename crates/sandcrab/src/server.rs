@@ -140,7 +140,12 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             return json_reply(stream, 417, &error(417, "EXPECTATION_UNSUPPORTED").1, true);
         }
         if !["GET", "POST"].contains(&head.method.as_str())
-            || head.length > 65536
+            || head.length
+                > if crate::host_calls::reply_path(&head.path) {
+                    crate::host_calls::FRAME as u64
+                } else {
+                    65536
+                }
             || (head.method == "POST") != (head.length > 0)
         {
             drop(body);
@@ -154,6 +159,22 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
         drop(body);
         let close =
             head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
+        if head.method == "GET"
+            && let Some(id) = head
+                .path
+                .strip_prefix("/v1/runs/")
+                .and_then(|p| p.strip_suffix("/calls/events"))
+                .filter(|s| sandcrab_core::uuid(s))
+        {
+            match crate::call_events::subscribe(service, id, head.header("last-event-id")) {
+                Ok(subscription) => subscription.write(stream, close)?,
+                Err((status, reply)) => json_reply(stream, status, &reply, close)?,
+            }
+            if close {
+                return Ok(());
+            }
+            continue;
+        }
         if head.method == "GET"
             && let Some(id) = head
                 .path
