@@ -78,6 +78,8 @@ class CasesAndArtifacts(unittest.TestCase):
         for change in [lambda c: c['expected'].update(invented=True),
                        lambda c: c['expected']['steps'][0].update(files={c['expected']['artifacts'][0]: 'replacement'}),
                        lambda c: c['expected']['steps'][0].update(reset=[c['expected']['artifacts'][0]]),
+                       lambda c: c['expected']['steps'][0].update(exitCode=True),
+                       lambda c: c['expected']['steps'][0].update(exitCode=256),
                        lambda c: c['fixture'].update(files={'../escape': 'x'})]:
             with tempfile.TemporaryDirectory() as directory:
                 case = copy.deepcopy(cases[0])
@@ -217,6 +219,29 @@ class ConsumerLifecycle(unittest.TestCase):
         self.assertEqual([], self.client.state['sessions'])
         with self.assertRaises(Rejected):
             self.client.shell('too late')
+
+    def test_expected_domain_error_may_exit_nonzero_but_must_preserve_state(self):
+        raw = archive([('program.py', b'# submitted source')])
+        target = self.client.directory / 'submission.tar'
+        target.write_bytes(raw)
+        self.client.state['artifact'] = {'name': target.name, 'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+        step = {'argv': ['python3', 'program.py'], 'stdin': '', 'stdoutJson': {'error': 'INSUFFICIENT_STOCK'},
+                'exitCode': None, 'unchangedFiles': ['state.json']}
+        case = {'fixture': {'files': {}}, 'expected': {'artifacts': ['program.py'], 'preserve': [], 'steps': [step]}}
+        unchanged = (200, {}, b'{"A":2}')
+        for state, code, after, expected, passed in [
+                ('succeeded', 0, unchanged, None, True), ('failed', 1, unchanged, None, True),
+                ('failed', 2, unchanged, None, True), ('failed', 1, unchanged, 0, False),
+                ('failed', 1, (200, {}, b'{"A":1}'), None, False),
+                ('timed_out', 1, unchanged, None, False), ('resource_limit', 1, unchanged, None, False),
+                ('output_limit', 1, unchanged, None, False), ('cancelled', 1, unchanged, None, False)]:
+            step['exitCode'] = expected
+            with self.subTest(state=state, code=code, after=after, expected=expected), \
+                    patch.object(self.client, 'open_session', return_value='grader'), patch.object(self.client, 'populate'), \
+                    patch.object(self.client, 'execute', return_value={'state': state, 'result': {
+                        'exitCode': code, 'stdout': '{"error":"INSUFFICIENT_STOCK"}', 'truncated': False}}), \
+                    patch.object(self.client, 'capture', side_effect=[unchanged, after]):
+                self.assertEqual(passed, not self.client.grade(case))
 
 
 class InspectWorkspace(unittest.TestCase):

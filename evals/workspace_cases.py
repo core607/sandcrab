@@ -101,8 +101,11 @@ def load(directory: Path):
         if not isinstance(expected['steps'], list) or not 1 <= len(expected['steps']) <= 8:
             raise ValueError('Use one to eight independent check steps')
         for step in expected['steps']:
-            if not isinstance(step, dict) or not {'argv', 'stdin', 'stdoutJson'} <= set(step) or set(step) - {'argv', 'stdin', 'stdoutJson', 'files', 'links', 'reset', 'filesJson', 'absentFiles', 'unchangedFiles'}:
+            if not isinstance(step, dict) or not {'argv', 'stdin', 'stdoutJson'} <= set(step) or set(step) - {'argv', 'stdin', 'stdoutJson', 'exitCode', 'files', 'links', 'reset', 'filesJson', 'absentFiles', 'unchangedFiles'}:
                 raise ValueError('Unknown workspace check')
+            exit_code = step.get('exitCode', 0)
+            if exit_code is not None and (type(exit_code) is not int or not 0 <= exit_code <= 255):
+                raise ValueError('Check exitCode must be null or an integer from zero through 255')
             files(step.get('files', {}))
             argv = step['argv']
             if not isinstance(argv, list) or not 2 <= len(argv) <= 8 or argv[0] != 'python3' or any(not isinstance(a, str) or '\0' in a for a in argv):

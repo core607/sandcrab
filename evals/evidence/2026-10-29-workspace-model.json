@@ -1,0 +1,340 @@
+{
+  "date": "2026-10-29",
+  "scope": "Six synthetic programming tasks through an ordinary Sandcrab consumer client; model generation followed by a controlled correction of artifact grading. No production endpoint, Poketto cutover, SDK conformance or general programming claim.",
+  "modelBatch": {
+    "workflow": "https://github.com/core607/poketto/actions/runs/40818445903",
+    "revision": "7cc79babfc7c30360a7c4da4c5a8dd36dea029fd",
+    "evidenceKind": "model-directed",
+    "model": "bounded-deepseek/deepseek-flash",
+    "advertisedRelease": "DeepSeek-V4.1-Flash-1017",
+    "servedModels": [
+      "deepseek-flash"
+    ],
+    "systemFingerprints": [
+      "bc19ba97cbe016479903222bb1578db6"
+    ],
+    "sampling": {
+      "thinking": "disabled",
+      "temperature": 0,
+      "maxOutputTokens": 2048
+    },
+    "clientVersion": 3,
+    "evaluatorPython": "3.12.14",
+    "sandboxPython": [
+      "Python 3.12.3"
+    ],
+    "clientPackages": {
+      "inspect-ai": "0.3.285",
+      "httpx": "0.28.1",
+      "PyYAML": "6.0.3"
+    },
+    "corpusSha256": "87d29592f1cc751f3a522f4d9bcd5554c35616f42170006c24a505b17e7ea280",
+    "startedAt": "2026-10-29T04:38:43+00:00",
+    "completedAt": "2026-10-29T04:43:37+00:00",
+    "evaluationSeconds": 294.0,
+    "attempts": 18,
+    "originalPasses": 15,
+    "modelRequests": 113,
+    "settledRequests": 113,
+    "inputTokens": 291008,
+    "outputTokens": 26736,
+    "toolCalls": 101,
+    "agentApiCalls": 403,
+    "toolErrors": 0,
+    "refusedApiCalls": 0,
+    "transportFailures": 0,
+    "budget": {
+      "limitUsd": "1.000000",
+      "knownUpperEstimateUsd": "0.119432",
+      "unresolvedReservationUsd": "0.000000",
+      "maximumAccountedUsd": "0.119432",
+      "unresolvedRequests": 0,
+      "stopped": null,
+      "prices": {
+        "model": "deepseek-flash",
+        "advertised_release": "DeepSeek-V4.1-Flash-1017",
+        "verified_on": "2026-10-28",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+        "context_tokens": 1100000,
+        "max_output_tokens": 2048,
+        "usd_per_million": {
+          "input": "0.30",
+          "output": "1.20"
+        }
+      }
+    },
+    "costBasis": "Peak-rate upper estimate with all input charged uncached; not an invoice.",
+    "archiveSha256": "6d08a2ab31695f55d273abfebc0ad8b60e36d35904857a9ae22f8e364a393286",
+    "artifactRetentionDays": 14,
+    "sampleCleanup": "PASS",
+    "fixtureCleanup": "PASS"
+  },
+  "gradingCorrection": {
+    "reason": "All three inventory submissions printed the expected refusal JSON and exited 1. The task specified the JSON and unchanged state but no refusal exit status; the original grader required exit 0 before checking those results.",
+    "change": "Refusal checks use exitCode: null. Normal nonzero exits still require exact JSON and stored-file checks; timeout, cancellation, resource exhaustion and truncated output fail.",
+    "originalReportPreserved": true,
+    "taskTextAndFixturesUnchanged": true,
+    "casePromptAndFixtureSha256": "19b54504613d942eafa21c4b206aae40b6c68faf4f4a9de9fa084d36d4ae1a48",
+    "newModelRequests": 0,
+    "originalGraderRevision": "7cc79babfc7c30360a7c4da4c5a8dd36dea029fd",
+    "correctedGraderRevision": "d95b824364ffbbcea90586d4c7e2f80c4dbee6d6",
+    "correctedClientVersion": 4,
+    "correctedCorpusSha256": "a5b70937f1055831bd2f64fed89401d36fcf68752b8146b2de69e8a688e86c95",
+    "validation": "Every original tar is SHA-256 verified and graded with both revisions on the same disposable native service. Only required sources enter fresh grading sessions; no submitted code executes on the evaluator host.",
+    "nativeBinarySha256": "40db5cb094255a53aa29edd8ee57db8febecc4bc87ff2396ff10915804305c59",
+    "evaluatorPython": "3.14.4",
+    "sandboxPython": "Python 3.14.4",
+    "originalGraderPasses": 15,
+    "correctedGraderPasses": 18,
+    "originalGraderSeconds": 50.409737,
+    "correctedGraderSeconds": 59.799602,
+    "correctedIndependentChecks": 75,
+    "beforeReceiptSha256": "3fa44307106c6b67ec80be8b653c3399eb91b316d94f27fa7e0ca6bd0c1f37f7",
+    "correctedReceiptSha256": "3b994de89959da5baaaa3905c87a2d4acd9a436e1f5a5b8155afd861bc98f66a",
+    "fixtureReceiptSha256": "8df5d8151fa11e7ae53ea8355dcc0a361ad2b1fb38f08b2c2712bd193235242f",
+    "allReplayCleanup": "PASS",
+    "fixtureCleanup": "PASS"
+  },
+  "attempts": [
+    {
+      "case": "workspace-binary-index",
+      "epoch": 1,
+      "artifactSha256": "00e4e9a769ae8acff3b2967de1499ec4b20ecd8ab723a7ffc84c46e34eb335bc",
+      "artifactBytes": 7680,
+      "artifactEntries": 4,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 2,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 2,
+      "artifactSha256": "e36708bc9a51fcbb2940ac15e23d9423cfce636ddeb49849a0cdece6a4469c89",
+      "artifactBytes": 7680,
+      "artifactEntries": 4,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 2,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 3,
+      "artifactSha256": "e23adc86ab86819b6eca31aa891d2be8959240bc27dce53c57adb24dc588df0f",
+      "artifactBytes": 6656,
+      "artifactEntries": 4,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 2,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 1,
+      "artifactSha256": "300665345a60f40a751a80f410185e2b45272944446952937931450cd560f26e",
+      "artifactBytes": 4608,
+      "artifactEntries": 2,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 2,
+      "artifactSha256": "db0fe760b7ec7acfe5fcd036ec63c383118ca2778b4163017abcc56b07cd6bd6",
+      "artifactBytes": 4608,
+      "artifactEntries": 2,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 3,
+      "artifactSha256": "d14b1779bb39d5481e2bf32a0ff11bc7b19e9d5b839d2619f6891436e7bdc287",
+      "artifactBytes": 4608,
+      "artifactEntries": 2,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 1,
+      "artifactSha256": "f42d543fe3c17698d86ab1dbbc80469035594a5f56c1745e896515324ce06aec",
+      "artifactBytes": 4608,
+      "artifactEntries": 1,
+      "originalPassed": false,
+      "originalFailedChecks": [
+        "Check 4: submitted program did not exit successfully"
+      ],
+      "originalGraderReplayPassed": false,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 8,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 2,
+      "artifactSha256": "b1234e872436b7f23c4974779de95de9d2f42b166c03b23f8fee91ac0dbbcc02",
+      "artifactBytes": 4608,
+      "artifactEntries": 1,
+      "originalPassed": false,
+      "originalFailedChecks": [
+        "Check 4: submitted program did not exit successfully"
+      ],
+      "originalGraderReplayPassed": false,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 8,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 3,
+      "artifactSha256": "99a59da3fbe0de33e496de3aadf066ec81170c0faf7859f243edd605107711eb",
+      "artifactBytes": 4608,
+      "artifactEntries": 1,
+      "originalPassed": false,
+      "originalFailedChecks": [
+        "Check 4: submitted program did not exit successfully"
+      ],
+      "originalGraderReplayPassed": false,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 8,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 1,
+      "artifactSha256": "a09284bf27461f1a844a1ae72ad202179625375f2cf65bc7da7ed8cf8c9ff535",
+      "artifactBytes": 9728,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 3,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 2,
+      "artifactSha256": "7ad4421ca1854d17acc81164ae8b92d17f5ec701b1384b1e754857f60e6fbf79",
+      "artifactBytes": 9216,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 3,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 3,
+      "artifactSha256": "ac4581b1ff70972abc475835601327d74d7df7cdc360aaa304f5a1e2f03c6868",
+      "artifactBytes": 9728,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 3,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 1,
+      "artifactSha256": "ae990752cd527ae72d6387097468198dc0b265b7ecb27be406cc0e9a8c8db5c8",
+      "artifactBytes": 9728,
+      "artifactEntries": 7,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 2,
+      "artifactSha256": "3f6469a2cc61da55a11fa4a5c91027a29a2a5fca1595c765d317e7798013239d",
+      "artifactBytes": 6656,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 3,
+      "artifactSha256": "e39bc3c7c1f148fe128255056bf4bd263f22e6a5b25ad18405d36e2f74f7ea65",
+      "artifactBytes": 9216,
+      "artifactEntries": 7,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 1,
+      "artifactSha256": "6578ba0ae0e1f29d91a9a9b1eb82413d5c7171a9b1c2f04f4f5ead54b693db3a",
+      "artifactBytes": 3584,
+      "artifactEntries": 2,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 2,
+      "artifactSha256": "6d00eca501189d4205cc16bad092ddba7b6683f78bfc14121a020be16bdd5c85",
+      "artifactBytes": 8192,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 3,
+      "artifactSha256": "50e0dc5c8560a23d663913fb72df4eec0afc36ff586f51be3094fbdbc50c3caf",
+      "artifactBytes": 8192,
+      "artifactEntries": 5,
+      "originalPassed": true,
+      "originalFailedChecks": [],
+      "originalGraderReplayPassed": true,
+      "correctedGraderReplayPassed": true,
+      "correctedChecks": 4,
+      "cleanup": "PASS"
+    }
+  ]
+}

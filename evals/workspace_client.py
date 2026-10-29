@@ -331,8 +331,12 @@ class Workspace:
                 result = self.execute(grader, command)
                 readback = {'step': index, 'run': result, 'files': {}}
                 self.state['grading'].append(readback)
-                if result['state'] != 'succeeded' or result.get('result', {}).get('exitCode') != 0:
-                    return [f'Check {index}: submitted program did not exit successfully']
+                outcome = result.get('result') or {}
+                exit_code = outcome.get('exitCode')
+                if result['state'] not in {'succeeded', 'failed'} or type(exit_code) is not int or not 0 <= exit_code <= 255 or outcome.get('truncated'):
+                    return [f'Check {index}: submitted program did not complete normally']
+                if step.get('exitCode', 0) is not None and exit_code != step.get('exitCode', 0):
+                    return [f'Check {index}: program exit code differs']
                 try:
                     actual = strict_json(result['result']['stdout'])
                     if not same_json(actual, step['stdoutJson']):

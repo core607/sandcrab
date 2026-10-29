@@ -63,10 +63,12 @@ expected:
         inventory.json: {A: 2, a: 1}
     - argv: [python3, inventory.py]
       stdin: '{"op":"remove","sku":"A","qty":3}'
+      exitCode: null
       stdoutJson: {error: INSUFFICIENT_STOCK}
       unchangedFiles: [inventory.json]
     - argv: [python3, inventory.py]
       stdin: '{"op":"add","sku":"A","qty":true}'
+      exitCode: null
       stdoutJson: {error: INVALID_INPUT}
       unchangedFiles: [inventory.json]
     - argv: [python3, inventory.py]
@@ -76,6 +78,7 @@ expected:
         inventory.json: {a: 1}
     - argv: [python3, inventory.py]
       stdin: '{"op":"replace","sku":"a","qty":4}'
+      exitCode: null
       stdoutJson: {error: INVALID_INPUT}
       unchangedFiles: [inventory.json]
     - argv: [python3, inventory.py]
