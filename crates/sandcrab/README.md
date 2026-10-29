@@ -1,8 +1,8 @@
 # Sandcrab native service
 
 `sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
-bash sessions, durable volumes and streamed files. It needs no Poketto account, workspace, repository,
-signing key or compiled extension. The service uses a Unix socket; host calls, SSE,
+bash sessions, durable volumes, streamed files and live command output. It needs no Poketto account, workspace, repository,
+signing key or compiled extension. The service uses a Unix socket; host calls,
 TCP and the OpenSandbox adapter remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
@@ -59,16 +59,16 @@ invalid message, the 128th response or shutdown. Reading a request, including id
 time, and writing its JSON response each have a five-second deadline. An idle connection
 closes without sending an unsolicited error. File bodies use the limits below. The CLI reuses connections while
 polling and reconnects after a declared close; transport failures are returned
-without replay. Up to 32 connections are admitted. POST bodies declare a content
+without replay. `max_connections` defaults to 32. POST bodies declare a content
 length of 1 to 65536 bytes; GET requests have no body. Headers are at most 8192 bytes
-and 32 fields. Chunked messages, duplicate headers and upgrades are
-rejected; pipelining is unsupported. Only `client_uid` is accepted, even if another
+and 32 fields. Only event responses use chunked framing; requests and other responses
+require fixed lengths. Duplicate headers and upgrades are rejected; pipelining is unsupported. Only `client_uid` is accepted, even if another
 account can connect to the socket.
 
 | Request | Result |
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
-| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes` or `files` selects a bounded view with its referenced schemas |
+| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files` or `events` selects a bounded view with its referenced schemas |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
 | `POST /v1/runs/ID/cancel` with `{}` | Request cancellation; poll until terminal |
@@ -93,6 +93,43 @@ or output reservations must be forgotten. Session records and command results sh
 `max_records`; command output remains reserved until its result is forgotten. `max_output_bytes` bounds reserved raw
 output, not total process memory; the slice bounds runtime, tmpfs and overhead.
 Reserve enough supervisor memory for encoded responses and retained output.
+
+## Command events
+
+Add `--stream` before `--` to `run` or `session exec` to print exact stdout and
+stderr bytes as they arrive. Recovery IDs and CLI diagnostics also use stderr.
+The command's terminal outcome still controls the CLI exit status and forgetting.
+To observe a retained run without cancelling or forgetting it, use:
+
+```sh
+sandcrab events --socket /run/sandcrab-demo/control.sock RUN_ID
+sandcrab events --socket /run/sandcrab-demo/control.sock RUN_ID --after CURSOR
+```
+
+This observer prints newline-delimited JSON containing `event`, `id` and `data`.
+HTTP clients use `GET /v1/runs/ID/events`, a chunked SSE response. Each complete
+event carries an opaque `id`; explicit reconnects send it as `Last-Event-ID`.
+The initial `state` carries run metadata without output. `stdout` and `stderr`
+carry a starting byte `offset` and `base64` block of at most 4096 raw bytes. Ordering
+is per stream; blocks need not end at UTF-8 boundaries. `result` carries the
+terminal summary and both total byte counts after command containment is confirmed.
+EOF, heartbeat comments and `error` events do not acknowledge completion.
+
+An observer owns no command lifetime. Disconnect, a five-second frame write
+deadline or the 350-second observation deadline ends only the subscription.
+Keep the run record until observation finishes. Resume cursors bind its incarnation
+and both byte offsets; malformed cursors return 400, mismatches 409, and forgotten
+records 404. The CLI never reconnects or submits another command automatically.
+An observation error reports the last complete cursor for explicit recovery.
+A complete terminal frame remains acknowledged even if the final HTTP zero chunk
+is lost; consume that zero chunk before reusing the connection.
+
+`max_event_streams` defaults to 16 and must leave at least four of
+`max_connections` for control calls. A full observer pool returns 429
+`EVENT_CAPACITY`. Info exposes these limits and `events.activeStreams` as a
+concurrent snapshot. Observers read bounded retained output; they never hold a
+command's capture loop waiting for a reader. Output is retained once after completion;
+while executing, capture and progress buffers can each hold the reserved bytes.
 
 ## Persistent sessions
 
@@ -299,5 +336,7 @@ reflinks, quotas, durable replay and failure recovery, and unmounts it only afte
 its fixture's processes stop.
 `file_probe.py` uses the same arguments and an independent XFS fixture for raw/tar
 readback, safe local CLI installation, quotas, cancellation and publication recovery.
+`events_probe.py` uses those arguments for live command output, binary resume,
+observer admission, CLI cancellation and containment faults in a disposable native fixture.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

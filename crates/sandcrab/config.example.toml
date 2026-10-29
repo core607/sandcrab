@@ -11,6 +11,8 @@ max_records = 128
 max_output_bytes = 8388608
 max_file_records = 256
 max_file_transfers = 2
+max_connections = 32
+max_event_streams = 16
 
 # Optional: provision a separate bounded XFS mount at root/data with reflink,
 # enforced project quotas, nosuid and nodev. root/state stays on another filesystem.

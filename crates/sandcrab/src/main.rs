@@ -2,6 +2,8 @@
 //! Native Sandcrab service and client; consumer-specific identities and extensions are absent.
 mod client;
 mod config;
+mod event_client;
+mod events;
 mod file_access;
 mod file_client;
 mod file_io;
@@ -22,7 +24,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
 
 fn execute(args: &[String]) -> io::Result<i32> {
     match args {
@@ -112,6 +114,20 @@ fn execute(args: &[String]) -> io::Result<i32> {
             );
             Ok(0)
         }
+        [mode, flag, socket, id, rest @ ..]
+            if mode == "events" && flag == "--socket" && sandcrab_core::uuid(id) =>
+        {
+            let after = match rest {
+                [] => None,
+                [flag, cursor] if flag == "--after" => Some(cursor.as_str()),
+                _ => {
+                    return Err(config::invalid(
+                        "Expected events --socket PATH RUN_ID [--after CURSOR]",
+                    ));
+                }
+            };
+            event_client::events(Path::new(socket), id, after)
+        }
         [mode, rest @ ..] if mode == "run" => run(rest),
         [mode, rest @ ..] if mode == "session" => session(rest),
         [mode, rest @ ..] if mode == "volume" => volume(rest),
@@ -125,11 +141,16 @@ fn run(args: &[String]) -> io::Result<i32> {
         .position(|s| s == "--")
         .ok_or_else(|| config::invalid("run requires -- before COMMAND"))?;
     let (options, command) = (&args[..split], &args[split + 1..]);
-    let (mut socket, mut profile, mut timeout) = (None, None, None);
-    for pair in options.chunks(2) {
-        let [key, value] = pair else {
-            return Err(config::invalid("Every run option needs a value"));
-        };
+    let (mut socket, mut profile, mut timeout, mut streaming) = (None, None, None, false);
+    let mut options = options.iter();
+    while let Some(key) = options.next() {
+        if key == "--stream" && !streaming {
+            streaming = true;
+            continue;
+        }
+        let value = options
+            .next()
+            .ok_or_else(|| config::invalid("Every run option except --stream needs a value"))?;
         match key.as_str() {
             "--socket" if socket.is_none() => socket = Some(value),
             "--profile" if profile.is_none() => profile = Some(value),
@@ -155,6 +176,7 @@ fn run(args: &[String]) -> io::Result<i32> {
         profile.ok_or_else(|| config::invalid("--profile is required"))?,
         command,
         timeout,
+        streaming,
     )
 }
 fn session(args: &[String]) -> io::Result<i32> {
@@ -192,12 +214,8 @@ fn session(args: &[String]) -> io::Result<i32> {
                     let [source] = &rest[split + 1..] else {
                         return Err(config::invalid("Pass one quoted shell source argument"));
                     };
-                    client::execute_session(
-                        Path::new(socket),
-                        id,
-                        source,
-                        numeric_option(&rest[..split], "--timeout-ms")?,
-                    )
+                    let (timeout, streaming) = command_options(&rest[..split])?;
+                    client::execute_session(Path::new(socket), id, source, timeout, streaming)
                 }
                 "renew" => {
                     let ttl = numeric_option(rest, "--ttl-ms")?
@@ -239,6 +257,30 @@ fn session(args: &[String]) -> io::Result<i32> {
         }
         _ => Err(config::invalid(HELP)),
     }
+}
+fn command_options(args: &[String]) -> io::Result<(Option<u64>, bool)> {
+    let (mut timeout, mut streaming) = (None, false);
+    let mut values = args.iter();
+    while let Some(key) = values.next() {
+        match key.as_str() {
+            "--stream" if !streaming => streaming = true,
+            "--timeout-ms" if timeout.is_none() => {
+                timeout = Some(
+                    values
+                        .next()
+                        .ok_or_else(|| config::invalid("--timeout-ms requires a value"))?
+                        .parse()
+                        .map_err(|_| config::invalid("Invalid timeout"))?,
+                );
+            }
+            _ => {
+                return Err(config::invalid(
+                    "Expected unique --stream and --timeout-ms N options",
+                ));
+            }
+        }
+    }
+    Ok((timeout, streaming))
 }
 fn volume(args: &[String]) -> io::Result<i32> {
     let [mode, flag, socket, rest @ ..] = args else {

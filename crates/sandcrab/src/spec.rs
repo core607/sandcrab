@@ -34,13 +34,16 @@ pub fn document(capability: Option<&str>) -> Value {
         .retain(|path, _| {
             path == "/v1/info"
                 || path == "/v1/openapi"
-                || if capability == "files" {
+                || if capability == "events" {
+                    path == "/v1/runs/{id}/events"
+                } else if capability == "files" {
                     path == "/v1/uploads"
                         || path.starts_with("/v1/uploads/")
                         || path == "/v1/sessions/{id}/snapshot"
                 } else {
                     (path == &prefix || path.starts_with(&format!("{prefix}/")))
                         && !path.ends_with("/snapshot")
+                        && !path.ends_with("/events")
                 }
         });
     let source = document["components"].take();
@@ -74,9 +77,11 @@ mod tests {
     use super::*;
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
-        for capability in ["runs", "sessions", "volumes", "files"] {
+        for capability in ["runs", "sessions", "volumes", "files", "events"] {
             let document = document(Some(capability));
-            let path = if capability == "files" {
+            let path = if capability == "events" {
+                "/v1/runs/{id}/events".into()
+            } else if capability == "files" {
                 "/v1/uploads".into()
             } else {
                 format!("/v1/{capability}")
@@ -93,9 +98,11 @@ mod tests {
                     "{reference}"
                 );
             }
-            for other in ["runs", "sessions", "volumes", "files"] {
+            for other in ["runs", "sessions", "volumes", "files", "events"] {
                 if other != capability {
-                    let path = if other == "files" {
+                    let path = if other == "events" {
+                        "/v1/runs/{id}/events".into()
+                    } else if other == "files" {
                         "/v1/uploads".into()
                     } else {
                         format!("/v1/{other}")

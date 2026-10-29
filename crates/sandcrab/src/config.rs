@@ -7,6 +7,7 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
+pub(crate) const MAX_OUTPUT: usize = 1_048_576;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,6 +34,10 @@ pub struct Service {
     pub max_file_records: usize,
     #[serde(default = "file_transfers")]
     pub max_file_transfers: usize,
+    #[serde(default = "connections")]
+    pub max_connections: usize,
+    #[serde(default = "event_streams")]
+    pub max_event_streams: usize,
 }
 
 #[derive(Clone, Deserialize)]
@@ -70,6 +75,12 @@ pub struct Profile {
 }
 fn file_records() -> usize {
     256
+}
+fn connections() -> usize {
+    32
+}
+fn event_streams() -> usize {
+    16
 }
 fn file_transfers() -> usize {
     2
@@ -178,6 +189,14 @@ impl Config {
                 "unit_prefix must be the supervisor unit name followed by '-'",
             ));
         }
+        if !(8..=256).contains(&service.max_connections)
+            || !(1..=service.max_connections.saturating_sub(4).min(128))
+                .contains(&service.max_event_streams)
+        {
+            return Err(invalid(
+                "Use 8..256 max_connections and 1..min(128, max_connections-4) max_event_streams; reserve four control connections",
+            ));
+        }
         if !(1..=64).contains(&service.max_sandboxes)
             || !(service.max_sandboxes..=1024).contains(&service.max_records)
             || !(65536..=64 * 1024 * 1024).contains(&service.max_output_bytes)
@@ -246,7 +265,7 @@ impl Config {
                 || !(1..=10000).contains(&profile.cpu_quota_percent)
                 || !(1..=300_000).contains(&profile.timeout_millis)
                 || !(100..=86_400_000).contains(&profile.session_ttl_millis)
-                || !(1..=1_048_576.min(service.max_output_bytes))
+                || !(1..=MAX_OUTPUT.min(service.max_output_bytes))
                     .contains(&profile.output_limit_bytes)
             {
                 return Err(invalid(format!(
@@ -274,6 +293,9 @@ mod tests {
             EXAMPLE.replace("network = \"none\"", "network = \"host\""),
             EXAMPLE.replace("memory_bytes = 134217728", "memory_bytes = 0"),
             EXAMPLE.replace("max_sandboxes = 2", "max_sandboxes = 0"),
+            EXAMPLE.replace("max_connections = 32", "max_connections = 7"),
+            EXAMPLE.replace("max_event_streams = 16", "max_event_streams = 29"),
+            EXAMPLE.replace("max_event_streams = 16", "max_event_streams = 0"),
             EXAMPLE.replace("\"/usr\"", "\"/run\""),
             EXAMPLE.replace("\"/usr\"", "\"/tmp/data\""),
             EXAMPLE.replace("\"/usr\"", "\"/usr/../etc\""),

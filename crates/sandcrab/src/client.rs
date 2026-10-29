@@ -108,6 +108,7 @@ pub fn run(
     profile: &str,
     command: &[String],
     timeout: Option<u64>,
+    streaming: bool,
 ) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
@@ -123,7 +124,12 @@ pub fn run(
         timeout_millis: timeout,
         output_limit_bytes: None,
     };
-    submit_run(&mut client, "/v1/runs", &serde_json::to_value(&input)?)
+    submit_run(
+        &mut client,
+        "/v1/runs",
+        &serde_json::to_value(&input)?,
+        streaming,
+    )
 }
 
 pub fn execute_session(
@@ -131,6 +137,7 @@ pub fn execute_session(
     session: &str,
     command: &str,
     timeout: Option<u64>,
+    streaming: bool,
 ) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
@@ -140,10 +147,16 @@ pub fn execute_session(
         &mut client,
         &format!("/v1/sessions/{session}/commands"),
         &input,
+        streaming,
     )
 }
 
-fn submit_run(client: &mut Client, endpoint: &str, input: &Value) -> io::Result<i32> {
+fn submit_run(
+    client: &mut Client,
+    endpoint: &str,
+    input: &Value,
+    streaming: bool,
+) -> io::Result<i32> {
     let stopped = Arc::new(AtomicBool::new(false));
     let signals = [
         signal_hook::flag::register(signal_hook::consts::SIGINT, stopped.clone())?,
@@ -158,6 +171,40 @@ fn submit_run(client: &mut Client, endpoint: &str, input: &Value) -> io::Result<
     eprintln!("runId={id}");
     let result = (|| {
         client.request("POST", endpoint, Some(input))?;
+        if streaming {
+            // The control connection would expire while a stream is being observed.
+            client.stream.take();
+            let state = crate::event_client::observe(
+                &client.socket,
+                id,
+                None,
+                Some(&stopped),
+                |kind, _, value| {
+                    if kind == "state" && value["serverId"] != input["serverId"] {
+                        return Err(invalid("Server epoch changed while observing the command"));
+                    }
+                    match kind {
+                        "stdout" => {
+                            let mut out = io::stdout().lock();
+                            out.write_all(&crate::event_client::decode(value)?)?;
+                            out.flush()?;
+                        }
+                        "stderr" => {
+                            let mut out = io::stderr().lock();
+                            out.write_all(&crate::event_client::decode(value)?)?;
+                            out.flush()?;
+                        }
+                        _ => (),
+                    }
+                    Ok(())
+                },
+            )?;
+            forget_outcome(client, id);
+            if state["state"] != "succeeded" {
+                eprintln!("runState={} result={}", state["state"], state["result"]);
+            }
+            return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
+        }
         let deadline = Instant::now() + Duration::from_secs(340);
         let mut cancelled = false;
         loop {
@@ -176,14 +223,7 @@ fn submit_run(client: &mut Client, endpoint: &str, input: &Value) -> io::Result<
                 }
                 Some(_) => {
                     println!("{}", serde_json::to_string(&state)?);
-                    if let Err(error) =
-                        client.request("POST", &format!("{path}/forget"), Some(&json!({})))
-                    {
-                        eprintln!(
-                            "Run {} outcome is final; forgetting its record failed: {error}. Inspect or forget this ID; do not rerun the command.",
-                            id
-                        );
-                    }
+                    forget_outcome(client, id);
                     return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
                 }
                 None => return Err(invalid("Missing run state")),
@@ -201,6 +241,14 @@ fn submit_run(client: &mut Client, endpoint: &str, input: &Value) -> io::Result<
         signal_hook::low_level::unregister(signal);
     }
     result
+}
+
+fn forget_outcome(client: &mut Client, id: &str) {
+    if let Err(error) = client.request("POST", &format!("/v1/runs/{id}/forget"), Some(&json!({}))) {
+        eprintln!(
+            "Run {id} outcome is final; forgetting its record failed: {error}. Inspect or forget this ID; do not rerun the command."
+        );
+    }
 }
 
 pub fn open_session(

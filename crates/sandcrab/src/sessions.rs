@@ -333,13 +333,9 @@ impl Service {
             return error(429, "RESULT_CAPACITY");
         }
         let cancelled = Arc::new(AtomicBool::new(false));
-        let run = Run {
-            request: input,
-            profile: profile_name,
-            state: "running".into(),
-            result: None,
-            cancelled: cancelled.clone(),
-            reservation: output,
+        let run = match Run::new(input, profile_name, cancelled.clone(), output) {
+            Ok(run) => run,
+            Err(_) => return error(503, "RUN_UNAVAILABLE"),
         };
         let accepted = run.value();
         registry.reserved += output;
@@ -401,6 +397,7 @@ impl Service {
                     work.timeout,
                     work.output,
                     &work.cancelled,
+                    |stream, bytes| self.output(&work.request.id, stream, bytes),
                 );
                 if !reusable || cancelled.load(Ordering::SeqCst) {
                     reason = if finished.end == job::End::Normal && finished.exit_code == 0 {

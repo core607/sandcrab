@@ -62,12 +62,41 @@ pub(crate) struct Run {
     pub result: Option<Value>,
     pub cancelled: Arc<AtomicBool>,
     pub reservation: usize,
+    pub output: [Vec<u8>; 2],
+    pub stream_id: String,
 }
 impl Run {
+    pub(crate) fn new(
+        request: Value,
+        profile: String,
+        cancelled: Arc<AtomicBool>,
+        limit: usize,
+    ) -> io::Result<Self> {
+        Ok(Self {
+            request,
+            profile,
+            state: "running".into(),
+            result: None,
+            cancelled,
+            reservation: limit,
+            output: [Vec::new(), Vec::new()],
+            stream_id: sandcrab_core::new_uuid()?,
+        })
+    }
     pub(crate) fn terminal(&self) -> bool {
         self.state != "running" && self.state != "closing"
     }
     pub(crate) fn value(&self) -> Value {
+        let mut value = self.summary();
+        if value["result"].get("exitCode").is_some() {
+            value["result"]["stdout"] =
+                String::from_utf8_lossy(&self.output[0]).into_owned().into();
+            value["result"]["stderr"] =
+                String::from_utf8_lossy(&self.output[1]).into_owned().into();
+        }
+        value
+    }
+    pub(crate) fn summary(&self) -> Value {
         let mut value = json!({"id":self.request["id"],"serverId":self.request["serverId"],"profile":self.profile,
             "state":self.state,"result":self.result});
         if let Some(id) = self.request.get("sessionId") {
@@ -110,6 +139,7 @@ pub struct Service {
     pub stopped: Arc<AtomicBool>,
     pub(crate) file_count: Arc<AtomicUsize>,
     pub(crate) file_cancellations: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
+    pub(crate) event_count: Arc<AtomicUsize>,
 }
 impl Service {
     pub fn new(runtime: Runtime, stopped: Arc<AtomicBool>) -> io::Result<Self> {
@@ -120,6 +150,7 @@ impl Service {
             stopped,
             file_count: Arc::new(AtomicUsize::new(0)),
             file_cancellations: Mutex::new(BTreeMap::new()),
+            event_count: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -130,7 +161,7 @@ impl Service {
             } else {
                 let Some(name) = path
                     .strip_prefix("/v1/openapi?capability=")
-                    .filter(|s| ["runs", "sessions", "volumes", "files"].contains(s))
+                    .filter(|s| ["runs", "sessions", "volumes", "files", "events"].contains(s))
                 else {
                     return error(400, "INVALID_REQUEST");
                 };
@@ -142,7 +173,7 @@ impl Service {
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network})))
                 .collect::<serde_json::Map<_,_>>();
-            let mut capabilities = vec!["runs", "sessions", "files"];
+            let mut capabilities = vec!["runs", "sessions", "files", "events"];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
@@ -151,6 +182,11 @@ impl Service {
             return (
                 200,
                 json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
+                    "limits":{"maxSandboxes":self.runtime.config.service.max_sandboxes,"maxRecords":self.runtime.config.service.max_records,
+                        "maxOutputBytes":self.runtime.config.service.max_output_bytes,"maxConnections":self.runtime.config.service.max_connections,
+                        "maxEventStreams":self.runtime.config.service.max_event_streams},
+                    "events":{"blockBytes":crate::events::BLOCK,"streamTimeoutMillis":crate::events::TIMEOUT.as_millis(),
+                        "activeStreams":self.event_count.load(Ordering::SeqCst)},
                     "files":{"available":self.runtime.files.available(),"maxRecords":self.runtime.config.service.max_file_records,
                     "maxTransfers":self.runtime.config.service.max_file_transfers,"transferTimeoutMillis":30000,"entryLimit":10000}}),
             );
@@ -256,16 +292,17 @@ impl Service {
         {
             return error(429, "RESULT_CAPACITY");
         }
+        let run = match Run::new(
+            serde_json::to_value(&request).unwrap(),
+            request.profile.clone(),
+            cancelled.clone(),
+            limit,
+        ) {
+            Ok(run) => run,
+            Err(_) => return error(503, "RUN_UNAVAILABLE"),
+        };
         registry.active += 1;
         registry.reserved += limit;
-        let run = Run {
-            request: serde_json::to_value(&request).unwrap(),
-            profile: request.profile.clone(),
-            state: "running".into(),
-            result: None,
-            cancelled: cancelled.clone(),
-            reservation: limit,
-        };
         let accepted = run.value();
         registry.runs.insert(id.clone(), run);
         let service = self.clone();
@@ -275,9 +312,9 @@ impl Service {
                     &request.id,
                     &profile,
                     &request.command,
-                    timeout,
-                    limit,
+                    (timeout, limit),
                     &cancelled,
+                    |stream, bytes| service.output(&request.id, stream, bytes),
                 );
                 service.complete(&request.id, finished, cleanup, true);
             })
@@ -308,6 +345,7 @@ impl Service {
         let cancelled = run.cancelled.load(Ordering::SeqCst);
         match finished {
             Ok(finished) => {
+                run.output = finished.output;
                 run.state = if cancelled {
                     "cancelled"
                 } else {
@@ -321,10 +359,8 @@ impl Service {
                     }
                 }
                 .into();
-                run.result = Some(
-                    json!({"exitCode":finished.exit_code,"stdout":String::from_utf8_lossy(&finished.output[0]),
-                    "stderr":String::from_utf8_lossy(&finished.output[1]),"truncated":finished.truncated}),
-                );
+                run.result =
+                    Some(json!({"exitCode":finished.exit_code,"truncated":finished.truncated}));
             }
             Err(_) => {
                 run.state = if cancelled { "cancelled" } else { "failed" }.into();
@@ -341,6 +377,17 @@ impl Service {
                 session.state = "ready".into();
             }
         }
+    }
+
+    pub(crate) fn output(&self, id: &str, stream: usize, bytes: &[u8]) {
+        let mut registry = self.registry.lock().unwrap();
+        let Some(run) = registry.runs.get_mut(id) else {
+            return;
+        };
+        let available = run
+            .reservation
+            .saturating_sub(run.output.iter().map(Vec::len).sum());
+        run.output[stream].extend_from_slice(&bytes[..bytes.len().min(available)]);
     }
 
     pub fn shutdown(&self) -> io::Result<()> {
@@ -444,6 +491,8 @@ mod tests {
                 result: None,
                 cancelled: Arc::new(AtomicBool::new(false)),
                 reservation: 123,
+                output: [Vec::new(), Vec::new()],
+                stream_id: sandcrab_core::new_uuid().unwrap(),
             },
         );
         assert_eq!(registry.forget(&id), Err("RUN_ACTIVE"));

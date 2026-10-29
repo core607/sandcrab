@@ -45,6 +45,19 @@ impl Captured {
             Ok(())
         }
     }
+    fn observe(
+        &mut self,
+        stream: usize,
+        bytes: &[u8],
+        output: &mut impl FnMut(usize, &[u8]),
+    ) -> Result<(), EndReason> {
+        let start = self.output[stream].len();
+        let result = self.append(stream, bytes);
+        if self.output[stream].len() != start {
+            output(stream, &self.output[stream][start..]);
+        }
+        result
+    }
 }
 #[derive(Debug)]
 pub struct Run {
@@ -187,11 +200,14 @@ impl Channel {
         }
         Ok(result)
     }
+    /// Observers receive only bytes retained under the combined output limit, before the
+    /// final outcome is known. They run synchronously and must not wait for command completion.
     pub fn execute(
         &mut self,
         request: Request<'_>,
         cancelled: &AtomicBool,
         on_ready: impl FnOnce(),
+        mut on_output: impl FnMut(usize, &[u8]),
     ) -> Run {
         let Request {
             execution,
@@ -227,7 +243,7 @@ impl Channel {
                     .map_err(|_| EndReason::SandboxFailed)?
                 {
                     match event {
-                        Event::Diagnostic(bytes) => captured.append(1, &bytes)?,
+                        Event::Diagnostic(bytes) => captured.observe(1, &bytes, &mut on_output)?,
                         Event::Frame(value) if value == json!({"kind":"ready"}) => {
                             self.ready = true;
                             command_started = Some(Instant::now());
@@ -277,7 +293,7 @@ impl Channel {
                 {
                     let value = match event {
                         Event::Diagnostic(bytes) => {
-                            captured.append(1, &bytes)?;
+                            captured.observe(1, &bytes, &mut on_output)?;
                             continue;
                         }
                         Event::Frame(value) => value,
@@ -302,7 +318,7 @@ impl Channel {
                             if bytes.len() > 8192 {
                                 return Err(EndReason::SandboxFailed);
                             }
-                            captured.append(index, &bytes)?;
+                            captured.observe(index, &bytes, &mut on_output)?;
                         }
                         Some("complete") => {
                             if object.len() != 4 {
@@ -381,6 +397,7 @@ mod tests {
             },
             cancelled,
             on_ready,
+            |_, _| {},
         )
     }
     fn helper(body: &str) -> Channel {
@@ -420,6 +437,7 @@ mod tests {
         let mut channel = helper(
             r#"printf '%s\n' '{"kind":"ready"}'; read -r request; printf '%s\n' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stdout","data":"YWJj"}' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stderr","data":"ZGVm"}'; read -r ignored"#,
         );
+        let mut observed = [Vec::new(), Vec::new()];
         let result = channel.execute(
             Request {
                 execution: EXEC,
@@ -429,10 +447,37 @@ mod tests {
             },
             &AtomicBool::new(false),
             || {},
+            |stream, bytes| observed[stream].extend_from_slice(bytes),
         );
         assert_eq!(result.reason, Some(EndReason::OutputLimit));
         assert_eq!(result.captured.output, [b"abc".to_vec(), b"de".to_vec()]);
         assert_eq!(result.captured.truncated, [false, true]);
+        assert_eq!(observed, result.captured.output);
+    }
+
+    #[test]
+    fn output_observer_can_cancel_before_completion() {
+        // The helper never completes: observing its first byte must interrupt the wait.
+        let mut channel = helper(
+            r#"printf '%s\n' '{"kind":"ready"}'; read -r request; printf '%s\n' '{"kind":"output","executionId":"11111111-1111-1111-1111-111111111111","stream":"stdout","data":"eA=="}'; read -r ignored"#,
+        );
+        let cancelled = AtomicBool::new(false);
+        let result = channel.execute(
+            Request {
+                execution: EXEC,
+                command: "true",
+                timeout: Duration::from_secs(1),
+                output_limit: 8,
+            },
+            &cancelled,
+            || {},
+            |stream, bytes| {
+                assert_eq!((stream, bytes), (0, &b"x"[..]));
+                cancelled.store(true, Ordering::SeqCst);
+            },
+        );
+        assert_eq!(result.reason, Some(EndReason::Cancelled));
+        assert_eq!(result.captured.output[0], b"x");
     }
 
     #[test]

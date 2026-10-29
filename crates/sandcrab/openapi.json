@@ -3,7 +3,7 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Isolated finite commands, persistent sessions, optional durable volumes and raw/tar files over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential control requests; follow Connection: close. Server epochs guard new operations, while retained volume and upload identities remain separate from transport lifetime. No TCP listener is provided."
+    "description": "Isolated finite commands, persistent sessions, optional durable volumes, raw/tar files and resumable command events over a protected Unix socket. The configured peer UID authenticates every operation. HTTP/1.1 connections support sequential control requests and completed chunked event responses; follow Connection: close. Server epochs guard new operations, while retained volume and upload identities remain separate from transport lifetime. No TCP listener is provided."
   },
   "servers": [
     {
@@ -60,7 +60,8 @@
                 "runs",
                 "sessions",
                 "volumes",
-                "files"
+                "files",
+                "events"
               ]
             }
           }
@@ -1156,6 +1157,91 @@
           }
         }
       }
+    },
+    "/v1/runs/{id}/events": {
+      "get": {
+        "operationId": "observeRun",
+        "description": "Observe a finite run or session command without starting, cancelling or forgetting it. A state event precedes stdout/stderr blocks and one result event. Output order is preserved within each stream; cross-stream order is unspecified. Every complete event carries an id cursor. Reconnect explicitly with Last-Event-ID to continue after its bytes. The result event is published only after containment is confirmed; EOF, heartbeat or an error event does not imply completion. Retain the run until observation finishes. Slow readers lose only their subscription. Maximum observation time is 350 seconds; an unfinished run remains inspectable. Requests and non-stream responses still require fixed HTTP lengths.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EventCursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chunked SSE. Each data field is one JSON value; the event field selects its schema. An id is an opaque resume cursor. Comments are heartbeats. Consume the zero chunk before reusing the connection.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/EventState"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EventOutput"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EventResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EventError"
+                    }
+                  ]
+                },
+                "x-sse-events": {
+                  "state": {
+                    "$ref": "#/components/schemas/EventState"
+                  },
+                  "stdout": {
+                    "$ref": "#/components/schemas/EventOutput"
+                  },
+                  "stderr": {
+                    "$ref": "#/components/schemas/EventOutput"
+                  },
+                  "result": {
+                    "$ref": "#/components/schemas/EventResult"
+                  },
+                  "error": {
+                    "$ref": "#/components/schemas/EventError"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1190,7 +1276,9 @@
           "capabilities",
           "profiles",
           "storage",
-          "files"
+          "files",
+          "limits",
+          "events"
         ],
         "properties": {
           "apiVersion": {
@@ -1207,7 +1295,8 @@
                 "runs",
                 "sessions",
                 "volumes",
-                "files"
+                "files",
+                "events"
               ]
             }
           },
@@ -1315,6 +1404,67 @@
               },
               "entryLimit": {
                 "const": 10000
+              }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "maxSandboxes",
+              "maxRecords",
+              "maxOutputBytes",
+              "maxConnections",
+              "maxEventStreams"
+            ],
+            "properties": {
+              "maxSandboxes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 64
+              },
+              "maxRecords": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1024
+              },
+              "maxOutputBytes": {
+                "type": "integer",
+                "minimum": 65536,
+                "maximum": 67108864
+              },
+              "maxConnections": {
+                "type": "integer",
+                "minimum": 8,
+                "maximum": 256
+              },
+              "maxEventStreams": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 128
+              }
+            }
+          },
+          "events": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "blockBytes",
+              "streamTimeoutMillis",
+              "activeStreams"
+            ],
+            "properties": {
+              "blockBytes": {
+                "const": 4096
+              },
+              "streamTimeoutMillis": {
+                "const": 350000
+              },
+              "activeStreams": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 128,
+                "description": "A concurrent snapshot, not a reservation."
               }
             }
           }
@@ -1957,6 +2107,185 @@
           "freeze": {
             "type": "boolean",
             "default": true
+          }
+        }
+      },
+      "EventCursor": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Opaque Last-Event-ID from a complete event. Binds one retained run incarnation and the next raw stdout/stderr byte offsets. Never reuse it for another run or after forgetting.",
+        "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}:(0|[1-9][0-9]{0,6}):(0|[1-9][0-9]{0,6})$"
+      },
+      "EventOutput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "offset",
+          "base64"
+        ],
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576,
+            "description": "Starting raw byte offset in the named stream."
+          },
+          "base64": {
+            "type": "string",
+            "format": "byte",
+            "maxLength": 5464,
+            "description": "One nonempty block of at most 4096 exact bytes; no UTF-8 boundary is assumed."
+          }
+        }
+      },
+      "EventOutcome": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "exitCode",
+          "truncated"
+        ],
+        "properties": {
+          "exitCode": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EventState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "profile",
+          "state",
+          "result"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "closing",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out",
+              "output_limit",
+              "resource_limit"
+            ]
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EventOutcome"
+              },
+              {
+                "$ref": "#/components/schemas/Failure"
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Present for commands executed in a persistent session."
+          }
+        }
+      },
+      "EventResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "profile",
+          "state",
+          "result",
+          "stdoutBytes",
+          "stderrBytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out",
+              "output_limit",
+              "resource_limit"
+            ]
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EventOutcome"
+              },
+              {
+                "$ref": "#/components/schemas/Failure"
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Present for commands executed in a persistent session."
+          },
+          "stdoutBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "stderrBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          }
+        }
+      },
+      "EventError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "enum": [
+              "RUN_NOT_FOUND",
+              "EVENT_CURSOR_MISMATCH",
+              "CONTAINMENT_UNCONFIRMED",
+              "OBSERVATION_TIMEOUT",
+              "STOPPING"
+            ]
           }
         }
       }

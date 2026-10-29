@@ -137,6 +137,24 @@ fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
             return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true);
         }
         drop(body);
+        let close =
+            head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
+        if head.method == "GET"
+            && let Some(id) = head
+                .path
+                .strip_prefix("/v1/runs/")
+                .and_then(|p| p.strip_suffix("/events"))
+                .filter(|s| sandcrab_core::uuid(s))
+        {
+            match crate::events::subscribe(service, id, head.header("last-event-id")) {
+                Ok(subscription) => subscription.write(stream, close)?,
+                Err((status, reply)) => json_reply(stream, status, &reply, close)?,
+            }
+            if close {
+                return Ok(());
+            }
+            continue;
+        }
         if head.method == "POST"
             && let Some(id) = head
                 .path
@@ -147,8 +165,6 @@ fn exchange(stream: &mut UnixStream, service: &Arc<Service>) -> io::Result<()> {
             return snapshot(stream, service, id, &bytes);
         }
         let (status, reply) = service.route(&head.method, &head.path, &bytes);
-        let close =
-            head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
         json_reply(stream, status, &reply, close)?;
         if close {
             return Ok(());
@@ -323,7 +339,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
             }
             if active
                 .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                    (n < 32).then_some(n + 1)
+                    (n < service.runtime.config.service.max_connections).then_some(n + 1)
                 })
                 .is_err()
             {
@@ -336,10 +352,12 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
             }
             let guard = Connection(active.clone());
             let service = service.clone();
-            workers.push(thread::Builder::new().spawn(move || {
+            if let Ok(worker) = thread::Builder::new().spawn(move || {
                 let _guard = guard;
                 let _ = exchange(&mut stream, &service);
-            })?);
+            }) {
+                workers.push(worker);
+            }
         }
         Ok(())
     })();

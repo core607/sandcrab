@@ -1,5 +1,6 @@
 //! Bounded HTTP/1.1 framing. Bodies stream at their declared length; ambiguous
-//! framing, chunked messages and upgrades are rejected. Pipelining is unsupported.
+//! framing and upgrades are rejected. Requests and control responses require fixed
+//! lengths; only the SSE response entrance accepts bounded chunks. Pipelining is unsupported.
 use std::{
     collections::BTreeMap,
     io::{self, Cursor, Read, Write},
@@ -85,7 +86,7 @@ fn token(text: &str) -> bool {
 /// Parse only the bounded head, retaining at most one 1 KiB read's body prefix.
 /// Callers authenticate first, bound the selected operation's length, and impose
 /// socket deadlines. PUT permits an explicitly declared empty file.
-fn envelope(source: &mut impl Read) -> Result<Option<Envelope>, &'static str> {
+fn envelope(source: &mut impl Read, chunked: bool) -> Result<Option<Envelope>, &'static str> {
     let mut buffer = Vec::with_capacity(1024);
     let end = loop {
         if let Some(end) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -124,7 +125,8 @@ fn envelope(source: &mut impl Read) -> Result<Option<Envelope>, &'static str> {
             return Err(INVALID);
         }
         let name = name.to_ascii_lowercase();
-        if ["transfer-encoding", "upgrade"].contains(&name.as_str())
+        if name == "upgrade"
+            || (name == "transfer-encoding" && !chunked)
             || headers.insert(name, value.to_owned()).is_some()
         {
             return Err(INVALID);
@@ -160,7 +162,7 @@ impl Envelope {
 /// Read one request head. Clean EOF before the first byte returns `None`; an
 /// incomplete message is an error. A body must be consumed before reading again.
 pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'static str> {
-    let Some(raw) = envelope(source)? else {
+    let Some(raw) = envelope(source, false)? else {
         return Ok(None);
     };
     let parts: Vec<_> = raw.line.split(' ').collect();
@@ -198,23 +200,8 @@ pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'s
 /// Fixed-length response framing for native clients. No EOF-delimited body or
 /// informational response is accepted; a lost response never authorizes replay.
 pub fn response<R: Read>(source: &mut R) -> Result<(ResponseHead, Body<'_, R>), &'static str> {
-    let raw = envelope(source)?.ok_or(INVALID)?;
-    let mut parts = raw.line.splitn(3, ' ');
-    if parts.next() != Some("HTTP/1.1") {
-        return Err(INVALID);
-    }
-    let status = parts
-        .next()
-        .filter(|s| s.len() == 3 && s.bytes().all(|b| b.is_ascii_digit()))
-        .and_then(|s| s.parse::<u16>().ok())
-        .filter(|s| (200..600).contains(s))
-        .ok_or(INVALID)?;
-    if parts
-        .next()
-        .is_none_or(|s| s.bytes().any(|b| b.is_ascii_control()))
-    {
-        return Err(INVALID);
-    }
+    let raw = envelope(source, false)?.ok_or(INVALID)?;
+    let status = response_status(&raw)?;
     let length = raw.length(false)?;
     if status == 204 && length != 0 {
         return Err(INVALID);
@@ -233,6 +220,193 @@ pub fn response<R: Read>(source: &mut R) -> Result<(ResponseHead, Body<'_, R>), 
             remaining: length,
         },
     ))
+}
+
+fn response_status(raw: &Envelope) -> Result<u16, &'static str> {
+    let mut parts = raw.line.splitn(3, ' ');
+    if parts.next() != Some("HTTP/1.1") {
+        return Err(INVALID);
+    }
+    let status = parts
+        .next()
+        .filter(|s| s.len() == 3 && s.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|s| s.parse::<u16>().ok())
+        .filter(|s| (200..600).contains(s))
+        .ok_or(INVALID)?;
+    if parts
+        .next()
+        .is_none_or(|s| s.bytes().any(|b| b.is_ascii_control()))
+    {
+        return Err(INVALID);
+    }
+    Ok(status)
+}
+
+pub struct EventHead {
+    pub status: u16,
+    pub chunked: bool,
+}
+pub enum EventBody<'a, R: Read> {
+    Fixed(Body<'a, R>),
+    Chunks(Chunks<'a, R>),
+}
+impl<R: Read> Read for EventBody<'_, R> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::Fixed(body) => body.read(bytes),
+            Self::Chunks(body) => body.read(bytes),
+        }
+    }
+}
+
+/// SSE uses an explicit chunked 200 response. Refusals use bounded fixed-length JSON.
+/// Chunk extensions, trailers, ambiguous lengths and EOF-delimited bodies are not supported.
+pub fn event_response<R: Read>(
+    source: &mut R,
+) -> Result<(EventHead, EventBody<'_, R>), &'static str> {
+    let raw = envelope(source, true)?.ok_or(INVALID)?;
+    let status = response_status(&raw)?;
+    let chunked = raw.headers.contains_key("transfer-encoding");
+    let body = if chunked {
+        if status != 200
+            || raw
+                .headers
+                .get("transfer-encoding")
+                .is_none_or(|v| !v.eq_ignore_ascii_case("chunked"))
+            || raw.headers.contains_key("content-length")
+            || raw
+                .headers
+                .get("content-type")
+                .is_none_or(|v| v != "text/event-stream")
+        {
+            return Err(INVALID);
+        }
+        EventBody::Chunks(Chunks {
+            source,
+            prefix: Cursor::new(raw.prefix),
+            remaining: 0,
+            delimiter: false,
+            done: false,
+        })
+    } else {
+        let length = raw.length(false)?;
+        if length > 65536 || (status == 204 && length != 0) {
+            return Err(INVALID);
+        }
+        EventBody::Fixed(Body {
+            source,
+            prefix: Cursor::new(raw.prefix),
+            remaining: length,
+        })
+    };
+    Ok((EventHead { status, chunked }, body))
+}
+
+pub struct Chunks<'a, R: Read> {
+    source: &'a mut R,
+    prefix: Cursor<Vec<u8>>,
+    remaining: usize,
+    delimiter: bool,
+    done: bool,
+}
+impl<R: Read> Chunks<'_, R> {
+    fn raw(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        let count = if self.prefix.position() < self.prefix.get_ref().len() as u64 {
+            self.prefix.read(bytes)?
+        } else {
+            self.source.read(bytes)?
+        };
+        if count == 0 {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        Ok(count)
+    }
+    fn exact(&mut self, bytes: &mut [u8]) -> io::Result<()> {
+        let mut position = 0;
+        while position < bytes.len() {
+            position += self.raw(&mut bytes[position..])?;
+        }
+        Ok(())
+    }
+    fn crlf(&mut self) -> io::Result<()> {
+        let mut bytes = [0; 2];
+        self.exact(&mut bytes)?;
+        if bytes != *b"\r\n" {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        Ok(())
+    }
+    fn size(&mut self) -> io::Result<usize> {
+        let mut value = 0usize;
+        for index in 0..=8 {
+            let mut byte = [0];
+            self.exact(&mut byte)?;
+            if byte[0] == b'\r' && index > 0 {
+                self.exact(&mut byte)?;
+                if byte[0] != b'\n' || value > 65536 {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                return Ok(value);
+            }
+            let digit = char::from(byte[0])
+                .to_digit(16)
+                .ok_or(io::ErrorKind::InvalidData)?;
+            value = value
+                .checked_mul(16)
+                .and_then(|v| v.checked_add(digit as usize))
+                .ok_or(io::ErrorKind::InvalidData)?;
+        }
+        Err(io::ErrorKind::InvalidData.into())
+    }
+}
+impl<R: Read> Read for Chunks<'_, R> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        if self.done || bytes.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            if self.delimiter {
+                self.crlf()?;
+            }
+            self.remaining = self.size()?;
+            if self.remaining == 0 {
+                self.crlf()?;
+                if self.prefix.position() != self.prefix.get_ref().len() as u64 {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+                self.done = true;
+                return Ok(0);
+            }
+            self.delimiter = true;
+        }
+        let size = bytes.len().min(self.remaining);
+        let count = self.raw(&mut bytes[..size])?;
+        self.remaining -= count;
+        Ok(count)
+    }
+}
+
+/// A chunked SSE response can reuse its connection after the zero chunk is consumed.
+pub fn event_head(stream: &mut impl Write, close: bool) -> io::Result<()> {
+    let connection = if close { "close" } else { "keep-alive" };
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: {connection}\r\nCache-Control: no-cache\r\n\r\n"
+    )?;
+    stream.flush()
+}
+pub fn chunk(stream: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
+    if bytes.is_empty() || bytes.len() > 65536 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    write!(stream, "{:x}\r\n", bytes.len())?;
+    stream.write_all(bytes)?;
+    stream.write_all(b"\r\n")?;
+    stream.flush()
+}
+pub fn end_chunks(stream: &mut impl Write) -> io::Result<()> {
+    stream.write_all(b"0\r\n\r\n")?;
+    stream.flush()
 }
 
 /// Buffered JSON/control entrance. Only a bodiless GET or a nonempty POST is valid.
@@ -559,5 +733,89 @@ mod tests {
             body.read_to_end(&mut Vec::new()).unwrap_err().kind(),
             io::ErrorKind::UnexpectedEof
         );
+    }
+
+    #[test]
+    fn event_chunks_preserve_bytes_and_end_before_the_next_response() {
+        struct Slow<'a>(&'a [u8]);
+        impl Read for Slow<'_> {
+            fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+                if bytes.is_empty() {
+                    return Ok(0);
+                }
+                self.0.read(&mut bytes[..1])
+            }
+        }
+        let mut wire = Vec::new();
+        event_head(&mut wire, false).unwrap();
+        chunk(&mut wire, b"first\n").unwrap();
+        chunk(&mut wire, &[0, 0xff, 0xc3]).unwrap();
+        end_chunks(&mut wire).unwrap();
+        write(&mut wire, 200, b"{}").unwrap();
+        let mut source = Slow(&wire);
+        let (head, mut body) = event_response(&mut source).unwrap();
+        assert_eq!(head.status, 200);
+        assert!(head.chunked);
+        let mut bytes = Vec::new();
+        body.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"first\n\x00\xff\xc3");
+        drop(body);
+        let (head, mut body) = response(&mut source).unwrap();
+        assert_eq!(head.status, 200);
+        bytes.clear();
+        body.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"{}");
+    }
+
+    #[test]
+    fn only_the_event_entrance_accepts_unambiguous_chunked_sse() {
+        let header =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n";
+        let valid = format!("{header}\r\n1\r\nx\r\n0\r\n\r\n");
+        assert!(response(&mut valid.as_bytes()).is_err());
+        for fields in [
+            "Content-Length: 0\r\n",
+            "Transfer-Encoding: chunked\r\n",
+            "Upgrade: websocket\r\n",
+        ] {
+            assert!(event_response(&mut format!("{header}{fields}\r\n").as_bytes()).is_err());
+        }
+        for changed in [
+            header.replace("chunked", "gzip, chunked"),
+            header.replace("text/event-stream", "application/json"),
+            header.replace("200 OK", "404 Not Found"),
+        ] {
+            assert!(event_response(&mut format!("{changed}\r\n").as_bytes()).is_err());
+        }
+        for chunks in [
+            "",
+            "1",
+            "1\r\n",
+            "2\r\nx",
+            "1\r\nx",
+            "1\r\nx\n",
+            "1;ext=x\r\nx\r\n0\r\n\r\n",
+            "10001\r\n",
+            "000000000\r\n",
+            "0\r\n",
+            "0\r\nX: y\r\n\r\n",
+            "0\r\n\r\nextra",
+        ] {
+            let wire = format!("{header}\r\n{chunks}");
+            let mut source = wire.as_bytes();
+            let (_, mut body) = event_response(&mut source).unwrap();
+            assert!(body.read_to_end(&mut Vec::new()).is_err(), "{chunks:?}");
+        }
+        let mut wire = Vec::new();
+        write(&mut wire, 429, br#"{"error":{"code":"EVENT_CAPACITY"}}"#).unwrap();
+        let mut source = wire.as_slice();
+        let (head, mut body) = event_response(&mut source).unwrap();
+        assert_eq!(head.status, 429);
+        assert!(!head.chunked);
+        let mut bytes = Vec::new();
+        body.read_to_end(&mut bytes).unwrap();
+        assert!(bytes.ends_with(b"}}"));
+        assert!(chunk(&mut Vec::new(), b"").is_err());
+        assert!(chunk(&mut Vec::new(), &vec![0; 65537]).is_err());
     }
 }

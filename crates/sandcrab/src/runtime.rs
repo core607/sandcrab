@@ -280,6 +280,7 @@ impl Runtime {
                 Duration::from_millis(timeout),
                 16384,
                 input,
+                |_, _| {},
             );
             if contained.is_ok() {
                 fs::remove_file(record)?;
@@ -355,9 +356,9 @@ impl Runtime {
         id: &str,
         profile: &Profile,
         argv: &[String],
-        timeout: u64,
-        limit: usize,
+        (timeout, limit): (u64, usize),
         cancelled: &AtomicBool,
+        on_output: impl FnMut(usize, &[u8]),
     ) -> (io::Result<job::Finished>, io::Result<()>) {
         let root = self.config.service.runtime_root.join("jobs").join(id);
         if let Err(e) = DirBuilder::new().mode(0o750).create(&root) {
@@ -372,7 +373,13 @@ impl Runtime {
         });
         let (result, contained) =
             match self.prepare(&root, &records, profile, argv, Some(timeout), None) {
-                Ok(launch) => job::run(&launch, cancelled, Duration::from_millis(timeout), limit),
+                Ok(launch) => job::run(
+                    &launch,
+                    cancelled,
+                    Duration::from_millis(timeout),
+                    limit,
+                    on_output,
+                ),
                 Err(error) => (Err(error), Ok(())),
             };
         let cleanup = contained.and_then(|()| release(&root, &records));
@@ -532,6 +539,7 @@ impl Runtime {
             stopped,
             Duration::from_millis(profile.timeout_millis),
             65536,
+            |_, _| {},
         )
     }
 
@@ -770,6 +778,7 @@ impl Shell {
             },
             cancelled,
             || {},
+            |_, _| {},
         );
         result.reason.is_none() && !result.shell_exited && result.exit_code == 0
     }
@@ -835,6 +844,7 @@ impl Shell {
         timeout: u64,
         limit: usize,
         cancelled: &AtomicBool,
+        on_output: impl FnMut(usize, &[u8]),
     ) -> (job::Finished, bool) {
         let result = self.channel.execute(
             CommandRequest {
@@ -845,6 +855,7 @@ impl Shell {
             },
             cancelled,
             || {},
+            on_output,
         );
         let end = match result.reason {
             Some(EndReason::Timeout) => job::End::Timeout,
