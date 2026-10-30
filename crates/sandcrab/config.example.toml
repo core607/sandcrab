@@ -1,4 +1,6 @@
 [service]
+# Optional SDK protocol adapter; requires the authenticated [tcp] listener below.
+opensandbox = false
 runtime_root = "/run/sandcrab-demo"
 socket = "/run/sandcrab-demo/control.sock"
 client_uid = 1000

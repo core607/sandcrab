@@ -51,6 +51,16 @@ jobs:
       - name: Check independent grading and failure reports
         run: |
           /var/lib/sandcrab-evals/python/bin/python -m unittest discover -s evals -p 'test_*.py' -v
+      - name: Install the published Python SDK
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo install -d -m 755 /var/lib/sandcrab-evals/sdk
+          sudo install -d -m 755 -o "$(id -u)" -g "$(id -g)" /var/lib/sandcrab-evals/sdk-python
+          python -m venv /var/lib/sandcrab-evals/sdk-python
+          /var/lib/sandcrab-evals/sdk-python/bin/python -m pip install --disable-pip-version-check -r evals/sdk/requirements.txt
+      - name: Check and build the independent JVM SDK consumer
+        if: inputs.evidence_mode != 'model'
+        run: ./gradlew -p evals/sdk/jvm spotlessCheck checkstyleMain installDist --no-daemon
       - name: Build the native binary
         run: ./gradlew buildExecutorRust --no-daemon
       - name: Prepare the disposable native host
@@ -58,6 +68,17 @@ jobs:
           command -v mkfs.xfs || { sudo apt-get update && sudo apt-get install --yes --no-install-recommends xfsprogs; }
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo bash executor-service/prepare-tools.sh /var/lib/sandcrab-evals/tools
+      - name: Check both published SDKs against the native service
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo install -d -m 755 /var/lib/sandcrab-evals/sdk-consumers/lib
+          sudo install -m 644 evals/sdk/python_client.py /var/lib/sandcrab-evals/sdk-consumers/python_client.py
+          sudo install -m 644 evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib/*.jar /var/lib/sandcrab-evals/sdk-consumers/lib/
+          sudo python3 executor-service/rust/sandcrab/opensandbox_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/sdk-python/bin/python \
+            --python-client /var/lib/sandcrab-evals/sdk-consumers/python_client.py \
+            --java "$JAVA_HOME/bin/java" --jvm-libs /var/lib/sandcrab-evals/sdk-consumers/lib \
+            --report /var/lib/sandcrab-evals/sdk/result.json
       - name: Run Inspect against the disposable native service
         env:
           EVIDENCE_MODE: ${{ inputs.evidence_mode || 'scripted' }}
@@ -74,6 +95,10 @@ jobs:
       - name: Hand retained reports to the artifact collector
         if: always()
         run: |
+          if [ -f /var/lib/sandcrab-evals/sdk/result.json ]; then
+            sudo install -d -m 755 /var/lib/sandcrab-evals/results
+            sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
+          fi
           if [ -d /var/lib/sandcrab-evals/results ]; then
             sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-evals/results
           fi

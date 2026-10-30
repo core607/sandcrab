@@ -24,6 +24,7 @@ pub struct Open {
     pub profile: String,
     pub ttl_millis: Option<u64>,
     pub volume_id: Option<String>,
+    pub resources: Option<crate::config::Resources>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -68,6 +69,7 @@ struct Work {
     cancelled: Arc<AtomicBool>,
 }
 pub(crate) struct Session {
+    pub incarnation: String,
     request: Open,
     pub state: String,
     deadline: Instant,
@@ -147,6 +149,15 @@ impl Service {
         path: &str,
         body: &[u8],
     ) -> (u16, Value) {
+        self.session_route_expected(method, path, body, None)
+    }
+    pub(crate) fn session_route_expected(
+        self: &Arc<Self>,
+        method: &str,
+        path: &str,
+        body: &[u8],
+        incarnation: Option<&str>,
+    ) -> (u16, Value) {
         let parse = || sandcrab_core::parse(body).ok();
         if path == "/v1/sessions" && method == "POST" {
             return parse()
@@ -164,7 +175,7 @@ impl Service {
         if method == "POST" && action == "commands" {
             return parse()
                 .and_then(|v| serde_json::from_value(v).ok())
-                .map(|r| self.session_command(id, r))
+                .map(|r| self.session_command(id, r, incarnation))
                 .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
         }
         let mut registry = self.registry.lock().unwrap();
@@ -172,6 +183,9 @@ impl Service {
         let Some(session) = registry.sessions.get_mut(id) else {
             return error(404, "SESSION_NOT_FOUND");
         };
+        if incarnation.is_some_and(|value| value != session.incarnation) {
+            return error(409, "SESSION_CHANGED");
+        }
         if method == "GET" && action.is_empty() {
             return (200, session.value());
         }
@@ -237,6 +251,10 @@ impl Service {
         let Some(profile) = self.runtime.config.profiles.get(&request.profile).cloned() else {
             return error(400, "PROFILE_NOT_FOUND");
         };
+        let profile = match profile.with_resources(request.resources.as_ref()) {
+            Ok(profile) => profile,
+            Err(code) => return error(400, code),
+        };
         let lifetime = match ttl(request.ttl_millis, &profile) {
             Ok(v) => v,
             Err(code) => return error(400, code),
@@ -265,7 +283,12 @@ impl Service {
             return error(429, "RESULT_CAPACITY");
         }
         let cancelled = Arc::new(AtomicBool::new(false));
+        let incarnation = match sandcrab_core::new_uuid() {
+            Ok(value) => value,
+            Err(_) => return error(503, "SESSION_UNAVAILABLE"),
+        };
         let session = Session {
+            incarnation,
             request,
             state: "starting".into(),
             deadline: Instant::now() + Duration::from_millis(lifetime),
@@ -293,13 +316,26 @@ impl Service {
         (202, accepted)
     }
 
-    fn session_command(self: &Arc<Self>, id: &str, request: Command) -> (u16, Value) {
+    fn session_command(
+        self: &Arc<Self>,
+        id: &str,
+        request: Command,
+        incarnation: Option<&str>,
+    ) -> (u16, Value) {
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
         }
         let input = request.identity(id);
         let mut registry = self.registry.lock().unwrap();
         registry.expire_sessions();
+        if incarnation.is_some_and(|value| {
+            registry
+                .sessions
+                .get(id)
+                .is_none_or(|session| session.incarnation != value)
+        }) {
+            return error(409, "SESSION_CHANGED");
+        }
         // Completed requests remain replayable after the session ends or is forgotten.
         if let Some(run) = registry.runs.get(&request.id) {
             return if run.request == input {

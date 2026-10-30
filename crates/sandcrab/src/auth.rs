@@ -9,6 +9,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 
+#[derive(Clone)]
 pub struct Token([u8; 64]);
 impl Token {
     pub fn parse(bytes: &[u8]) -> io::Result<Self> {
@@ -30,8 +31,19 @@ impl Token {
         let Some((scheme, value)) = header.and_then(|s| s.split_once(' ')) else {
             return false;
         };
-        scheme.eq_ignore_ascii_case("bearer")
-            && bool::from(self.0.as_slice().ct_eq(value.as_bytes()))
+        scheme.eq_ignore_ascii_case("bearer") && self.matches(Some(value))
+    }
+    pub fn matches(&self, value: Option<&str>) -> bool {
+        value.is_some_and(|value| bool::from(self.0.as_slice().ct_eq(value.as_bytes())))
+    }
+    pub fn random() -> io::Result<Self> {
+        let value = format!(
+            "{}{}",
+            sandcrab_core::new_uuid()?,
+            sandcrab_core::new_uuid()?
+        )
+        .replace('-', "");
+        Self::parse(value.as_bytes())
     }
     pub fn text(&self) -> &str {
         std::str::from_utf8(&self.0).expect("validated hexadecimal token")

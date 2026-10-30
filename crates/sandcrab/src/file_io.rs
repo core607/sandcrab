@@ -38,6 +38,8 @@ pub struct Job {
     pub gid: u32,
     pub byte_limit: u64,
     pub entry_limit: usize,
+    pub multipart: Option<String>,
+    pub selection: Option<crate::sdk_download::Selection>,
 }
 
 /// Names remain case-sensitive and are not Unicode-normalized. A tar root marker
@@ -58,7 +60,7 @@ pub fn digest(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn directory(path: &Path) -> io::Result<File> {
+pub(crate) fn directory(path: &Path) -> io::Result<File> {
     Ok(File::from(rustix::fs::open(
         path,
         OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
@@ -68,7 +70,7 @@ fn directory(path: &Path) -> io::Result<File> {
 fn child_dir(parent: &File, name: &str) -> io::Result<File> {
     sandcrab_core::transfer::dir(parent, name)
 }
-fn parent(root: &File, path: &str, create: bool) -> io::Result<(File, String)> {
+pub(crate) fn parent(root: &File, path: &str, create: bool) -> io::Result<(File, String)> {
     if !valid_path(path, false) {
         return Err(invalid("INVALID_PATH"));
     }
@@ -88,7 +90,7 @@ fn parent(root: &File, path: &str, create: bool) -> io::Result<(File, String)> {
     }
     Err(invalid("INVALID_PATH"))
 }
-fn regular(parent: &File, name: &str) -> io::Result<File> {
+pub(crate) fn regular(parent: &File, name: &str) -> io::Result<File> {
     let file = File::from(openat(
         parent,
         name,
@@ -100,7 +102,7 @@ fn regular(parent: &File, name: &str) -> io::Result<File> {
     }
     Ok(file)
 }
-fn new_file(parent: &File, name: &str) -> io::Result<File> {
+pub(crate) fn new_file(parent: &File, name: &str) -> io::Result<File> {
     Ok(File::from(openat(
         parent,
         name,
@@ -132,7 +134,7 @@ fn copy_hash(
     }
     Ok((bytes, format!("{:x}", hash.finalize())))
 }
-fn ownership(file: &File, job: &Job, mode: u32) -> io::Result<()> {
+pub(crate) fn ownership(file: &File, job: &Job, mode: u32) -> io::Result<()> {
     fchown(
         file,
         Some(Uid::from_raw(job.uid)),
@@ -464,11 +466,17 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
         limit: job.byte_limit,
         hash: Sha256::new(),
     };
+    let mut source_bytes = None;
     if job.format == Format::Raw {
         let (dir, name) = parent(&workspace, &job.path, false)?;
         let mut file = regular(&dir, &name)?;
         let before = file.metadata()?;
-        copy_hash(&mut file, &mut output, job.byte_limit)?;
+        source_bytes = Some(before.len());
+        if let Some(selection) = &job.selection {
+            selection.copy(&mut file, &mut output, job.byte_limit)?;
+        } else {
+            copy_hash(&mut file, &mut output, job.byte_limit)?;
+        }
         if !stable(&before, &file.metadata()?) {
             return Err(invalid("FILE_CHANGED"));
         }
@@ -486,7 +494,9 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
     }
     output.writer.sync_all()?;
     stage.sync_all()?;
-    Ok(serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize())}))
+    Ok(
+        serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize()),"sourceBytes":source_bytes}),
+    )
 }
 
 pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
@@ -507,6 +517,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         || job.workspace == job.stage
         || job.stage.starts_with(&job.workspace)
         || job.uid == 0
+        || (job.selection.is_some() && (job.action != "snapshot" || job.format != Format::Raw))
         || job.bytes > job.byte_limit
         || job.byte_limit > 1_073_741_824
         || job.mode > 0o777
@@ -523,7 +534,15 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         return Err(invalid("Unprotected file stage"));
     }
     crate::storage::no_mounts_below(&job.stage, true)?;
-    if ["publish", "snapshot"].contains(&job.action.as_str()) {
+    if [
+        "publish",
+        "snapshot",
+        "sdk-publish",
+        "sdk-query",
+        "sdk-mutate",
+    ]
+    .contains(&job.action.as_str())
+    {
         crate::storage::no_mounts_below(&job.workspace, true)?;
     }
     let owner: crate::file_records::Stage = serde_json::from_slice(
@@ -538,7 +557,12 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     if job.action == "snapshot" {
         return snapshot(&job);
     }
+    if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
+        return crate::sdk_fs_io::execute(&job);
+    }
     match job.action.as_str() {
+        "sdk-receive" => crate::sdk_file_io::receive(&job),
+        "sdk-publish" => crate::sdk_file_io::publish(&job),
         "receive" => receive(&job),
         "publish" => publish(&job),
         "cleanup" => {
@@ -571,6 +595,18 @@ pub fn error_code(error: &io::Error) -> &'static str {
         "FILE_CHANGED" => "FILE_CHANGED",
         "UNSUPPORTED_ARCHIVE_ENTRY" => "UNSUPPORTED_ARCHIVE_ENTRY",
         "UNSUPPORTED_FILE_TYPE" => "UNSUPPORTED_FILE_TYPE",
+        "INVALID_MULTIPART" => "INVALID_MULTIPART",
+        "CONTENT_INCOMPLETE" => "CONTENT_INCOMPLETE",
+        "INVALID_FILE_METADATA" => "INVALID_FILE_METADATA",
+        "UNSUPPORTED_FILE_OWNER" => "UNSUPPORTED_FILE_OWNER",
+        "INVALID_FILE_MODE" => "INVALID_FILE_MODE",
+        "FILE_METADATA_LIMIT" => "FILE_METADATA_LIMIT",
+        "FILE_METADATA_UNAVAILABLE" => "FILE_METADATA_UNAVAILABLE",
+        "FILE_OPERATION_UNKNOWN" => "FILE_OPERATION_UNKNOWN",
+        "INVALID_GLOB" => "INVALID_GLOB",
+        "GLOB_LIMIT" => "GLOB_LIMIT",
+        "UNSUPPORTED_GLOB_NEGATION" => "UNSUPPORTED_GLOB_NEGATION",
+        "RANGE_NOT_SATISFIABLE" => "RANGE_NOT_SATISFIABLE",
         _ => match error.kind() {
             io::ErrorKind::NotFound => "FILE_NOT_FOUND",
             io::ErrorKind::AlreadyExists => "PATH_EXISTS",

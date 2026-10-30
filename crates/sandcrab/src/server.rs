@@ -85,12 +85,85 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             slice: &slice,
             received: &received,
         };
-        let (head, mut body) = match http::start(&mut input) {
+        let (head, mut body) = match http::streaming_start(&mut input, |path| {
+            service.runtime.config.service.opensandbox
+                && crate::sdk_files::upload_path(path).is_some()
+        }) {
             Ok(Some(value)) => value,
             Ok(None) => return Ok(()),
             Err(_) if !received.get() => return Ok(()),
             Err(_) => return json_reply(stream, 400, &error(400, "INVALID_HTTP").1, true),
         };
+        if service.runtime.config.service.opensandbox && crate::opensandbox::path(&head.path) {
+            if !service.sdk_authorized(&head) {
+                drop(body);
+                let (status, value) = crate::sdk_types::reply((401, "AUTH_REQUIRED"));
+                return crate::opensandbox::write(stream, status, &value, true);
+            }
+            if head.method == "POST"
+                && let Some(id) = crate::sdk_files::upload_path(&head.path)
+            {
+                let boundary = head
+                    .header("content-type")
+                    .and_then(|v| crate::multipart::boundary(v).ok());
+                if head.header("expect").is_some() || boundary.is_none() {
+                    drop(body);
+                    let (status, value) = crate::sdk_types::reply((400, "INVALID_MULTIPART"));
+                    return crate::opensandbox::write(stream, status, &value, true);
+                }
+                deadline.set(Instant::now() + Duration::from_secs(30));
+                slice.set(Duration::from_millis(200));
+                let result = service.sdk_upload(
+                    id,
+                    &boundary.unwrap(),
+                    (!head.chunked).then_some(head.length),
+                    &mut body,
+                    deadline.get(),
+                );
+                drop(body);
+                let (status, value) = match result {
+                    Ok(()) => (200, serde_json::Value::Null),
+                    Err(error) => crate::sdk_types::reply(error),
+                };
+                return crate::opensandbox::write(stream, status, &value, true);
+            }
+            if head.header("expect").is_some()
+                || head.length > 65536
+                || !["GET", "POST", "DELETE"].contains(&head.method.as_str())
+                || (head.method == "POST") != (head.length > 0)
+            {
+                drop(body);
+                let (status, value) = crate::sdk_types::reply((400, "INVALID_HTTP"));
+                return crate::opensandbox::write(stream, status, &value, true);
+            }
+            let mut bytes = Vec::with_capacity(head.length as usize);
+            body.read_to_end(&mut bytes)?;
+            drop(body);
+            if head.method == "GET"
+                && let Some((id, query)) = crate::sdk_files::download_path(&head.path)
+            {
+                if head.header("if-range").is_some() {
+                    let (status, value) =
+                        crate::sdk_types::reply((400, "CONDITIONAL_RANGE_UNSUPPORTED"));
+                    return crate::opensandbox::write(stream, status, &value, true);
+                }
+                let snapshot = match service.sdk_capture(id, query, head.header("range")) {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        let (status, value) = crate::sdk_types::reply(error);
+                        return crate::opensandbox::write(stream, status, &value, true);
+                    }
+                };
+                return send_snapshot(stream, service, snapshot, true);
+            }
+            let close =
+                head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
+            service.sdk_exchange(stream, &head, &bytes, close)?;
+            if close {
+                return Ok(());
+            }
+            continue;
+        }
         if stream.tcp()
             && !service
                 .runtime
@@ -278,21 +351,53 @@ impl Write for Download<'_> {
     }
 }
 fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io::Result<()> {
-    let mut snapshot = match service.capture(id, body) {
+    let snapshot = match service.capture(id, body, None, None) {
         Ok(s) => s,
         Err((status, code)) => return json_reply(stream, status, &error(status, code).1, true),
     };
+    send_snapshot(stream, service, snapshot, false)
+}
+fn send_snapshot(
+    stream: &mut Stream,
+    service: &Service,
+    mut snapshot: crate::files::Snapshot,
+    sdk: bool,
+) -> io::Result<()> {
     let bytes = snapshot.bytes;
     let etag = format!("\"{}\"", snapshot.sha256);
-    let content_type = if snapshot.format == crate::file_io::Format::Tar {
+    let content_type = if snapshot.text {
+        "text/plain; charset=utf-8"
+    } else if snapshot.format == crate::file_io::Format::Tar {
         "application/x-tar"
     } else {
         "application/octet-stream"
     };
+    let range = snapshot.range.as_ref().map(|range| {
+        format!(
+            "bytes {}-{}/{}",
+            range.start,
+            range.start + bytes - 1,
+            range.total
+        )
+    });
+    let status = if range.is_some() { 206 } else { 200 };
+    let mut headers = Vec::new();
+    if let Some(range) = &range {
+        headers.push(("Content-Range", range.as_str()));
+    } else if !snapshot.text {
+        headers.push(("ETag", etag.as_str()));
+    }
+    if sdk && !snapshot.text {
+        headers.push(("Accept-Ranges", "bytes"));
+    }
     let cancelled = snapshot.lease.cancelled.clone();
     let deadline = Instant::now() + Duration::from_secs(30);
     if bytes == 0 {
         if service.release_snapshot(snapshot).is_err() {
+            if sdk {
+                let (status, value) = crate::sdk_types::reply((503, "FILE_CLEANUP_UNCONFIRMED"));
+                return crate::opensandbox::write(stream, status, &value, true);
+            }
             return json_reply(stream, 503, &error(503, "FILE_CLEANUP_UNCONFIRMED").1, true);
         }
         let mut output = Download {
@@ -300,7 +405,7 @@ fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io
             cancelled: &cancelled,
             deadline,
         };
-        http::response_head_with(&mut output, 200, content_type, 0, true, &[("ETag", &etag)])?;
+        http::response_head_with(&mut output, status, content_type, 0, true, &headers)?;
         return output.flush();
     }
     let mut tail = [0u8; 1];
@@ -310,14 +415,7 @@ fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io
             cancelled: &cancelled,
             deadline,
         };
-        http::response_head_with(
-            &mut output,
-            200,
-            content_type,
-            bytes,
-            true,
-            &[("ETag", &etag)],
-        )?;
+        http::response_head_with(&mut output, status, content_type, bytes, true, &headers)?;
         if io::copy(&mut (&mut snapshot.file).take(bytes - 1), &mut output)? != bytes - 1 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }
@@ -410,10 +508,15 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     let active = Arc::new(AtomicUsize::new(0));
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut tcp_first = false;
+    let mut sdk_reap = Instant::now();
     println!("{{\"ready\":true,\"apiVersion\":1}}");
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
             service.registry.lock().unwrap().expire_sessions();
+            if service.runtime.config.service.opensandbox && Instant::now() >= sdk_reap {
+                service.sdk_reap();
+                sdk_reap = Instant::now() + Duration::from_secs(1);
+            }
             workers.retain(|worker| !worker.is_finished());
             let mut stream = match accept(&listener, tcp.as_ref(), tcp_first) {
                 Ok(Some(stream)) => stream,

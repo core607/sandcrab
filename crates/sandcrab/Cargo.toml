@@ -13,10 +13,12 @@ sandcrab-core = { path = "../sandcrab-core" }
 sandcrab-daemon = { path = "../sandcrab-daemon" }
 sandcrab-launch = { path = "../sandcrab-launch" }
 sandcrab-shell = { path = "../sandcrab-shell" }
-rustix = { workspace = true, features = ["net", "process"] }
+rustix = { workspace = true, features = ["net", "process", "param"] }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 signal-hook = "=0.4.5"
 toml = { version = "=0.9.8", default-features = false, features = ["parse", "serde"] }
 sha2 = "0.10"
 tar = { version = "=0.4.46", default-features = false }
+time = { version = "=0.3.55", features = ["formatting", "parsing"] }
+regex = "=1.13.1"

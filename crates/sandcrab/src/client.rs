@@ -174,6 +174,7 @@ pub fn run(
     timeout: Option<u64>,
     streaming: bool,
     keep_result: bool,
+    resources: crate::config::Resources,
 ) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
@@ -188,6 +189,7 @@ pub fn run(
         command: command.into(),
         timeout_millis: timeout,
         output_limit_bytes: None,
+        resources: Some(resources),
     };
     submit_run(
         &mut client,
@@ -329,6 +331,7 @@ pub fn open_session(
     profile: &str,
     ttl: Option<u64>,
     volume: Option<&str>,
+    resources: crate::config::Resources,
 ) -> io::Result<i32> {
     let info = request(socket, "GET", "/v1/info", None)?;
     let id = sandcrab_core::new_uuid()?;
@@ -338,7 +341,7 @@ pub fn open_session(
         "POST",
         "/v1/sessions",
         Some(
-            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume}),
+            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume,"resources":resources}),
         ),
     )?;
     wait_session(socket, &id, true)

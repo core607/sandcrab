@@ -1596,7 +1596,10 @@
                 "network",
                 "sessionTtlMillis",
                 "transferBytes",
-                "hostCalls"
+                "hostCalls",
+                "memoryBytes",
+                "minimumMemoryBytes",
+                "cpuQuotaPercent"
               ],
               "properties": {
                 "timeoutMillis": {
@@ -1625,6 +1628,21 @@
                 "hostCalls": {
                   "type": "boolean",
                   "description": "Operator-enabled opaque host calls; false by default."
+                },
+                "memoryBytes": {
+                  "type": "integer",
+                  "minimum": 16777216,
+                  "maximum": 1099511627776
+                },
+                "minimumMemoryBytes": {
+                  "type": "integer",
+                  "minimum": 16777216,
+                  "maximum": 1099511627776
+                },
+                "cpuQuotaPercent": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
                 }
               }
             }
@@ -1833,6 +1851,16 @@
             "minimum": 1,
             "maximum": 1048576,
             "description": "Omit or null to use the profile. Combined raw stdout/stderr byte bound; may only lower the profile limit."
+          },
+          "resources": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Resources"
+              }
+            ]
           }
         }
       },
@@ -1968,6 +1996,16 @@
             ],
             "format": "uuid",
             "description": "Optional ready volume mounted at /workspace exclusively until confirmed session cleanup. Omit for an ephemeral workspace."
+          },
+          "resources": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Resources"
+              }
+            ]
           }
         }
       },
@@ -2836,6 +2874,29 @@
               "OBSERVATION_TIMEOUT",
               "STOPPING"
             ]
+          }
+        }
+      },
+      "Resources": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Optional lower hard caps. Values cannot exceed the selected profile. Memory must meet its minimumMemoryBytes; 100 CPU percent is one CPU.",
+        "properties": {
+          "memoryBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 16777216,
+            "maximum": 1099511627776
+          },
+          "cpuQuotaPercent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 10000
           }
         }
       }

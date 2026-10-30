@@ -1,6 +1,7 @@
 //! Bounded HTTP/1.1 framing. Bodies stream at their declared length; ambiguous
-//! framing and upgrades are rejected. Requests and control responses require fixed
-//! lengths; only the SSE response entrance accepts bounded chunks. Pipelining is unsupported.
+//! framing and upgrades are rejected. Native requests and control responses require
+//! fixed lengths; explicitly selected streaming requests and SSE accept chunks.
+//! Pipelining is unsupported.
 use std::{
     collections::BTreeMap,
     io::{self, Cursor, Read, Write},
@@ -25,6 +26,7 @@ pub struct Head {
     pub method: String,
     pub path: String,
     pub length: u64,
+    pub chunked: bool,
     pub close: bool,
     headers: BTreeMap<String, String>,
 }
@@ -175,7 +177,25 @@ impl Envelope {
 /// Read one request head. Clean EOF before the first byte returns `None`; an
 /// incomplete message is an error. A body must be consumed before reading again.
 pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'static str> {
-    let Some(raw) = envelope(source, false)? else {
+    let Some((head, prefix)) = request_head(source, |_| false)? else {
+        return Ok(None);
+    };
+    let remaining = head.length;
+    Ok(Some((
+        head,
+        Body {
+            source,
+            prefix: Cursor::new(prefix),
+            remaining,
+        },
+    )))
+}
+
+fn request_head(
+    source: &mut impl Read,
+    chunks: impl Fn(&str) -> bool,
+) -> Result<Option<(Head, Vec<u8>)>, &'static str> {
+    let Some(raw) = envelope(source, true)? else {
         return Ok(None);
     };
     let parts: Vec<_> = raw.line.split(' ').collect();
@@ -189,7 +209,22 @@ pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'s
     {
         return Err(INVALID);
     }
-    let length = raw.length(["GET", "DELETE"].contains(method))?;
+    let chunked = raw.headers.contains_key("transfer-encoding");
+    let length = if chunked {
+        if *method != "POST"
+            || !chunks(path)
+            || raw.headers.contains_key("content-length")
+            || raw
+                .headers
+                .get("transfer-encoding")
+                .is_none_or(|v| !v.eq_ignore_ascii_case("chunked"))
+        {
+            return Err(INVALID);
+        }
+        0
+    } else {
+        raw.length(["GET", "DELETE"].contains(method))?
+    };
     if *method == "GET" && length != 0 {
         return Err(INVALID);
     }
@@ -197,17 +232,41 @@ pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'s
         method: (*method).into(),
         path: (*path).into(),
         length,
+        chunked,
         close: raw.close(),
         headers: raw.headers,
     };
-    Ok(Some((
-        head,
-        Body {
+    Ok(Some((head, raw.prefix)))
+}
+
+/// Chunked request bodies are permitted only by the caller's path selector. No
+/// body is decoded before return; authenticate and impose a total byte/time limit.
+/// Chunk sizes never allocate a correspondingly sized buffer.
+pub fn streaming_start<R: Read>(
+    source: &mut R,
+    chunks: impl Fn(&str) -> bool,
+) -> Result<Option<(Head, StreamingBody<'_, R>)>, &'static str> {
+    let Some((head, prefix)) = request_head(source, chunks)? else {
+        return Ok(None);
+    };
+    let prefix = Cursor::new(prefix);
+    let body = if head.chunked {
+        StreamingBody::Chunks(Chunks {
             source,
-            prefix: Cursor::new(raw.prefix),
-            remaining: length,
-        },
-    )))
+            prefix,
+            remaining: 0,
+            delimiter: false,
+            done: false,
+            max_chunk: u32::MAX as usize,
+        })
+    } else {
+        StreamingBody::Fixed(Body {
+            source,
+            prefix,
+            remaining: head.length,
+        })
+    };
+    Ok(Some((head, body)))
 }
 
 /// Fixed-length response framing for native clients. No EOF-delimited body or
@@ -259,11 +318,11 @@ pub struct EventHead {
     pub status: u16,
     pub chunked: bool,
 }
-pub enum EventBody<'a, R: Read> {
+pub enum StreamingBody<'a, R: Read> {
     Fixed(Body<'a, R>),
     Chunks(Chunks<'a, R>),
 }
-impl<R: Read> Read for EventBody<'_, R> {
+impl<R: Read> Read for StreamingBody<'_, R> {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         match self {
             Self::Fixed(body) => body.read(bytes),
@@ -276,7 +335,7 @@ impl<R: Read> Read for EventBody<'_, R> {
 /// Chunk extensions, trailers, ambiguous lengths and EOF-delimited bodies are not supported.
 pub fn event_response<R: Read>(
     source: &mut R,
-) -> Result<(EventHead, EventBody<'_, R>), &'static str> {
+) -> Result<(EventHead, StreamingBody<'_, R>), &'static str> {
     let raw = envelope(source, true)?.ok_or(INVALID)?;
     let status = response_status(&raw)?;
     let chunked = raw.headers.contains_key("transfer-encoding");
@@ -294,19 +353,20 @@ pub fn event_response<R: Read>(
         {
             return Err(INVALID);
         }
-        EventBody::Chunks(Chunks {
+        StreamingBody::Chunks(Chunks {
             source,
             prefix: Cursor::new(raw.prefix),
             remaining: 0,
             delimiter: false,
             done: false,
+            max_chunk: 65536,
         })
     } else {
         let length = raw.length(false)?;
         if length > 65536 || (status == 204 && length != 0) {
             return Err(INVALID);
         }
-        EventBody::Fixed(Body {
+        StreamingBody::Fixed(Body {
             source,
             prefix: Cursor::new(raw.prefix),
             remaining: length,
@@ -321,6 +381,7 @@ pub struct Chunks<'a, R: Read> {
     remaining: usize,
     delimiter: bool,
     done: bool,
+    max_chunk: usize,
 }
 impl<R: Read> Chunks<'_, R> {
     fn raw(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
@@ -356,7 +417,7 @@ impl<R: Read> Chunks<'_, R> {
             self.exact(&mut byte)?;
             if byte[0] == b'\r' && index > 0 {
                 self.exact(&mut byte)?;
-                if byte[0] != b'\n' || value > 65536 {
+                if byte[0] != b'\n' || value > self.max_chunk {
                     return Err(io::ErrorKind::InvalidData.into());
                 }
                 return Ok(value);
@@ -497,12 +558,14 @@ pub fn response_head_with(
         201 => "Created",
         202 => "Accepted",
         204 => "No Content",
+        206 => "Partial Content",
         400 => "Bad Request",
         401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
         409 => "Conflict",
         413 => "Content Too Large",
+        416 => "Range Not Satisfiable",
         429 => "Too Many Requests",
         503 => "Service Unavailable",
         _ => "Error",
@@ -541,6 +604,44 @@ pub fn response_head_with(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn request_chunks_require_explicit_selection_and_stream_large_chunks() {
+        use super::*;
+        let prefix = b"POST /upload HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let mut wire = prefix.to_vec();
+        wire.extend_from_slice(b"20000\r\n");
+        wire.extend(vec![0xff; 131072]);
+        wire.extend_from_slice(b"\r\n0\r\n\r\n");
+        assert!(start(&mut wire.as_slice()).is_err());
+        assert!(streaming_start(&mut wire.as_slice(), |_| false).is_err());
+        let mut input = wire.as_slice();
+        let (head, mut body) = streaming_start(&mut input, |p| p == "/upload")
+            .unwrap()
+            .unwrap();
+        assert!(head.chunked);
+        let mut output = Vec::new();
+        body.read_to_end(&mut output).unwrap();
+        assert_eq!(output, vec![0xff; 131072]);
+        for header in [
+            "Content-Length: 0\r\nTransfer-Encoding: chunked",
+            "Transfer-Encoding: gzip, chunked",
+            "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked",
+        ] {
+            let bad = format!("POST /upload HTTP/1.1\r\n{header}\r\n\r\n0\r\n\r\n");
+            assert!(streaming_start(&mut bad.as_bytes(), |_| true).is_err());
+        }
+        for body in [
+            "2\r\nx",
+            "1\r\nx\r\n0\r\nExtra: forbidden\r\n\r\n",
+            "1;ext=yes\r\nx\r\n0\r\n\r\n",
+        ] {
+            let mut bad = prefix.to_vec();
+            bad.extend_from_slice(body.as_bytes());
+            let mut source = bad.as_slice();
+            let (_, mut input) = streaming_start(&mut source, |_| true).unwrap().unwrap();
+            assert!(input.read_to_end(&mut Vec::new()).is_err());
+        }
+    }
     use super::*;
     fn parse(raw: &[u8]) -> Result<Request, &'static str> {
         read(&mut &raw[..], 64)

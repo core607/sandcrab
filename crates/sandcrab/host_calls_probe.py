@@ -242,6 +242,9 @@ class HostCallsProbe(Probe):
             resumed = call('runuser', '-u', 'daemon', '--', str(self.binary), 'calls', 'events', '--socket',
                            str(self.socket), run['id'], '--after', row['id'])
             assert [json.loads(line)['event'] for line in resumed.stdout.splitlines()] == ['state', 'result']
+            refused = call('runuser', '-u', 'daemon', '--', str(self.binary), 'calls', 'events', '--socket',
+                           str(self.socket), run['id'], '--after', str(uuid.uuid4()) + ':0', check=False)
+            assert refused.returncode != 0 and 'CALL_CURSOR_MISMATCH' in refused.stderr
             listed = call('runuser', '-u', 'daemon', '--', str(self.binary), 'calls', 'list', '--socket', str(self.socket), run['id'])
             assert json.loads(listed.stdout)['closed'] is True
         finally:
@@ -505,6 +508,9 @@ print('disabled')
         assert self.wait(run)['result']['stdout'] == 'disabled\n'
         assert http(self.socket, 'GET', f'/v1/runs/{run["id"]}/calls')[1]['error']['code'] == 'HOST_CALLS_DISABLED'
         assert http(self.socket, 'GET', f'/v1/runs/{run["id"]}/calls/events')[1]['error']['code'] == 'HOST_CALLS_DISABLED'
+        refused = call('runuser', '-u', 'daemon', '--', str(self.binary), 'calls', 'events', '--socket',
+                       str(self.socket), run['id'], check=False)
+        assert refused.returncode != 0 and 'HOST_CALLS_DISABLED' in refused.stderr
         self.forget(run)
         request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'profile': 'python', 'command': ['true'], 'hostCalls': True}
         assert http(self.socket, 'POST', '/v1/runs', request)[1]['error']['code'] == 'INVALID_REQUEST'

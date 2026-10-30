@@ -66,12 +66,18 @@ pub fn events(endpoint: &Endpoint, id: &str, after: Option<&str>) -> io::Result<
         bytes: 0,
     };
     let result = (|| {
-        let (head, body) = sandcrab_core::http::event_response(&mut source)
+        let (head, mut body) = sandcrab_core::http::event_response(&mut source)
             .map_err(|_| invalid("Invalid host-call response"))?;
-        if head.status != 200 {
+        if !head.chunked {
+            let mut bytes = Vec::new();
+            body.read_to_end(&mut bytes)?;
+            let value = sandcrab_core::parse(&bytes).map_err(invalid)?;
             return Err(invalid(format!(
-                "Host-call observation refused: HTTP {}",
-                head.status
+                "Host-call observation refused: HTTP {}: {}",
+                head.status,
+                value["error"]["code"]
+                    .as_str()
+                    .unwrap_or("INVALID_HOST_CALL_RESPONSE")
             )));
         }
         let mut input = BufReader::new(body);

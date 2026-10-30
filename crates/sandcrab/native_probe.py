@@ -325,8 +325,9 @@ network = "none"
         assert result['state'] == 'closed', result
         assert not (self.socket.parent / 'jobs' / session['id']).exists()
         group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
-        unit = Path('/sys/fs/cgroup') / group.lstrip('/') / (self.name + '-' + session['id'] + '.service')
-        assert not any(p.read_text().strip() for p in unit.rglob('cgroup.procs'))
+        pool = Path('/sys/fs/cgroup') / group.lstrip('/')
+        for unit in pool.rglob(self.name + '-' + session['id'] + '.service'):
+            assert not any(p.read_text().strip() for p in unit.rglob('cgroup.procs'))
         return result
 
     def session_tests(self):
@@ -419,8 +420,10 @@ network = "none"
         self.done('session-results-share-the-global-retention-bound')
 
         session = self.session_open()
-        slice_group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
-        group = Path('/sys/fs/cgroup') / slice_group.lstrip('/') / (self.name + '-' + session['id'] + '.service')
+        unit_group = call('systemctl', 'show', self.name + '-' + session['id'] + '.service',
+                          '-p', 'ControlGroup', '--value').stdout.strip()
+        assert unit_group.startswith('/') and unit_group.endswith('/' + self.name + '-' + session['id'] + '.service')
+        group = Path('/sys/fs/cgroup') / unit_group.lstrip('/')
         assert (group / 'memory.oom.group').read_text().strip() == '1'
         for source in ['(exit 137)', "python3 -c 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'"]:
             request, result = self.session_exec(session, source)

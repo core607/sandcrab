@@ -3,7 +3,9 @@
 `sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
 bash sessions, durable volumes, streamed files, live command output and opaque host calls. It needs no Poketto account, workspace, repository,
 signing key or compiled extension. The service uses a Unix socket or optional
-authenticated loopback TCP; the OpenSandbox adapter remains under the
+authenticated loopback TCP. An optional [OpenSandbox adapter](opensandbox.md)
+supports SDK lifecycle, foreground commands, file streams and workspace file management. Remaining SDK
+operations and consumer adoption are under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
 ## Installation
@@ -11,8 +13,9 @@ authenticated loopback TCP; the OpenSandbox adapter remains under the
 Build with `./gradlew buildExecutorRust`; the static binary is
 `build/executor-service/bin/sandcrab`. It is excluded from the Poketto worker bundle.
 Install it with mode 0755 in a root-owned directory with root-owned ancestors. The host needs
-systemd, cgroup v2, unprivileged user namespaces, bubblewrap and the pinned seccomp
-helper from the executor's [tool preparation](../../prepare-tools.sh).
+systemd with `systemctl`, `systemd-run` and `busctl`, cgroup v2, unprivileged user
+namespaces, bubblewrap and the pinned seccomp helper from the executor's
+[tool preparation](../../prepare-tools.sh).
 
 Copy [config.example.toml](config.example.toml) to a root-owned file with mode 0600
 in a protected directory. Set the client's numeric UID/GID and a separate execution
@@ -20,6 +23,12 @@ account. Profiles choose readable paths, tools, finite resource limits and
 `network = "none"`; calls can lower timeout and output limits but cannot select
 accounts, mounts or isolation policy. Sessions need `/bin/bash` and its libraries
 in the profile's read mounts. Read mounts cannot expose runtime storage.
+
+Each session has a child systemd slice under the configured resource slice. Its
+aggregate memory, CPU and task limits apply to every process in the session.
+Memory caps round down to whole kernel pages; swap is disabled. File freezing
+covers that child slice. Closing and restart recovery confirm process containment
+before releasing the workspace or attached volume.
 
 Configure the slice with finite `MemoryMax`, `MemorySwapMax`, `TasksMax` and
 `CPUQuota`, then run `sandcrab serve --config FILE` as root in `supervisor_unit`
@@ -126,7 +135,12 @@ account can connect to the socket. TCP uses the bearer credential above.
 
 Submit JSON with `id` (a fresh UUID), `serverId` from info, `profile`, and an argv
 array `command`. Optional `timeoutMillis` and `outputLimitBytes` only narrow the
-profile. Unknown fields are errors. Within one epoch, repeating the same ID and
+profile. Runs and session creation also accept `resources` with optional
+`memoryBytes` and `cpuQuotaPercent`. These only lower the profile's hard caps;
+memory must be at least the larger of 16 MiB and the profile's temporary filesystem
+bound. Info publishes these limits per profile. CPU percentages use 100 for one
+CPU. The CLI exposes `--memory-bytes N` and `--cpu-percent N` on `run` and
+`session open`. Unknown fields are errors. Within one epoch, repeating the same ID and
 request returns the existing run; changed arguments give `ID_CONFLICT`. A stale
 epoch gives `SERVER_CHANGED`. After restart old outcomes are unknown, not proof of
 nonexecution. Forgetting explicitly ends replay protection; never reuse that ID.
@@ -393,5 +407,7 @@ both IP families, TCP CLI/files/events and data retention through token rotation
 `host_calls_probe.py` uses the same arguments from a repository checkout, or an
 explicit `--example FILE` for the build-signing caller. It checks opaque calls,
 ordinary caller/guest CLI use, isolation, bounded admission and failure recovery.
+`resources_probe.py` checks caller-lowered memory and CPU caps in actual cgroups,
+request refusal before admission, and the ordinary run/session CLI options.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

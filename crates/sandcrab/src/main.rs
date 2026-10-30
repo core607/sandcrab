@@ -15,9 +15,21 @@ mod file_records;
 mod files;
 mod guest_call;
 mod host_calls;
+mod multipart;
+mod opensandbox;
 mod runtime;
+mod sdk_commands;
+mod sdk_download;
+mod sdk_file_io;
+mod sdk_files;
+mod sdk_fs;
+mod sdk_fs_io;
+mod sdk_glob;
+mod sdk_replace;
+mod sdk_types;
 mod server;
 mod service;
+mod session_resources;
 mod sessions;
 mod spec;
 mod storage;
@@ -32,7 +44,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -226,6 +238,7 @@ fn run(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     let (options, command) = (&args[..split], &args[split + 1..]);
     let (mut socket, mut profile, mut timeout, mut streaming, mut keep_result) =
         (None, None, None, false, false);
+    let mut resources = config::Resources::default();
     let mut options = options.iter();
     while let Some(key) = options.next() {
         if key == "--keep-result" && !keep_result {
@@ -250,9 +263,11 @@ fn run(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                 )
             }
             _ => {
-                return Err(config::invalid(format!(
-                    "Unknown or repeated option: {key}"
-                )));
+                if !resource_option(&mut resources, key, value)? {
+                    return Err(config::invalid(format!(
+                        "Unknown or repeated option: {key}"
+                    )));
+                }
             }
         }
     }
@@ -268,6 +283,7 @@ fn run(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         timeout,
         streaming,
         keep_result,
+        resources,
     )
 }
 fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
@@ -276,6 +292,7 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
             let (mut ttl, mut volume) = (None, None);
+            let mut resources = config::Resources::default();
             for pair in rest.chunks(2) {
                 match pair {
                     [key, _] if key == "--ttl-ms" && ttl.is_none() => {
@@ -286,9 +303,10 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                     {
                         volume = Some(value.as_str())
                     }
+                    [key, value] if resource_option(&mut resources, key, value)? => (),
                     _ => {
                         return Err(config::invalid(
-                            "Expected unique --ttl-ms N and --volume UUID options",
+                            "Expected unique --ttl-ms N, --volume UUID, --memory-bytes N or --cpu-percent N options",
                         ));
                     }
                 }
@@ -298,6 +316,7 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                 profile,
                 ttl,
                 volume,
+                resources,
             )
         }
         [mode, flag, socket, id, rest @ ..] if connection_flag(flag) && sandcrab_core::uuid(id) => {
@@ -352,6 +371,22 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         }
         _ => Err(config::invalid(HELP)),
     }
+}
+fn resource_option(resources: &mut config::Resources, key: &str, value: &str) -> io::Result<bool> {
+    let target = match key {
+        "--memory-bytes" => &mut resources.memory_bytes,
+        "--cpu-percent" => &mut resources.cpu_quota_percent,
+        _ => return Ok(false),
+    };
+    if target.is_some() {
+        return Err(config::invalid(format!("Repeated resource option: {key}")));
+    }
+    *target = Some(
+        value
+            .parse()
+            .map_err(|_| config::invalid(format!("Invalid value for {key}")))?,
+    );
+    Ok(true)
 }
 fn command_options(args: &[String]) -> io::Result<(Option<u64>, bool, bool)> {
     let (mut timeout, mut streaming, mut keep_result) = (None, false, false);
