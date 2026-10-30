@@ -437,14 +437,40 @@ impl Runtime {
         request: &crate::sessions::Open,
         profile: &Profile,
         cancelled: Arc<AtomicBool>,
+        shared: Option<crate::file_access::ShellLease>,
+    ) -> Result<Shell, OpenError> {
+        match self.prepare_shell(request, profile, cancelled, shared.as_ref()) {
+            Ok(mut shell) => {
+                shell.shared = shared;
+                Ok(shell)
+            }
+            Err(error) => {
+                if let Some(shared) = shared {
+                    shared.finish(error.contained);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn prepare_shell(
+        &self,
+        request: &crate::sessions::Open,
+        profile: &Profile,
+        cancelled: Arc<AtomicBool>,
+        shared: Option<&crate::file_access::ShellLease>,
     ) -> Result<Shell, OpenError> {
         let id = request.id.as_str();
-        let resources = crate::session_resources::Group::new(&self.config.service, &self.pool, id)
+        let resources = shared
+            .map(|s| Ok(s.access.resources.clone()))
+            .unwrap_or_else(|| {
+                crate::session_resources::Group::new(&self.config.service, &self.pool, id)
+            })
             .map_err(|_| OpenError {
                 code: "SESSION_UNAVAILABLE",
                 contained: true,
             })?;
-        let volume = request.volume_id.as_deref();
+        let volume = request.volume_id.as_deref().filter(|_| shared.is_none());
         let mut attachment = match volume {
             Some(volume) => Some(
                 self.storage
@@ -475,18 +501,21 @@ impl Runtime {
                 .join("records")
                 .join(format!("{id}.{kind}.json"))
         });
-        if resources.start(&self.config.service, profile).is_err() {
+        let cleanup = || {
+            if shared.is_none() {
+                resources.stop()?;
+            }
+            release(&root, &records)
+        };
+        if shared.is_none() && resources.start(&self.config.service, profile).is_err() {
             return Err(OpenError {
                 code: "SESSION_UNAVAILABLE",
-                contained: resources
-                    .stop()
-                    .and_then(|()| release(&root, &records))
-                    .is_ok(),
+                contained: cleanup().is_ok(),
             });
         }
-        let workspace = attachment
-            .as_ref()
-            .map(Attachment::path)
+        let workspace = shared
+            .map(|s| s.access.workspace.clone())
+            .or_else(|| attachment.as_ref().map(Attachment::path))
             .unwrap_or_else(|| root.join("work"));
         let (launch, mailbox) = match self.prepare(
             &root,
@@ -500,10 +529,7 @@ impl Runtime {
             Err(_) => {
                 return Err(OpenError {
                     code: "SESSION_UNAVAILABLE",
-                    contained: resources
-                        .stop()
-                        .and_then(|()| release(&root, &records))
-                        .is_ok(),
+                    contained: cleanup().is_ok(),
                 });
             }
         };
@@ -518,10 +544,7 @@ impl Runtime {
             Err(_) => {
                 return Err(OpenError {
                     code: "SESSION_UNAVAILABLE",
-                    contained: resources
-                        .stop()
-                        .and_then(|()| release(&root, &records))
-                        .is_ok(),
+                    contained: cleanup().is_ok(),
                 });
             }
         };
@@ -534,13 +557,15 @@ impl Runtime {
             contained: false,
         })?;
         Ok(Shell {
-            files: crate::file_access::Access::new(
-                request,
-                profile.clone(),
-                workspace,
-                resources.cgroup.clone(),
-                cancelled,
-            ),
+            files: shared.map(|s| s.access.clone()).unwrap_or_else(|| {
+                crate::file_access::Access::new(
+                    request,
+                    profile.clone(),
+                    workspace,
+                    resources.clone(),
+                    cancelled,
+                )
+            }),
             channel,
             launch,
             root,
@@ -548,6 +573,7 @@ impl Runtime {
             attachment,
             mailbox,
             resources,
+            shared: None,
         })
     }
 
@@ -896,6 +922,7 @@ pub struct Shell {
     attachment: Option<Attachment>,
     mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
     resources: crate::session_resources::Group,
+    shared: Option<crate::file_access::ShellLease>,
 }
 impl Shell {
     pub fn ready(&mut self, cancelled: &AtomicBool) -> bool {
@@ -918,7 +945,9 @@ impl Shell {
     }
 
     pub fn close(mut self) -> io::Result<()> {
-        self.files.stop();
+        if self.shared.is_none() {
+            self.files.stop();
+        }
         let deadline = Instant::now() + Duration::from_secs(15);
         while self.channel.process().try_wait()?.is_none() {
             let _ = call(&[
@@ -962,15 +991,22 @@ impl Shell {
             }
         }
         empty_group(&self.launch.cgroup)?;
-        self.files.wait()?;
+        if self.shared.is_none() {
+            self.files.wait()?;
+        }
         if let Some(mailbox) = &self.mailbox {
             mailbox.close()?;
         }
-        self.resources.stop()?;
+        if self.shared.is_none() {
+            self.resources.stop()?;
+        }
         let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
         release(&self.root, &self.records)?;
         if let Some(attachment) = self.attachment.take() {
             attachment.release();
+        }
+        if let Some(shared) = self.shared.take() {
+            shared.finish(true);
         }
         Ok(())
     }
@@ -1023,7 +1059,7 @@ impl Shell {
             Some(EndReason::Timeout) => job::End::Timeout,
             Some(EndReason::OutputLimit) => job::End::OutputLimit,
             Some(EndReason::Cancelled) => job::End::Cancelled,
-            _ if fs::read_to_string(self.resources.cgroup.join("memory.events")).is_ok_and(
+            _ if fs::read_to_string(self.launch.cgroup.join("memory.events")).is_ok_and(
                 |events| {
                     events.lines().any(|line| {
                         line.split_once(' ').is_some_and(|(key, value)| {

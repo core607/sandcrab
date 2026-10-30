@@ -68,6 +68,11 @@ jobs:
           command -v mkfs.xfs || { sudo apt-get update && sudo apt-get install --yes --no-install-recommends xfsprogs; }
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo bash executor-service/prepare-tools.sh /var/lib/sandcrab-evals/tools
+      - name: Check independent shells and shared workspace containment
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo python3 executor-service/rust/sandcrab/contexts_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/contexts.json
       - name: Check both published SDKs against the native service
         if: inputs.evidence_mode != 'model'
         run: |
@@ -98,6 +103,10 @@ jobs:
           if [ -f /var/lib/sandcrab-evals/sdk/result.json ]; then
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
+          fi
+          if [ -f /var/lib/sandcrab-evals/sdk/contexts.json ]; then
+            sudo install -d -m 755 /var/lib/sandcrab-evals/results
+            sudo install -m 644 /var/lib/sandcrab-evals/sdk/contexts.json /var/lib/sandcrab-evals/results/contexts.json
           fi
           if [ -d /var/lib/sandcrab-evals/results ]; then
             sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-evals/results

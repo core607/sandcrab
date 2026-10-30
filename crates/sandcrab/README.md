@@ -151,7 +151,8 @@ and truncation, or a failure code. Output bounds apply to combined raw stdout an
 stderr; invalid UTF-8 becomes replacement characters. Runs continue after HTTP
 disconnect and remain bounded by their timeout. Cancellation does not undo work.
 
-`max_sandboxes` bounds live runs and sessions together; it replaces `max_runs` in
+`max_sandboxes` bounds live runs and workspace-owning sessions together; child
+shells share their parent's reservation. It replaces `max_runs` in
 native TOML configurations. `RUN_CAPACITY` or `SESSION_CAPACITY` refuses before execution. `RESULT_CAPACITY` means retained records
 or output reservations must be forgotten. Session records and command results share
 `max_records`; command output remains reserved until its result is forgotten. `max_output_bytes` bounds reserved raw
@@ -232,11 +233,30 @@ A run's timeout and output limits still apply to each command independently.
 | Request | Result |
 |---|---|
 | `POST /v1/sessions` | Open with `id`, `serverId`, `profile`, optional `ttlMillis` and `volumeId`; returns 202 |
-| `GET /v1/sessions/ID` | State, expiry estimate and any active run ID |
+| `GET /v1/sessions/ID` | State, expiry estimate, active run ID and `parentSessionId` (null for a workspace owner) |
+| `POST /v1/sessions/ID/shells` | Create a child shell with `id` and `serverId`; returns 202 |
 | `POST /v1/sessions/ID/commands` | Execute `command` bash source with a fresh `id`, `serverId` and optional `timeoutMillis`/`outputLimitBytes`; returns 202 |
 | `POST /v1/sessions/ID/renew` | Renew with `ttlMillis` |
 | `POST /v1/sessions/ID/close` with `{}` | Request closure; poll until terminal |
 | `POST /v1/sessions/ID/forget` with `{}` | Forget a terminal session's identity |
+
+`sandcrab session shell --socket PATH PARENT_SESSION_ID` creates an independent
+persistent shell in a live workspace-owning session. Use its returned ID with
+`session exec`, `get`, `close` and `forget`. Each shell retains its own variables,
+functions, working directory, `/tmp` and background processes; shells may run
+commands concurrently against the shared `/workspace`. Callers coordinate shared
+file edits. A child's exit, timeout or cancellation closes that child and preserves
+the parent's files and other shells.
+
+Children inherit the parent's effective profile, aggregate memory/CPU/process
+limits and expiry; they cannot select another profile or create grandchildren.
+Renewal and file operations use the parent ID. Frozen file operations cover every
+shell in that workspace. Kernel OOM victims are selected within the aggregate
+budget; an unaffected shell's results do not inherit another unit's OOM history.
+Every child consumes a retained `max_records` entry until explicitly forgotten.
+Parent closure, expiry, primary-shell failure or shutdown contains all children
+before releasing storage. Unconfirmed child cleanup fences the parent and keeps
+its storage and sandbox reservation until restart cleanup.
 
 Use `/v1/runs/RUN_ID` to inspect, cancel or forget a session command. Exact command
 replays return their retained record even after the session ends or is forgotten;
@@ -409,5 +429,7 @@ explicit `--example FILE` for the build-signing caller. It checks opaque calls,
 ordinary caller/guest CLI use, isolation, bounded admission and failure recovery.
 `resources_probe.py` checks caller-lowered memory and CPU caps in actual cgroups,
 request refusal before admission, and the ordinary run/session CLI options.
+`contexts_probe.py` uses those arguments to verify independent shell state,
+shared budgets, parent expiry and child containment faults; CI retains its receipt.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::{
     io,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -25,6 +25,17 @@ pub struct Open {
     pub ttl_millis: Option<u64>,
     pub volume_id: Option<String>,
     pub resources: Option<crate::config::Resources>,
+}
+#[derive(Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OpenShell {
+    id: String,
+    server_id: String,
+}
+#[derive(Clone, PartialEq, Eq)]
+struct Parent {
+    id: String,
+    incarnation: String,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -80,6 +91,7 @@ pub(crate) struct Session {
     pub active_run: Option<String>,
     code: Option<String>,
     pub files: Option<Arc<crate::file_access::Access>>,
+    parent: Option<Parent>,
 }
 fn expires_at(ttl: u64) -> u64 {
     SystemTime::now()
@@ -102,11 +114,13 @@ impl Session {
     fn value(&self) -> Value {
         json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
             "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,
-            "volumeId":self.request.volume_id,"code":self.code})
+            "volumeId":self.request.volume_id,"code":self.code,
+            "parentSessionId":self.parent.as_ref().map(|p| &p.id)})
     }
 }
 impl Registry {
     pub(crate) fn stop_session(&mut self, id: &str, reason: &str) {
+        self.stop_shells(id, reason);
         let Some(session) = self.sessions.get_mut(id) else {
             return;
         };
@@ -118,27 +132,62 @@ impl Registry {
         }
         session.state = "stopping".into();
         session.cancelled.store(true, Ordering::SeqCst);
-        if let Some(files) = &session.files {
+        if session.parent.is_none()
+            && let Some(files) = &session.files
+        {
             files.stop();
         }
         if let Some(run) = session.active_run.as_ref().and_then(|id| self.runs.get(id)) {
             run.cancelled.store(true, Ordering::SeqCst);
         }
     }
+    fn stop_shells(&mut self, id: &str, reason: &str) {
+        let Some(parent) = self.sessions.get(id) else {
+            return;
+        };
+        if parent.parent.is_some() {
+            return;
+        }
+        let children: Vec<_> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| {
+                s.parent
+                    .as_ref()
+                    .is_some_and(|p| p.id == id && p.incarnation == parent.incarnation)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for child in children {
+            self.stop_session(&child, reason);
+        }
+    }
     pub(crate) fn expire_sessions(&mut self) {
+        let now = Instant::now();
         let expired: Vec<_> = self
             .sessions
             .iter()
             .filter(|(_, s)| {
-                s.deadline <= Instant::now()
+                // Workspace cleanup failures set cancellation without taking the registry.
+                // Propagate that signal to an active command and every child shell.
+                (s.deadline <= now || s.cancelled.load(Ordering::SeqCst))
                     && !s.terminal()
                     && s.state != "stopping"
                     && s.state != "closing"
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, s)| {
+                (
+                    id.clone(),
+                    if s.deadline <= now {
+                        "expired"
+                    } else {
+                        "closed"
+                    },
+                )
+            })
             .collect();
-        for id in expired {
-            self.stop_session(&id, "expired");
+        for (id, reason) in expired {
+            self.stop_session(&id, reason);
         }
     }
 }
@@ -178,6 +227,12 @@ impl Service {
                 .map(|r| self.session_command(id, r, incarnation))
                 .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
         }
+        if method == "POST" && action == "shells" {
+            return parse()
+                .and_then(|v| serde_json::from_value(v).ok())
+                .map(|request| self.open_child(id, request, incarnation))
+                .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
+        }
         let mut registry = self.registry.lock().unwrap();
         registry.expire_sessions();
         let Some(session) = registry.sessions.get_mut(id) else {
@@ -208,6 +263,9 @@ impl Service {
                 (200, json!({"forgotten":true}))
             }
             "renew" => {
+                if session.parent.is_some() {
+                    return error(409, "RENEW_PARENT_SESSION");
+                }
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
                 struct Renew {
@@ -230,7 +288,21 @@ impl Service {
                 }
                 session.deadline = Instant::now() + Duration::from_millis(value);
                 session.expires_at = expires_at(value);
-                (200, session.value())
+                let deadline = session.deadline;
+                let expires_at = session.expires_at;
+                let incarnation = session.incarnation.clone();
+                let result = session.value();
+                for child in registry.sessions.values_mut().filter(|s| {
+                    s.parent
+                        .as_ref()
+                        .is_some_and(|p| p.id == id && p.incarnation == incarnation)
+                }) {
+                    if !child.terminal() {
+                        child.deadline = deadline;
+                        child.expires_at = expires_at;
+                    }
+                }
+                (200, result)
             }
             _ => error(404, "NOT_FOUND"),
         }
@@ -263,7 +335,7 @@ impl Service {
         let mut registry = self.registry.lock().unwrap();
         registry.expire_sessions();
         if let Some(session) = registry.sessions.get(&id) {
-            return if session.request == request {
+            return if session.parent.is_none() && session.request == request {
                 (200, session.value())
             } else {
                 error(409, "ID_CONFLICT")
@@ -299,6 +371,7 @@ impl Service {
             active_run: None,
             code: None,
             files: None,
+            parent: None,
         };
         let accepted = session.value();
         registry.sessions.insert(id.clone(), session);
@@ -306,11 +379,108 @@ impl Service {
         let service = self.clone();
         let worker_id = id.clone();
         if thread::Builder::new()
-            .spawn(move || service.session_loop(&worker_id, &profile, &cancelled))
+            .spawn(move || service.session_loop(&worker_id, &profile, &cancelled, None))
             .is_err()
         {
             registry.sessions.remove(&id);
             registry.active -= 1;
+            return error(503, "SESSION_UNAVAILABLE");
+        }
+        (202, accepted)
+    }
+
+    fn open_child(
+        self: &Arc<Self>,
+        parent_id: &str,
+        request: OpenShell,
+        incarnation: Option<&str>,
+    ) -> (u16, Value) {
+        if request.server_id != self.id {
+            return error(409, "SERVER_CHANGED");
+        }
+        if !sandcrab_core::uuid(&request.id) {
+            return error(400, "INVALID_REQUEST");
+        }
+        let mut registry = self.registry.lock().unwrap();
+        registry.expire_sessions();
+        let Some(parent) = registry.sessions.get(parent_id) else {
+            return error(404, "SESSION_NOT_FOUND");
+        };
+        if incarnation.is_some_and(|value| value != parent.incarnation) {
+            return error(409, "SESSION_CHANGED");
+        }
+        let owner = Parent {
+            id: parent_id.into(),
+            incarnation: parent.incarnation.clone(),
+        };
+        if let Some(session) = registry.sessions.get(&request.id) {
+            return if session.parent.as_ref() == Some(&owner) {
+                (200, session.value())
+            } else {
+                error(409, "ID_CONFLICT")
+            };
+        }
+        if registry.runs.contains_key(&request.id) {
+            return error(409, "ID_CONFLICT");
+        }
+        if self.stopped.load(Ordering::SeqCst) {
+            return error(503, "STOPPING");
+        }
+        if parent.parent.is_some() {
+            return error(400, "PARENT_SESSION_REQUIRED");
+        }
+        if !["ready", "busy"].contains(&parent.state.as_str()) {
+            return error(409, "SESSION_NOT_READY");
+        }
+        if registry.sessions.len() + registry.runs.len() >= self.runtime.config.service.max_records
+        {
+            return error(429, "RESULT_CAPACITY");
+        }
+        let Some(files) = &parent.files else {
+            return error(409, "SESSION_NOT_READY");
+        };
+        let profile = files.profile.clone();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let incarnation = match sandcrab_core::new_uuid() {
+            Ok(value) => value,
+            Err(_) => return error(503, "SESSION_UNAVAILABLE"),
+        };
+        let lease = match files.shell(&request.id, cancelled.clone()) {
+            Ok(value) => value,
+            Err(code) => return error(409, code),
+        };
+        let mut input = parent.request.clone();
+        input.id = request.id.clone();
+        let session = Session {
+            incarnation,
+            request: input,
+            state: "starting".into(),
+            deadline: parent.deadline,
+            expires_at: parent.expires_at,
+            cancelled: cancelled.clone(),
+            reason: "closed".into(),
+            pending: None,
+            active_run: None,
+            code: None,
+            files: None,
+            parent: Some(owner),
+        };
+        let accepted = session.value();
+        registry.sessions.insert(request.id.clone(), session);
+        // Keep the pin outside the closure so a failed thread spawn can release it safely.
+        let lease = Arc::new(Mutex::new(Some(lease)));
+        let worker_lease = lease.clone();
+        let service = self.clone();
+        let id = request.id.clone();
+        if thread::Builder::new()
+            .spawn(move || {
+                let lease = worker_lease.lock().unwrap().take();
+                service.session_loop(&id, &profile, &cancelled, lease);
+            })
+            .is_err()
+        {
+            registry.sessions.remove(&request.id);
+            lease.lock().unwrap().take().unwrap().finish(true);
             return error(503, "SESSION_UNAVAILABLE");
         }
         (202, accepted)
@@ -394,11 +564,17 @@ impl Service {
         (202, accepted)
     }
 
-    fn session_loop(&self, id: &str, profile: &Profile, cancelled: &Arc<AtomicBool>) {
+    fn session_loop(
+        &self,
+        id: &str,
+        profile: &Profile,
+        cancelled: &Arc<AtomicBool>,
+        shared: Option<crate::file_access::ShellLease>,
+    ) {
         let request = self.registry.lock().unwrap().sessions[id].request.clone();
         let mut shell = match self
             .runtime
-            .open_shell(&request, profile, cancelled.clone())
+            .open_shell(&request, profile, cancelled.clone(), shared)
         {
             Ok(shell) => shell,
             Err(error) => {
@@ -420,7 +596,9 @@ impl Service {
             registry.expire_sessions();
             let session = registry.sessions.get_mut(id).unwrap();
             if session.state == "starting" {
-                session.files = Some(shell.files.clone());
+                if session.parent.is_none() {
+                    session.files = Some(shell.files.clone());
+                }
                 session.state = "ready".into();
             }
         }
@@ -469,6 +647,7 @@ impl Service {
         // successful `exit 0` or a timeout into a caller cancellation.
         {
             let mut registry = self.registry.lock().unwrap();
+            registry.stop_shells(id, reason);
             let session = registry.sessions.get_mut(id).unwrap();
             if session.state != "stopping" {
                 session.reason = reason.into();
@@ -527,7 +706,7 @@ impl Service {
         } else {
             fallback.into()
         };
-        if contained {
+        if contained && session.parent.is_none() {
             registry.active -= 1;
         }
     }

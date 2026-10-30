@@ -44,7 +44,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -324,6 +324,7 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             let socket = &endpoint;
             let path = format!("/v1/sessions/{id}");
             match mode.as_str() {
+                "shell" if rest.is_empty() => client::open_shell(socket, id),
                 "exec" => {
                     let split = rest.iter().position(|v| v == "--").ok_or_else(|| {
                         config::invalid("session exec requires -- before one shell source argument")

@@ -357,6 +357,19 @@ pub fn create_volume(socket: &Endpoint, plan: crate::storage::Plan) -> io::Resul
     wait_volume(socket, &id, true)
 }
 
+pub fn open_shell(socket: &Endpoint, parent: &str) -> io::Result<i32> {
+    let info = request(socket, "GET", "/v1/info", None)?;
+    let id = sandcrab_core::new_uuid()?;
+    eprintln!("sessionId={id}");
+    request(
+        socket,
+        "POST",
+        &format!("/v1/sessions/{parent}/shells"),
+        Some(&json!({"id":id,"serverId":info["serverId"]})),
+    )?;
+    wait_session(socket, &id, true)
+}
+
 pub fn wait_volume(socket: &Endpoint, id: &str, creating: bool) -> io::Result<i32> {
     let mut client = Client::new(socket);
     let deadline = Instant::now() + Duration::from_secs(340);

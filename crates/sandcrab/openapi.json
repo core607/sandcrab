@@ -1526,6 +1526,62 @@
           }
         }
       }
+    },
+    "/v1/sessions/{id}/shells": {
+      "post": {
+        "operationId": "createShellContext",
+        "description": "Create an independent persistent shell in a live root session. Inherit its workspace, profile, aggregate resource budget and expiry. Use the returned ID with session commands, get, close and forget; renew and file operations use the parent ID. Nested contexts are refused. Closing a child preserves the parent workspace and other shells.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Session200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Session202"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShellRequest"
+              }
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ]
     }
   },
   "components": {
@@ -2060,7 +2116,8 @@
           "expiresAtMillis",
           "activeRunId",
           "volumeId",
-          "code"
+          "code",
+          "parentSessionId"
         ],
         "properties": {
           "id": {
@@ -2110,6 +2167,14 @@
               "null"
             ],
             "description": "Opening or cleanup failure, including VOLUME_IN_USE, VOLUME_NOT_READY, VOLUME_PROFILE_MISMATCH or CONTAINMENT_UNCONFIRMED."
+          },
+          "parentSessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Workspace-owning session, or null for a root session."
           }
         }
       },
@@ -2897,6 +2962,24 @@
             ],
             "minimum": 1,
             "maximum": 10000
+          }
+        }
+      },
+      "ShellRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       }
