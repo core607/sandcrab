@@ -1,0 +1,510 @@
+{
+  "date": "2026-10-30",
+  "scope": "First real-model run of six synthetic programming tasks through the published OpenSandbox Python SDK against Sandcrab. Independent native sandboxes grade exported sources. No production endpoint, Poketto cutover, general programming claim or native-versus-SDK performance comparison.",
+  "modelBatch": {
+    "workflow": "https://github.com/core607/poketto/actions/runs/41051600533",
+    "workflowAttempt": 1,
+    "workflowConclusion": "failure",
+    "inspectLogStatus": "success",
+    "revision": "f4ef9807c7ba4515afee4c518a131fa1936360c3",
+    "binarySha256": "931ece7e05fa95ddc3a132f0d53aa48892000c9bf884e33412bf16c3f11934cc",
+    "model": "bounded-deepseek/deepseek-flash",
+    "advertisedRelease": "DeepSeek-V4.1-Flash-1017",
+    "servedModels": [
+      "deepseek-flash"
+    ],
+    "systemFingerprints": [
+      "bc19ba97cbe016479903222bb1578db6"
+    ],
+    "evidenceKind": "model-directed",
+    "clientVersion": 5,
+    "workspaceInterface": "sdk",
+    "workspaceGraderInterface": "independent native sandbox",
+    "evaluatorPython": "3.12.14",
+    "clientPackages": {
+      "inspect-ai": "0.3.285",
+      "httpx": "0.28.1",
+      "PyYAML": "6.0.3",
+      "opensandbox": "1.1.0"
+    },
+    "corpusSha256": "a5b70937f1055831bd2f64fed89401d36fcf68752b8146b2de69e8a688e86c95",
+    "sampling": {
+      "thinking": "disabled",
+      "temperature": 0,
+      "maxOutputTokens": 2048
+    },
+    "sandboxPython": [
+      "Python 3.12.3"
+    ],
+    "startedAt": "2026-10-30T12:03:12+00:00",
+    "completedAt": "2026-10-30T12:07:45+00:00",
+    "evaluationSeconds": 273.0,
+    "limits": {
+      "epochs": 3,
+      "turns": 20,
+      "tokensPerSample": 32000,
+      "secondsPerSample": 180,
+      "retryOnError": 0
+    },
+    "attempts": 18,
+    "passes": 15,
+    "infrastructureErrors": 2,
+    "missingExportAfterTokenLimit": 1,
+    "modelRequests": 106,
+    "settledRequests": 106,
+    "inputTokensIncludingCache": 247269,
+    "outputTokens": 23423,
+    "toolCalls": 96,
+    "agentSdkHttpRequests": 137,
+    "sdkHttpRequestsByPhase": {
+      "setup": 152,
+      "agent": 137,
+      "grading": 18
+    },
+    "agentSdkHttp503Responses": 2,
+    "confirmedSdkRootDeletes": 18,
+    "budget": {
+      "limitUsd": "1.000000",
+      "knownUpperEstimateUsd": "0.102338",
+      "unresolvedReservationUsd": "0.000000",
+      "maximumAccountedUsd": "0.102338",
+      "unresolvedRequests": 0,
+      "stopped": null,
+      "prices": {
+        "model": "deepseek-flash",
+        "advertised_release": "DeepSeek-V4.1-Flash-1017",
+        "verified_on": "2026-10-28",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+        "context_tokens": 1100000,
+        "max_output_tokens": 2048,
+        "usd_per_million": {
+          "input": "0.30",
+          "output": "1.20"
+        }
+      }
+    },
+    "costBasis": "Peak-rate upper estimate with all input charged uncached; not an invoice.",
+    "archiveSha256": "28618a2eae333ab097d67da66076ae9cf10b6311db6b76cc78b7e5f41b9d5240",
+    "artifactId": 12975521794,
+    "artifactRetentionDays": 14,
+    "sampleCleanup": "PASS",
+    "fixtureCleanup": "PASS",
+    "fixtureResult": "FAIL"
+  },
+  "failureAnalysis": [
+    {
+      "case": "workspace-multi-file-build",
+      "epochs": [
+        1,
+        3
+      ],
+      "observation": "The model uploaded project/words.py before creating project/. The upload returned HTTP 503; the evaluator stopped agent operations and killed the SDK sandbox during grading.",
+      "diagnosis": "Destination preflight rejected the absent parent before any rename, but the service classified the failed helper invocation as PUBLICATION_UNKNOWN. A separate old-runtime regression probe confirms the entire batch remains unchanged.",
+      "classification": "service error classification"
+    },
+    {
+      "case": "workspace-binary-index",
+      "epochs": [
+        1
+      ],
+      "observation": "The sample consumed 33172 tokens against a 32000-token limit and exported no artifact. No SDK request failed.",
+      "classification": "model did not complete the required export within the token budget"
+    }
+  ],
+  "measurementBoundary": "All eighteen original outcomes remain unchanged. The service fix and deterministic regression do not regrade this model batch; improved model completion requires a separately recorded new batch.",
+  "attempts": [
+    {
+      "case": "workspace-binary-index",
+      "epoch": 1,
+      "passed": false,
+      "error": null,
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": "token",
+      "cleanup": "PASS",
+      "seconds": 18.661,
+      "inputTokens": 31185,
+      "outputTokens": 1987,
+      "toolCalls": 9,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 23.726,
+      "inputTokens": 23244,
+      "outputTokens": 2058,
+      "toolCalls": 7,
+      "failedToolCalls": 0,
+      "apiCalls": 10,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 2,
+      "artifact": {
+        "sha256": "d42b755933d8c43542d840deb7afba1e10d03604e350e3be7f4a9443329133d3",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 24.903,
+      "inputTokens": 25685,
+      "outputTokens": 2166,
+      "toolCalls": 8,
+      "failedToolCalls": 0,
+      "apiCalls": 11,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 2,
+      "artifact": {
+        "sha256": "c4a3369995b1139518835541b47e39a110d5f031e5e67782a68e1e8c8983d396",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 11.368,
+      "inputTokens": 8484,
+      "outputTokens": 916,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "426d33150cdea0ff53da57cb82876dc83ac1ba86c0ff46d4f4254a471bbfd60c",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 10.784,
+      "inputTokens": 8064,
+      "outputTokens": 748,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "9c69d059e7377cbdd50b2e048f40275702b375c20a38f62d707c0225cd832e61",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 10.619,
+      "inputTokens": 8208,
+      "outputTokens": 796,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "5062f71811f2f135321248decf2a2e2d919a9e9059cac0dc3a6bffce8921f2a3",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 20.654,
+      "inputTokens": 18545,
+      "outputTokens": 1882,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "8b70f72bf0daadb7cb0cd0f55744b10014efaee8a5dd297ce8c0e074b44004e4",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 18.984,
+      "inputTokens": 15206,
+      "outputTokens": 1745,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "2302e850fc1f9b860ee9bcd23850dc513505acdd2b9ab6f05fe93ea1900f856c",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 21.921,
+      "inputTokens": 19294,
+      "outputTokens": 1904,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "19ffdbc933f1921c149697d754bc86d985e46bdd26d887f2f98024dc7622677f",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 13.143,
+      "inputTokens": 12266,
+      "outputTokens": 943,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "c5060e0ef7847b73ec010f3451419c536cf532b5db9a5f7b82b04fbd4022ed70",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 14.13,
+      "inputTokens": 12691,
+      "outputTokens": 1095,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "ca285ef75a2dab116096c61f9b5ec8c676c27844fc4a7a0bdf4ce5fb58d52a63",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 15.718,
+      "inputTokens": 12920,
+      "outputTokens": 1492,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "a58ebb14a84bfc8ae3de84cd0d19a0fd05c7aa651253711a61a81fa3ee6f50ba",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 1,
+      "passed": false,
+      "error": "RuntimeError('SDK operation failed; retained ownership must be resolved by cleanup')",
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 6.128,
+      "inputTokens": 2388,
+      "outputTokens": 669,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 2,
+      "refusedCalls": 1,
+      "transportFailures": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 17.697,
+      "inputTokens": 18987,
+      "outputTokens": 1468,
+      "toolCalls": 7,
+      "failedToolCalls": 0,
+      "apiCalls": 10,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "7d0ceab4b0e1b41dd60bd927c73bd97db8dbaa6991fdb45f153476c61f916863",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 3,
+      "passed": false,
+      "error": "RuntimeError('SDK operation failed; retained ownership must be resolved by cleanup')",
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 6.116,
+      "inputTokens": 2721,
+      "outputTokens": 760,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 3,
+      "refusedCalls": 1,
+      "transportFailures": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.556,
+      "inputTokens": 9131,
+      "outputTokens": 955,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "32310a369d3306739584b77c005c851ab400c7888362d531a011410b49e8e5f4",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.997,
+      "inputTokens": 9120,
+      "outputTokens": 919,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "8b3239bfe82a576242709ea72d26cbc2bd7730c9ca6f0fe968ae7296a5cbd05a",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.425,
+      "inputTokens": 9130,
+      "outputTokens": 920,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "379e03992435bf282a5c874db77e7cc70c355d15abc39d9fa6cbd2d6443a4fa7",
+        "bytes": 20480
+      }
+    }
+  ]
+}

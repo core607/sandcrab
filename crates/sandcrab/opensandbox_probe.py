@@ -67,6 +67,27 @@ if flag.exists() and Path(sys.argv[-1]).name == flag.read_text():
 os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
 ''')
         (helpers / 'umount').chmod(0o755)
+        self.upload_reply_fault = helpers / 'drop-upload-record'
+        # Lose bookkeeping after the real helper publishes, so ENOENT cannot be
+        # mistaken for an acknowledged missing-parent refusal.
+        (helpers / 'systemd-run').write_text(f'''#!/usr/bin/python3
+import json, os, subprocess, sys
+from pathlib import Path
+flag = Path({str(self.upload_reply_fault)!r})
+record = None
+if flag.exists() and '__file' in sys.argv:
+    candidate = Path(sys.argv[sys.argv.index('__file') + 1])
+    if candidate.parent == Path({str(self.socket.parent / 'file-ops')!r}) and json.loads(candidate.read_text())['action'] == 'sdk-publish':
+        record = candidate
+if record is None:
+    os.execv('/usr/bin/systemd-run', ['systemd-run', *sys.argv[1:]])
+result = subprocess.run(['/usr/bin/systemd-run', *sys.argv[1:]])
+if result.returncode == 0:
+    record.unlink()
+    flag.unlink()
+raise SystemExit(result.returncode)
+''')
+        (helpers / 'systemd-run').chmod(0o755)
         self.launch_path = str(helpers) + ':/usr/bin:/bin'
         self.receipt.update(scope='Published OpenSandbox SDK clients through actual native TCP and sandbox units; no model or production cutover',
                             specification={'repository': 'https://github.com/opensandbox-group/OpenSandbox',

@@ -267,10 +267,41 @@ class Contract:
             "ln -s /etc /workspace/link && printf checked")
         assert result['state'] == 'succeeded' and result['result']['stdout'] == 'checked'
         self.probe.forget(run)
-        body = self.multipart([({'path': '/workspace/link/escape'}, b'escape')])
-        assert self.upload(identity, headers, body)[0] >= 400
+        assert self.request('POST', '/opensandbox/' + identity + '/directories',
+                            {'/workspace/directory': {'mode': 700}}, headers)[0] == 200
+        for path, expected, code in [('missing/child', 404, 'FILE_NOT_FOUND'),
+                                     ('guard/child', 400, 'INVALID_PATH'),
+                                     ('directory', 400, 'INVALID_PATH'),
+                                     ('link/escape', 400, 'INVALID_PATH')]:
+            body = self.multipart([({'path': '/workspace/guard'}, b'changed'),
+                                   ({'path': '/workspace/' + path}, b'refused')])
+            status, failure = self.upload(identity, headers, body)
+            assert status == expected and failure['code'] == code, (path, status, failure)
+            run, result = self.probe.session_exec({'id': identity},
+                "test \"$(cat /workspace/guard)\" = original && test ! -e /workspace/missing && printf intact")
+            assert result['state'] == 'succeeded' and result['result']['stdout'] == 'intact'
+            self.probe.forget(run)
+        assert self.request('POST', '/opensandbox/' + identity + '/directories',
+                            {'/workspace/missing': {'mode': 700}}, headers)[0] == 200
+        body = self.multipart([({'path': '/workspace/guard'}, b'changed'),
+                               ({'path': '/workspace/missing/child'}, b'recovered')])
+        assert self.upload(identity, headers, body)[0] == 200
+        run, result = self.probe.session_exec({'id': identity},
+            "test \"$(cat /workspace/guard)\" = changed && cat /workspace/missing/child")
+        assert result['state'] == 'succeeded' and result['result']['stdout'] == 'recovered'
+        self.probe.forget(run)
+        self.probe.done('sdk-upload-prepublication-refusals-preserve-the-whole-batch-and-allow-explicit-recovery')
         assert self.request('GET', '/opensandbox/' + identity + '/files/download?path=%2Fworkspace%2Flink%2Fpasswd',
                             headers=headers)[0] >= 400
+        self.probe.upload_reply_fault.touch()
+        body = self.multipart([({'path': '/workspace/guard'}, b'published-without-receipt')])
+        status, failure = self.upload(identity, headers, body)
+        assert status == 503 and failure['code'] == 'PUBLICATION_UNKNOWN', (status, failure)
+        assert not self.probe.upload_reply_fault.exists(), 'Helper record loss was not injected'
+        run, result = self.probe.session_exec({'id': identity}, 'cat /workspace/guard')
+        assert result['state'] == 'succeeded' and result['result']['stdout'] == 'published-without-receipt'
+        self.probe.forget(run)
+        self.probe.done('sdk-upload-helper-record-loss-after-publication-remains-unknown')
         self.delete(identity)
         self.probe.done('sdk-file-limits-disconnect-framing-traversal-and-ownership-refusals-preserve-existing-content')
 

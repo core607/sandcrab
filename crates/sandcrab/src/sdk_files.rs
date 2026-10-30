@@ -23,19 +23,34 @@ pub fn download_path(path: &str) -> Option<(&str, &str)> {
     sandcrab_core::uuid(id).then_some((id, query))
 }
 fn error(value: &io::Error, attempted: bool) -> (u16, &'static str) {
+    if attempted {
+        return (503, "PUBLICATION_UNKNOWN");
+    }
     match files::code(value).as_str() {
         "FILE_LIMIT" | "FILE_ENTRY_LIMIT" => (413, "FILE_LIMIT"),
         "INVALID_MULTIPART" | "CONTENT_INCOMPLETE" => (400, "INVALID_MULTIPART"),
         "INVALID_FILE_METADATA" => (400, "INVALID_FILE_METADATA"),
         "UNSUPPORTED_FILE_OWNER" => (400, "UNSUPPORTED_FILE_OWNER"),
         "INVALID_FILE_MODE" => (400, "INVALID_FILE_MODE"),
-        "INVALID_PATH" | "INVALID_LINK" | "NOT_DIRECTORY" | "NOT_REGULAR_FILE" if !attempted => {
+        "INVALID_PATH" | "INVALID_LINK" | "NOT_DIRECTORY" | "NOT_REGULAR_FILE" => {
             (400, "INVALID_PATH")
         }
-        "FILE_CAPACITY" if !attempted => (507, "FILE_CAPACITY"),
-        "FILE_CANCELLED" if !attempted => (409, "FILE_CANCELLED"),
-        _ if attempted => (503, "PUBLICATION_UNKNOWN"),
+        "FILE_CAPACITY" => (507, "FILE_CAPACITY"),
+        "FILE_CANCELLED" => (409, "FILE_CANCELLED"),
         _ => (503, "UPLOAD_FAILED"),
+    }
+}
+fn publication(value: serde_json::Value) -> Result<()> {
+    match serde_json::from_value(value) {
+        Ok(crate::sdk_file_io::Publication::Succeeded) => Ok(()),
+        Ok(crate::sdk_file_io::Publication::Rejected { code }) => {
+            Err(if code == "FILE_NOT_FOUND" {
+                (404, "FILE_NOT_FOUND")
+            } else {
+                error(&invalid(&code), false)
+            })
+        }
+        Err(_) => Err((503, "PUBLICATION_UNKNOWN")),
     }
 }
 impl Service {
@@ -66,7 +81,7 @@ impl Service {
         let stage = files::stage(&stage_id, &lease.access);
         let mut contained = true;
         let mut attempted = false;
-        let result = (|| -> io::Result<()> {
+        let result = (|| -> io::Result<serde_json::Value> {
             let path = self
                 .runtime
                 .files
@@ -92,7 +107,7 @@ impl Service {
                     Stdio::null(),
                 );
                 contained &= ended;
-                result.map(|_| ())
+                result
             })
         })();
         if contained {
@@ -103,7 +118,10 @@ impl Service {
         if !contained {
             return Err((503, "FILE_CLEANUP_UNCONFIRMED"));
         }
-        result.map_err(|e| error(&e, attempted))
+        // Only a normal helper reply, successful unfreeze and confirmed staging
+        // cleanup can prove that publication never started. A lost/failed helper
+        // remains uncertain even if its I/O error resembles an input refusal.
+        publication(result.map_err(|e| error(&e, attempted))?)
     }
     pub(crate) fn sdk_capture(
         self: &Arc<Self>,
@@ -123,5 +141,40 @@ impl Service {
             Some(&sandbox.incarnation),
             selection.as_ref(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn only_an_acknowledged_prepublication_refusal_is_recoverable() {
+        assert_eq!(
+            publication(json!({"state":"rejected","code":"FILE_NOT_FOUND"})),
+            Err((404, "FILE_NOT_FOUND"))
+        );
+        assert_eq!(
+            publication(json!({"state":"rejected","code":"NOT_REGULAR_FILE"})),
+            Err((400, "INVALID_PATH"))
+        );
+        assert_eq!(
+            error(&invalid("FILE_NOT_FOUND"), true),
+            (503, "PUBLICATION_UNKNOWN")
+        );
+        assert_eq!(
+            error(&invalid("FILE_NOT_FOUND"), false),
+            (503, "UPLOAD_FAILED")
+        );
+        assert_eq!(
+            error(&invalid("FILE_LIMIT"), true),
+            (503, "PUBLICATION_UNKNOWN")
+        );
+        assert_eq!(
+            publication(json!({"state":"rejected"})),
+            Err((503, "PUBLICATION_UNKNOWN"))
+        );
+        assert_eq!(publication(json!({"state":"succeeded"})), Ok(()));
     }
 }

@@ -156,9 +156,14 @@ transmission each have a 30-second deadline; helpers and cleanup have separate
 bounded deadlines.
 The bounded file helper stages the complete request before freezing the sandbox
 to validate destinations and publish. A malformed or incomplete body publishes
-nothing. Each file replacement is atomic; the entire batch is not a transaction.
-An I/O failure during publication may leave a partial batch and returns
-`PUBLICATION_UNKNOWN`. Inspect file contents before deciding whether to retry.
+nothing. Before any replacement, a missing parent returns HTTP 404
+`FILE_NOT_FOUND`; a symlink or non-directory parent, or a non-regular destination,
+returns HTTP 400 `INVALID_PATH`. These refusals leave every destination unchanged.
+Create the required directories or correct the paths before submitting a new request.
+Each file replacement is atomic; the entire batch is not a transaction.
+An I/O failure during publication or an unconfirmed helper result may leave a
+partial batch and returns HTTP 503 `PUBLICATION_UNKNOWN`. Inspect file contents
+before deciding whether to retry.
 
 Downloads freeze only while making their private snapshot; a slow reader does
 not keep the sandbox frozen. Byte and line selections also use private snapshots.

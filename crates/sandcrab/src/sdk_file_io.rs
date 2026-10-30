@@ -6,6 +6,7 @@ use crate::{
 };
 use rustix::fs::{AtFlags, FileType, RenameFlags, renameat_with, statat};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{collections::BTreeSet, io};
 
 pub fn path(value: &str, root: bool) -> io::Result<String> {
@@ -31,6 +32,12 @@ struct Metadata {
 pub(crate) struct Entry {
     pub path: String,
     pub mode: u32,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Publication {
+    Succeeded,
+    Rejected { code: String },
 }
 fn metadata(bytes: &[u8]) -> io::Result<Entry> {
     let value = sandcrab_core::parse(bytes).map_err(|_| invalid("INVALID_FILE_METADATA"))?;
@@ -87,7 +94,7 @@ pub fn receive(job: &Job) -> io::Result<()> {
     manifest.sync_all()?;
     stage.sync_all()
 }
-pub fn publish(job: &Job) -> io::Result<()> {
+pub fn publish(job: &Job, attempted: &mut bool) -> io::Result<()> {
     let stage = file_io::directory(&job.stage)?;
     let workspace = file_io::directory(&job.workspace)?;
     let manifest = sandcrab_core::fs::protected_file(&job.stage.join("manifest.json"), 1_048_576)?;
@@ -111,6 +118,7 @@ pub fn publish(job: &Job) -> io::Result<()> {
         destinations.push((parent, name));
     }
     for (index, (parent, name)) in destinations.into_iter().enumerate() {
+        *attempted = true;
         renameat_with(
             &stage,
             format!("content-{index}"),
@@ -121,6 +129,18 @@ pub fn publish(job: &Job) -> io::Result<()> {
         parent.sync_all()?;
     }
     stage.sync_all()
+}
+
+pub fn execute(job: &Job) -> io::Result<Value> {
+    let mut attempted = false;
+    let receipt = match publish(job, &mut attempted) {
+        Ok(()) => Publication::Succeeded,
+        Err(error) if !attempted => Publication::Rejected {
+            code: file_io::error_code(&error).into(),
+        },
+        Err(error) => return Err(error),
+    };
+    Ok(serde_json::to_value(receipt)?)
 }
 
 #[cfg(test)]

@@ -54,6 +54,22 @@ class TransportFaults(unittest.TestCase):
                     self.request(transport)
                 self.assertTrue(self.rows[0]['error'])
 
+    def test_error_observations_keep_only_a_bounded_protocol_code(self):
+        for code in ['FILE_NOT_FOUND', '/private/path', 'fixture-secret', 'A' * 65, None, ['INVALID_PATH']]:
+            with self.subTest(code=code):
+                transport = self.transport(httpx.Response(404, json={'code': code, 'message': 'private diagnostic'}))
+                self.assertEqual(404, self.request(transport).status_code)
+                self.assertEqual('FILE_NOT_FOUND' if code == 'FILE_NOT_FOUND' else None, self.rows[0].get('code'))
+                self.assertNotIn('private', json.dumps(self.rows))
+                self.assertNotIn('fixture-secret', json.dumps(self.rows))
+                transport.close()
+        for data in [b'<html>private diagnostic</html>', b'\xff', b'[]']:
+            transport = self.transport(httpx.Response(503, content=data))
+            self.assertEqual(503, self.request(transport).status_code)
+            self.assertNotIn('code', self.rows[0])
+            self.assertNotIn('error', self.rows[0], 'An unavailable diagnostic must not replace the HTTP outcome')
+            transport.close()
+
     def test_response_limits_and_endpoint_authority_precede_unbounded_consumption(self):
         transport = self.transport(httpx.Response(200, stream=httpx.ByteStream(b'x' * (MAX_ARTIFACT + 1)),
                                                    headers={'content-length': str(MAX_ARTIFACT + 1)}))
@@ -115,8 +131,8 @@ class ConsumerFaults(unittest.TestCase):
             client = self.client(directory)
             client.phase = 'agent'
             def refuse():
-                client.state['observations'].append({'status': 400})
-            with self.assertRaises(Rejected):
+                client.state['observations'].append({'status': 404, 'code': 'FILE_NOT_FOUND'})
+            with self.assertRaisesRegex(Rejected, r'HTTP 404 \(FILE_NOT_FOUND\); no request was replayed'):
                 client.sdk(refuse)
             self.assertFalse(client.agent_closed.is_set())
             def unknown():

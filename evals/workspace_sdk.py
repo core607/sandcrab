@@ -44,7 +44,8 @@ class SdkWorkspace(Workspace):
         if error is not None or failures:
             refused = failures[-1] if failures else None
             if refused and not refused.get('error') and refused['status'] is not None and 400 <= refused['status'] < 500 and self.phase == 'agent':
-                raise Rejected(f"SDK operation refused with HTTP {refused['status']}; no request was replayed") from None
+                code = refused.get('code', 'UNSPECIFIED')
+                raise Rejected(f"SDK operation refused with HTTP {refused['status']} ({code}); no request was replayed") from None
             self.agent_closed.set()
             raise RuntimeError('SDK operation failed; retained ownership must be resolved by cleanup') from None
         return result

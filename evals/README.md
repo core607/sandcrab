@@ -32,13 +32,17 @@ These scripted results establish that the harness can drive and score the API.
 The **Agent evaluations** workflow runs a selected suite with a plain tool-calling
 DeepSeek Flash agent. Start it on `main`, choose `workspace` (the default), `native`
 or `all`, the programming client (`sdk` by default), repeat count and batch budget,
-then read the workflow summary. The native-only suite requires the `native` client.
+then read the workflow summary. The native-only suite selects the `native` client automatically.
 Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
 The [programming evidence receipt](evidence/2026-10-29-workspace-model.json) records
 one paid batch and a controlled regrade of the same artifacts after correcting an
 unstated exit-status requirement. It preserves the original scores separately.
+The [first SDK model receipt](evidence/2026-10-30-workspace-sdk-model.json) retains
+15 successes in 18 attempts: two uploads stopped on a service error classification,
+and one sample reached its token limit without exporting. Fixing that classification
+does not change these recorded outcomes.
 
 Configure `DEEPSEEK_EVAL_API_KEY` as a repository secret. The workflow can reuse
 `AI_REVIEW_API_KEY` when review uses the standard DeepSeek endpoint. Only the
@@ -152,7 +156,9 @@ are not automatically retried; SDK creation health polls remain recorded, includ
 initial not-ready responses. An ambiguous SDK mutation stops agent operations;
 cleanup deletes the known sandbox or fails if its creation was not acknowledged.
 The client checks observed HTTP status even when the pinned SDK masks a session
-error. This is evaluation instrumentation, not an SDK patch or a server response change.
+error. Recoverable refusals include the HTTP status and a bounded protocol error
+code; raw server diagnostics are not copied into observations. This is evaluation
+instrumentation, not an SDK patch or a server response change.
 
 ## Paid-run limits
 

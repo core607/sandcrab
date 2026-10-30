@@ -1,5 +1,7 @@
 """Count and bound the published SDK's real requests without recording credentials."""
 import hashlib
+import json
+import re
 import time
 
 import httpx
@@ -63,6 +65,14 @@ class Transport(httpx.BaseTransport):
             if download and response.headers.get('etag') != '"' + digest + '"':
                 raise ValueError('SDK download digest did not match')
             row.update(bytes=len(data), sha256=digest)
+            if response.status_code >= 400:
+                try:
+                    error = json.loads(data)
+                    code = error.get('code') if isinstance(error, dict) else None
+                    if isinstance(code, str) and re.fullmatch('[A-Z_]{1,64}', code):
+                        row['code'] = code
+                except (ValueError, UnicodeError):
+                    pass
             return httpx.Response(response.status_code, headers=response.headers, content=bytes(data), extensions=response.extensions)
         except Exception as error:
             row['error'] = 'response_limit' if isinstance(error, ResponseLimit) else type(error).__name__

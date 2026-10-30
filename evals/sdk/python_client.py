@@ -101,6 +101,21 @@ async def files(sandbox, commands, checks):
     assert execution.exit_code == 0 and output(execution) == 'files verified\n'
     checks.append('chunked-multipart-binary-text-empty-stream-and-replacement-mode')
 
+    try:
+        await sandbox.files.write_files([WriteEntry(path='text', data='changed'),
+                                         WriteEntry(path='missing-upload/child', data='recovered')])
+    except SandboxApiException as error:
+        assert error.status_code == 404
+    else:
+        raise AssertionError('Missing parent did not refuse the batch')
+    assert await sandbox.files.read_file('text') == 'hello 世界\n'
+    await sandbox.files.create_directories([WriteEntry(path='missing-upload')])
+    await sandbox.files.write_files([WriteEntry(path='text', data='changed'),
+                                     WriteEntry(path='missing-upload/child', data='recovered')])
+    assert await sandbox.files.read_file('text') == 'changed'
+    assert await sandbox.files.read_file('missing-upload/child') == 'recovered'
+    checks.append('missing-upload-parent-refuses-without-publishing-and-explicit-creation-recovers')
+
 
 async def replacements(sandbox, checks):
     data = b'A' * 32767 + b'abcabc\xff\0'

@@ -288,8 +288,7 @@ fn apply(job: &Job, root: &File, request: &Request, attempted: &mut bool) -> io:
             let value = if *verbose { counts } else { Value::Null };
             bounded(&value)?;
             if changed {
-                *attempted = true;
-                crate::sdk_file_io::publish(job)?;
+                crate::sdk_file_io::publish(job, attempted)?;
             }
             return Ok(value);
         }

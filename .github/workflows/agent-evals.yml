@@ -9,7 +9,7 @@ on:
         options: [workspace, all, native]
         default: workspace
       workspace_client:
-        description: Programming client (choose native for the native-only suite)
+        description: Programming client (ignored for the native-only suite)
         type: choice
         options: [sdk, native]
         default: sdk
@@ -48,7 +48,7 @@ jobs:
     with:
       evidence_mode: model
       suite: ${{ inputs.suite }}
-      workspace_client: ${{ inputs.workspace_client }}
+      workspace_client: ${{ inputs.suite == 'native' && 'native' || inputs.workspace_client }}
       model: ${{ inputs.model }}
       repeats: ${{ fromJSON(inputs.repeats) }}
       budget_usd: ${{ inputs.budget_usd }}

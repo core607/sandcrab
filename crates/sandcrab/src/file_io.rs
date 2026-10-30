@@ -560,9 +560,11 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
         return crate::sdk_fs_io::execute(&job);
     }
+    if job.action == "sdk-publish" {
+        return crate::sdk_file_io::execute(&job);
+    }
     match job.action.as_str() {
         "sdk-receive" => crate::sdk_file_io::receive(&job),
-        "sdk-publish" => crate::sdk_file_io::publish(&job),
         "receive" => receive(&job),
         "publish" => publish(&job),
         "cleanup" => {
