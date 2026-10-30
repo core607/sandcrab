@@ -6,8 +6,9 @@ transcript viewer. The application has no dependency on it. Install the pinned
 
 ## Current entrance
 
-The **Evaluation preflight** workflow runs ten native API cases and six programming
-tasks three times each. It is available from GitHub Actions' Run workflow button and is also
+The **Evaluation preflight** workflow runs ten native API cases and the same six programming
+tasks through both native and published OpenSandbox Python clients, three times each
+(66 attempts). It is available from GitHub Actions' Run workflow button and is also
 required by the code-change CI matrix. It builds the requested checkout, starts a
 disposable native service and runs Inspect as an ordinary client. No production
 endpoint, product account, model key or model API is used. The root controller
@@ -30,7 +31,8 @@ job summary does not host the viewer.
 These scripted results establish that the harness can drive and score the API.
 The **Agent evaluations** workflow runs a selected suite with a plain tool-calling
 DeepSeek Flash agent. Start it on `main`, choose `workspace` (the default), `native`
-or `all`, the repeat count and batch budget, then read the workflow summary.
+or `all`, the programming client (`sdk` by default), repeat count and batch budget,
+then read the workflow summary. The native-only suite requires the `native` client.
 Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
@@ -81,8 +83,8 @@ failures and limit exits remain in the result. A cleanup failure fails preflight
 repairs, binary file indexing, a multi-file program and a persistent inventory CLI.
 The agent receives the task, initial files and required artifact paths. It writes
 and tests Python using an ordinary consumer client with five tools: shell, text
-upload, session restart, receipt inspection and tar export. The client owns one
-volume and its session identities; it requires no Poketto account, repository or
+upload, session restart, receipt inspection and tar export. The native client owns
+a volume and sessions; the SDK client owns a sandbox and named shells. Neither requires a Poketto account, repository or
 content semantics. These results measure this client and corpus, not an agent's
 ability to discover the raw HTTP API or general programming ability.
 
@@ -111,19 +113,46 @@ Every hidden check uses real Sandcrab execution; there is no model judge.
 Timeout, cancellation, resource exhaustion and output truncation always fail;
 accepting a normal nonzero exit still requires every output and stored-file check.
 
-A task has an 8 MiB volume, at most 20 shell commands, 16 text uploads, three
+A task has an 8 MiB workspace, at most 20 shell commands, 16 text uploads, three
 session restarts and four exports. Commands have ten-second and 4096-byte output
 limits; text files are at most 64 KiB and exports at most 2 MiB. A restart retains
 files and resets shell state. Archive members require unique relative paths;
 unrelated drafts and directories are allowed within the export byte bound.
-An uncertain upload is queried by its original ID
-without replay. Cleanup joins outstanding client work before releasing resources;
+The native client queries an uncertain upload by its original ID without replay.
+Cleanup joins outstanding client work before releasing resources;
 an unresolved identity fails cleanup and stops later programming samples.
 
 Reports separate agent tool traffic from setup, grading and cleanup API calls.
 Transport failures and output-size refusals have separate counts. Evaluator and
 sandbox Python versions, pinned client packages and source/corpus revisions are
 recorded. Legacy native-case harness traffic is labelled uncounted.
+
+### OpenSandbox programming client
+
+`workspace_sdk.py` uses the unmodified synchronous API of the published Python SDK
+pinned in [sdk/requirements.txt](sdk/requirements.txt). The controller enables its
+authenticated TCP endpoint on loopback only after native lifecycle preflight.
+The SDK credential belongs to the evaluator; neither it nor the model key enters
+the sandbox. Setup, shell commands, files, export and sandbox deletion use the SDK;
+the existing native grader runs submitted sources in a separate fresh sandbox.
+
+The task text, fixtures and hidden checks are identical for both clients. Tool
+contracts describe their differences: SDK uploads overwrite existing files, and
+their receipt hash describes sent bytes. SDK export closes the producing shell,
+builds a bounded tar inside a separate sandbox command, then downloads and verifies
+its length and SHA-256 before sealing it. Export closes background processes too;
+further commands need an explicit restart. SDK status reports the sandbox, bound
+shell ID and recent receipts; binding does not prove shell readiness.
+
+The caller-owned HTTP transport rejects endpoints outside the fixture origin,
+bounds complete responses and counts actual requests without retaining credentials
+or discovery response bodies. It buffers command events because tools return
+complete results; these evaluations do not measure streaming latency. Mutations
+are not automatically retried; SDK creation health polls remain recorded, including
+initial not-ready responses. An ambiguous SDK mutation stops agent operations;
+cleanup deletes the known sandbox or fails if its creation was not acknowledged.
+The client checks observed HTTP status even when the pinned SDK masks a session
+error. This is evaluation instrumentation, not an SDK patch or a server response change.
 
 ## Paid-run limits
 
@@ -142,7 +171,7 @@ maximum request reservation calculated from the catalog. A 64 KiB
 request limit, bounded output, twelve turns for the native suite or twenty for
 workspace/all, 32,000 tokens and 180 seconds per sample, and a thirty-minute
 controller deadline also bound the work. Model calls use text and client-side
-native tools only; no provider search, fetch or other separately billed tools are
+Sandcrab tools only; no provider search, fetch or other separately billed tools are
 enabled. Unknown costs stay labelled unknown and keep their reserved upper bound.
 
 Reverify prices and context limits before changing the catalog; paid runs reject
@@ -169,7 +198,7 @@ They do not prove Linux containment. On a disposable Linux host meeting the
 ```sh
 sudo python3 evals/native.py --binary build/executor-service/bin/sandcrab \
   --tools /var/lib/sandcrab-evals/tools --python /absolute/path/to/venv/bin/python \
-  --output /var/lib/sandcrab-evals/results
+  --output /var/lib/sandcrab-evals/results --workspace-client both
 ```
 
 The output directory must be new. Its ancestors and the virtual environment must

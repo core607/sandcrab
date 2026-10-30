@@ -97,7 +97,7 @@ def native_api(endpoint: str, run_id: str):
 
 
 @solver
-def prepare(endpoint: str, baseline: bool, artifacts: str | None = None):
+def prepare(endpoint: str, baseline: bool, artifacts: str | None = None, sdk_config: str | None = None):
     async def solve(state, generate):
         if not baseline and not isinstance(getattr(get_model().api, 'ledger', None), Ledger):
             raise ValueError('Model tasks require the budgeted runner; direct unbudgeted Inspect generation is disabled')
@@ -109,7 +109,7 @@ def prepare(endpoint: str, baseline: bool, artifacts: str | None = None):
         if state.metadata.get('kind') == 'workspace':
             if artifacts is None:
                 raise ValueError('Workspace tasks require an artifact output directory')
-            return await workspace.prepare(state, endpoint, artifacts)
+            return await workspace.prepare(state, endpoint, artifacts, sdk_config)
         state.messages.append(ChatMessageUser(content=f'Your assigned run ID is {run_id}. Use it for all requests. '
                                                      'Leave the result record for verification unless the task explicitly asks you to forget it.'))
         state.tools = [native_api(endpoint, run_id)]
@@ -198,9 +198,14 @@ def cleanup(endpoint: str):
 
 
 @task
-def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native', artifacts: str | None = None):
+def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native', artifacts: str | None = None,
+                    workspace_client: str = 'native', sdk_config: str | None = None):
     if suite not in {'native', 'workspace', 'all'}:
         raise ValueError('Unknown Sandcrab evaluation suite')
+    if workspace_client not in {'native', 'sdk', 'both'}:
+        raise ValueError('Unknown workspace client')
+    if workspace_client != 'native' and (suite == 'native' or sdk_config is None):
+        raise ValueError('SDK evaluations require programming tasks and a controller-owned SDK configuration')
     samples, digests = [], {}
     if suite in {'native', 'all'}:
         cases, digests['native'] = load(CASES)
@@ -210,10 +215,13 @@ def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native'
         if artifacts is None:
             raise ValueError('Workspace tasks require an artifact output directory')
         cases, digests['workspace'] = load_workspace(CASES.parent / 'workspace')
-        samples.extend(Sample(id=c['id'], input=c['task'], metadata={'kind': 'workspace', **c}) for c in cases)
+        clients = ['native', 'sdk'] if workspace_client == 'both' else [workspace_client]
+        for client in clients:
+            samples.extend(Sample(id=('sdk-' if client == 'sdk' and workspace_client == 'both' else '') + c['id'],
+                                  input=c['task'], metadata={'kind': 'workspace', 'workspaceClient': client, **c}) for c in cases)
     digest = next(iter(digests.values())) if len(digests) == 1 else hashlib.sha256(json.dumps(digests, sort_keys=True).encode()).hexdigest()
     programming = suite != 'native'
-    return Task(dataset=samples, setup=prepare(endpoint, baseline, artifacts),
+    return Task(dataset=samples, setup=prepare(endpoint, baseline, artifacts, sdk_config),
                 solver=scripted(endpoint) if baseline else generate(),
                 cleanup=cleanup(endpoint), scorer=native_state(endpoint), epochs=3,
                 time_limit=180, message_limit=50 if programming else 30, turn_limit=20 if programming else 12, token_limit=32000,
@@ -221,8 +229,9 @@ def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native'
                 fail_on_error=False, score_on_error=True,
                 metadata={'suite': 'sandcrab-' + suite, 'corpusSha256': digest, 'corporaSha256': digests,
                           'evidenceKind': 'scripted' if baseline else 'model-directed',
-                          'clientVersion': 4, 'workspaceInterface': 'sample-owned native consumer client' if programming else None,
+                          'clientVersion': 5, 'workspaceInterface': workspace_client if programming else None,
+                          'workspaceGraderInterface': 'independent native sandbox' if programming else None,
                           'evaluatorPython': platform.python_version(),
-                          'clientPackages': {name: version(name) for name in ('inspect-ai', 'httpx', 'PyYAML')},
+                          'clientPackages': {name: version(name) for name in ('inspect-ai', 'httpx', 'PyYAML', 'opensandbox')},
                           'sampling': {'thinking': 'disabled', 'temperature': 0, 'maxOutputTokens': 2048},
-                          'turnLimit': 20 if programming else 12}, version=4)
+                          'turnLimit': 20 if programming else 12}, version=5)

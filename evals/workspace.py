@@ -34,7 +34,7 @@ async def action(method, *args):
 
 
 @tool
-def workspace_shell():
+def workspace_shell(sdk=False):
     async def execute(command: str) -> str:
         """Execute bash in your persistent Sandcrab session, initially at /workspace.
 
@@ -47,11 +47,28 @@ def workspace_shell():
             command: Bash source of at most 16 KiB. Read files and run Python/tests here.
         """
         return await action('shell', command)
+    if sdk:
+        execute.__doc__ = execute.__doc__.replace('The workspace is an 8 MiB durable volume.',
+            'The SDK sandbox has an 8 MiB workspace shared by its shells.').replace('end the session.', 'end the shell.')
     return execute
 
 
 @tool
-def workspace_write_file():
+def workspace_write_file(sdk=False):
+    if sdk:
+        async def execute(path: str, text: str) -> str:
+            """Write UTF-8 text with the published OpenSandbox SDK; existing files are overwritten.
+
+            Paths are relative to /workspace regardless of the shell's current directory.
+            Parent directories must exist. A successful response acknowledges the upload;
+            its reported hash describes the sent bytes. Failed requests are not replayed.
+
+            Args:
+                path: Relative workspace path.
+                text: Exact file text, at most 64 KiB including UTF-8 encoding.
+            """
+            return await action('write_file', path, text)
+        return execute
     async def execute(path: str, text: str, replace: bool = False) -> str:
         """Upload UTF-8 text through Sandcrab's native file API, verifying its content hash.
 
@@ -69,7 +86,7 @@ def workspace_write_file():
 
 
 @tool
-def workspace_restart():
+def workspace_restart(sdk=False):
     async def execute() -> str:
         """Close the old session and open a fresh shell on the same workspace volume.
 
@@ -77,19 +94,24 @@ def workspace_restart():
         processes do not. Use this explicitly after a command ends the session.
         """
         return await action('restart')
+    if sdk:
+        execute.__doc__ = execute.__doc__.replace('session and open a fresh shell on the same workspace volume',
+            'SDK shell and open a fresh one on the same sandbox workspace').replace('ends the session', 'ends the shell')
     return execute
 
 
 @tool
-def workspace_status():
+def workspace_status(sdk=False):
     async def execute() -> str:
         """Inspect this sample's retained session, command and upload receipts without replaying writes."""
         return await action('status')
+    if sdk:
+        execute.__doc__ = 'Read the SDK sandbox state, bound shell ID and the last three execution and upload receipts. A bound ID does not prove that shell is still ready. No writes are replayed.'
     return execute
 
 
 @tool
-def workspace_export():
+def workspace_export(sdk=False):
     async def execute() -> str:
         """Submit the current workspace as a native tar snapshot, bounded to 2 MiB.
 
@@ -98,17 +120,33 @@ def workspace_export():
         source file. The grader uses that archive in a separate fresh sandbox.
         """
         return await action('export')
+    if sdk:
+        execute.__doc__ = '''Close the producing SDK shell and export the workspace as a tar, bounded to 2 MiB.
+
+        Closing the shell stops its background processes. A separate sandbox command
+        builds the archive, and the SDK downloads it with verified length and SHA-256.
+        Your last successful export is the submission. Use workspace_restart before
+        further commands, and re-export after source changes. The grader checks the
+        archive in a separate fresh sandbox; no submitted code runs on the host.
+        '''
     return execute
 
 
-async def prepare(state, endpoint: str, artifacts: str):
+async def prepare(state, endpoint: str, artifacts: str, sdk_config: str | None = None):
     with _LOCK:
         if endpoint in _BROKEN:
-            raise RuntimeError('A preceding sample left native containment unconfirmed; remaining workspace samples are stopped')
+            raise RuntimeError('A preceding sample left containment unconfirmed; remaining workspace samples are stopped')
     key = str(uuid.uuid4())
     data = {'observations': store().get('native_observations')}
     directory = Path(artifacts) / str(state.sample_id) / str(state.epoch)
-    client = Workspace(endpoint, directory, data)
+    sdk = state.metadata.get('workspaceClient') == 'sdk'
+    if sdk:
+        from workspace_sdk import SdkWorkspace
+        config = json.loads(Path(sdk_config).read_text())
+        client = SdkWorkspace(endpoint, directory, data, config)
+    else:
+        client = Workspace(endpoint, directory, data)
+        data['workspaceClient'] = 'native'
     with _LOCK:
         _LIVE[key] = client
     store().set('workspace_key', key)
@@ -122,7 +160,7 @@ async def prepare(state, endpoint: str, artifacts: str):
         'Keep these supplied inputs and tests unchanged: ' + json.dumps(state.metadata['expected']['preserve'], ensure_ascii=False) + '. '
         'Export the finished workspace with workspace_export; a final-answer claim is not a submission. '
         'Re-export after any final source edits.'))
-    state.tools = [workspace_shell(), workspace_write_file(), workspace_restart(), workspace_status(), workspace_export()]
+    state.tools = [workspace_shell(sdk), workspace_write_file(sdk), workspace_restart(sdk), workspace_status(sdk), workspace_export(sdk)]
     return state
 
 
@@ -147,7 +185,13 @@ async def scripted(state):
     for name, text in reference['files'].items():
         if not isinstance(text, str):
             raise ValueError('Reference source files must be UTF-8 text')
-        await invoke('workspace_write_file', {'path': name, 'text': text, 'replace': name in state.metadata['fixture']['files']})
+        arguments = {'path': name, 'text': text}
+        if state.metadata.get('workspaceClient') != 'sdk':
+            arguments['replace'] = name in state.metadata['fixture']['files']
+        await invoke('workspace_write_file', arguments)
+    if (await invoke('workspace_restart', {})).get('state') != 'ready':
+        raise RuntimeError('Scripted workspace restart did not become ready')
+    await invoke('workspace_status', {})
     for command in reference['check']:
         await invoke('workspace_shell', {'command': command})
     if not (await invoke('workspace_export', {})).get('exported'):

@@ -25,6 +25,7 @@ def summarize(log) -> dict:
             'failedChecks': [s.explanation for s in scores if s.value != 'C'],
             'limit': sample.limit.type if sample.limit else None,
             'kind': (sample.metadata or {}).get('kind', 'native'),
+            'workspaceClient': workspace.get('workspaceClient', 'native') if workspace else None,
             'apiCalls': len(agent_calls),
             'harnessApiCalls': harness_calls,
             'refusedCalls': sum(o['status'] is not None and o['status'] >= 400 for o in agent_calls),
@@ -54,9 +55,10 @@ def write(log, directory: Path, budget: dict | None = None) -> dict:
     (directory / 'summary.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     lines = ['# Sandcrab evaluation', '', f"Evidence: **{result['metadata']['evidenceKind']}**. Revision: `{result['revision']}`.",
              f"Model: `{result['model']}`. Corpus: `{result['metadata']['corpusSha256']}`.", '',
-             ('Scripted results validate the harness and native interface; they do not measure model usability.'
+             ('Scripted results validate the harness and selected interfaces; they do not measure model usability.'
               if result['metadata']['evidenceKind'] == 'scripted' else
               'Model-directed results measure the selected synthetic Sandcrab tasks and consumer tools. Costs are peak-rate upper estimates, not invoices.'), '',
+             f"Workspace client: `{result['metadata'].get('workspaceInterface')}`. Grader: `{result['metadata'].get('workspaceGraderInterface')}`.", '',
              f"[Inspect log](logs/{result['log']}) · [Transcript viewer](viewer/index.html)", '',
              '| Case | Passes / attempts | Tool calls | Agent / harness API calls | Refused / tool errors / transport failures | Help reads | Seconds mean / max | Tokens | Cost USD |',
              '|---|---:|---:|---:|---:|---:|---:|---:|---:|']

@@ -1,5 +1,6 @@
 """Internal unprivileged runner, invoked by native.py for a disposable fixture only."""
 import argparse
+import logging
 from pathlib import Path
 import subprocess
 import sys
@@ -20,12 +21,17 @@ def main():
     parser.add_argument('--revision', required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
     parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
+    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both'], default='native')
+    parser.add_argument('--sdk-config')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
     baseline = args.mode == 'scripted'
-    task = sandcrab_native(args.endpoint, baseline=baseline, suite=args.suite, artifacts=str(args.output / 'artifacts'))
+    # The SDK logs full exception responses. Retain sanitized transport receipts instead.
+    logging.getLogger('opensandbox').setLevel(logging.CRITICAL)
+    task = sandcrab_native(args.endpoint, baseline=baseline, suite=args.suite, artifacts=str(args.output / 'artifacts'),
+                          workspace_client=args.workspace_client, sdk_config=args.sdk_config)
     task.metadata['revision'] = args.revision
     ledger = None
     costs = None

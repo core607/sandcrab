@@ -1,13 +1,33 @@
 #!/usr/bin/env python3
 """Root controller creates a disposable native service; Inspect runs as its ordinary client."""
 import argparse
+import json
 import os
 from pathlib import Path
 import pwd
 import shutil
+import secrets
 import signal
+import socket
 import subprocess
 import sys
+
+
+def sdk_configuration(fixture, client):
+    token = secrets.token_hex(32)
+    server, consumer = fixture.root / 'sdk-server.token', fixture.root / 'sdk-client.json'
+    server.write_text(token + '\n')
+    server.chmod(0o600)
+    with socket.socket() as available:
+        available.bind(('127.0.0.1', 0))
+        domain = f'127.0.0.1:{available.getsockname()[1]}'
+    consumer.write_text(json.dumps({'domain': domain, 'token': token}))
+    consumer.chmod(0o600)
+    os.chown(consumer, client.pw_uid, client.pw_gid)
+    configuration = fixture.config.read_text().replace('[service]', '[service]\nopensandbox = true', 1)
+    configuration = configuration.replace('[profiles.python]', '[profiles.python]\ntransfer_bytes = 2097152', 1)
+    fixture.config.write_text(configuration + f'\n[tcp]\nlisten = "{domain}"\ntoken_file = {json.dumps(str(server))}\n')
+    return str(consumer)
 
 
 def main():
@@ -18,10 +38,13 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
     parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
+    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both'], default='native')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
+    if args.workspace_client != 'native' and args.suite == 'native':
+        parser.error('SDK clients require workspace or all tasks')
     if os.geteuid() != 0:
         parser.error('native preflight requires root to create its isolated fixture')
     key = os.environ.pop('DEEPSEEK_API_KEY', '')
@@ -65,14 +88,18 @@ def main():
         fixture.example(source / 'examples/sandcrab-build-test.sh')
         fixture.session_cleanup_failure()
         fixture.startup_cancellation(session=True)
+        sdk_args = []
         if args.suite != 'native':
             # Native lifecycle preflight keeps its short TTL assertions. Model work
             # gets enough lifetime for generation, independent grading and cleanup.
             fixture.config.write_text(fixture.config.read_text().replace('session_ttl_millis = 60000', 'session_ttl_millis = 600000', 1))
+            if args.workspace_client != 'native':
+                sdk_args = ['--sdk-config', sdk_configuration(fixture, client)]
             module.call('systemctl', 'restart', fixture.unit)
             fixture.wait_ready()
             assert fixture.info['profiles']['python']['sessionTtlMillis'] == 600000
             fixture.receipt['evaluationSessionTtlMillis'] = 600000
+            fixture.receipt['workspaceClient'] = args.workspace_client
         fixture.receipt['scope'] = 'Disposable native service for Inspect ' + args.mode + ' ' + args.suite + ' evaluation; no production endpoint'
         revision = subprocess.run(['git', '-c', f'safe.directory={source}', 'rev-parse', 'HEAD'],
                                   cwd=source, check=True, capture_output=True, text=True).stdout.strip()
@@ -98,7 +125,8 @@ def main():
         # Preserve the venv path: resolving its python symlink selects the base interpreter.
         child = subprocess.Popen([str(args.python.absolute()), str(staged / 'run.py'),
                                   '--endpoint', str(fixture.socket), '--output', str(output), '--revision', revision,
-                                  '--mode', args.mode, '--suite', args.suite, '--epochs', str(args.epochs), '--model', args.model, '--budget-usd', args.budget_usd],
+                                  '--mode', args.mode, '--suite', args.suite, '--workspace-client', args.workspace_client,
+                                  '--epochs', str(args.epochs), '--model', args.model, '--budget-usd', args.budget_usd, *sdk_args],
                                  cwd=staged, env=child_env, start_new_session=True,
                                  user=client.pw_uid, group=client.pw_gid, extra_groups=[client.pw_gid])
         try:
