@@ -24,12 +24,13 @@ pub struct Sandbox {
     pub id: String,
     pub incarnation: String,
     pub environment: BTreeMap<String, String>,
-    profile: String,
+    pub profile: String,
     metadata: BTreeMap<String, String>,
     created: u64,
     token: Token,
     pub gate: Mutex<()>,
     pub closing: AtomicBool,
+    pub contexts: Mutex<crate::sdk_contexts::Contexts>,
 }
 #[derive(Default)]
 pub struct State {
@@ -72,6 +73,9 @@ fn split(path: &str) -> (&str, &str) {
 fn execd(path: &str) -> Option<(&str, &str)> {
     let (id, action) = path.strip_prefix("/opensandbox/")?.split_once('/')?;
     sandcrab_core::uuid(id).then_some((id, action))
+}
+pub(crate) fn empty_post(path: &str) -> bool {
+    matches!(execd(path), Some((_, "session")))
 }
 pub fn write(stream: &Stream, status: u16, value: &Value, close: bool) -> io::Result<()> {
     let bytes = if status == 204 || (status == 200 && value.is_null()) {
@@ -180,13 +184,13 @@ impl Service {
             "/v1/sessions",
             &serde_json::to_vec(&input).unwrap(),
         ))?;
-        let incarnation = self
+        let (incarnation, expires_at) = self
             .registry
             .lock()
             .unwrap()
             .sessions
             .get(&id)
-            .map(|s| s.incarnation.clone())
+            .map(|s| (s.incarnation.clone(), s.expires_at))
             .ok_or((503, "SANDBOX_OUTCOME_UNKNOWN"))?;
         let sandbox = Arc::new(Sandbox {
             id: id.clone(),
@@ -198,9 +202,10 @@ impl Service {
             token,
             gate: Mutex::new(()),
             closing: AtomicBool::new(false),
+            contexts: Mutex::new(crate::sdk_contexts::Contexts::default()),
         });
         let response = json!({"id":id,"entrypoint":sdk_types::IDLE,"metadata":sandbox.metadata,
-            "createdAt":sdk_types::timestamp(sandbox.created),"expiresAt":sdk_types::timestamp(accepted["expiresAtMillis"].as_u64().unwrap()),
+            "createdAt":sdk_types::timestamp(sandbox.created),"expiresAt":sdk_types::timestamp(expires_at),
             "status":{"state":state(&accepted)}});
         self.sdk.state.lock().unwrap().sandboxes.insert(id, sandbox);
         Ok((202, response))
@@ -210,6 +215,7 @@ impl Service {
         match self.sdk_native(sandbox, "close", Some(&json!({}))) {
             Ok(_) => (),
             Err((404 | 409, "NOT_FOUND" | "SANDBOX_CHANGED")) => {
+                self.sdk_close_contexts(sandbox)?;
                 self.sdk.state.lock().unwrap().sandboxes.remove(&sandbox.id);
                 return Ok(());
             }
@@ -239,6 +245,7 @@ impl Service {
         for command in commands {
             self.sdk_collect(&command);
         }
+        self.sdk_close_contexts(sandbox)?;
         self.sdk_native(sandbox, "forget", Some(&json!({})))?;
         self.sdk.state.lock().unwrap().sandboxes.remove(&sandbox.id);
         Ok(())
@@ -260,7 +267,7 @@ impl Service {
             let native = match self.sdk_native(&sandbox, "", None) {
                 Ok(value) => value,
                 Err((404 | 409, "NOT_FOUND" | "SANDBOX_CHANGED")) => {
-                    self.sdk.state.lock().unwrap().sandboxes.remove(&sandbox.id);
+                    let _ = self.sdk_remove(&sandbox);
                     continue;
                 }
                 Err(_) => continue,
@@ -377,6 +384,9 @@ impl Service {
                 let request = crate::sdk_fs::Request::parse(method, action, &pairs, body)?;
                 return Ok((200, self.sdk_file_operation(id, &request)?));
             }
+            if pairs.is_empty() && (action == "session" || action.starts_with("session/")) {
+                return self.sdk_context_route(&sandbox, method, action, body);
+            }
             return self.sdk_command_route(&sandbox, method, action, &pairs);
         }
         let rest = path
@@ -402,14 +412,14 @@ impl Service {
                 if sandbox.closing.load(Ordering::SeqCst) {
                     return Err((409, "SANDBOX_CLOSING"));
                 }
-                let value = self.sdk_native(
+                self.sdk_native(
                     &sandbox,
                     "renew",
                     Some(&json!({"ttlMillis":sdk_types::expiration(&input.expires_at)?})),
                 )?;
                 Ok((
                     200,
-                    json!({"expiresAt":sdk_types::timestamp(value["expiresAtMillis"].as_u64().unwrap())}),
+                    json!({"expiresAt":sdk_types::timestamp(self.sdk_expiration(&sandbox)?)}),
                 ))
             }
             ("GET", "endpoints/44772" | "endpoints/18080") => {
@@ -448,9 +458,10 @@ impl Service {
         let (path, query) = split(&head.path);
         if head.method == "POST"
             && query.is_empty()
-            && let Some((id, "command")) = execd(path)
+            && let Some((id, action)) = execd(path)
+            && (action == "command" || crate::sdk_contexts::execution_path(action).is_some())
         {
-            return match self.sdk_execute(id, body) {
+            return match self.sdk_execute(id, crate::sdk_contexts::execution_path(action), body) {
                 Ok(observer) => observer.write(stream, close),
                 Err(error) => {
                     let (status, value) = sdk_types::reply(error);

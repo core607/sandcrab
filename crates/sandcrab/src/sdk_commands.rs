@@ -45,6 +45,7 @@ impl Outcome {
 pub struct Command {
     pub id: String,
     pub sandbox: String,
+    context: crate::sdk_contexts::Context,
     content: String,
     started: u64,
     incarnation: Mutex<Option<String>>,
@@ -89,18 +90,42 @@ impl Service {
             let _ = registry.forget(&command.id);
         }
     }
-    pub(crate) fn sdk_execute(self: &Arc<Self>, sandbox: &str, body: &[u8]) -> Result<Observer> {
+    pub(crate) fn sdk_execute(
+        self: &Arc<Self>,
+        sandbox: &str,
+        context: Option<&str>,
+        body: &[u8],
+    ) -> Result<Observer> {
         let sandbox = self.sdk.sandbox(sandbox)?;
-        let input: sdk_types::Execute = sdk_types::parse(body)?;
-        let (content, source) = input.source(&sandbox.environment)?;
+        let (content, source, timeout) = if context.is_some() {
+            let input: crate::sdk_contexts::Execute = sdk_types::parse(body)?;
+            let (content, source) = input.source()?;
+            (content, source, input.timeout.filter(|t| *t != 0))
+        } else {
+            let input: sdk_types::Execute = sdk_types::parse(body)?;
+            let (content, source) = input.source(&sandbox.environment)?;
+            (content, source, input.timeout)
+        };
         let _gate = sandbox.gate.lock().unwrap();
         if sandbox.closing.load(Ordering::SeqCst) {
             return Err((409, "SANDBOX_CLOSING"));
         }
+        let context = self.sdk_command_context(&sandbox, context)?;
+        self.sdk_dispatch(&sandbox, &context, content, source, timeout)
+    }
+    pub(crate) fn sdk_dispatch(
+        self: &Arc<Self>,
+        sandbox: &Sandbox,
+        context: &crate::sdk_contexts::Context,
+        content: String,
+        source: String,
+        timeout: Option<u64>,
+    ) -> Result<Observer> {
         let admission = events::admit(self).map_err(|(status, _)| (status, "EVENT_CAPACITY"))?;
         let command = Arc::new(Command {
             id: sandcrab_core::new_uuid().map_err(|_| (503, "COMMAND_UNAVAILABLE"))?,
             sandbox: sandbox.id.clone(),
+            context: context.clone(),
             content,
             started: sdk_types::now(),
             incarnation: Mutex::new(None),
@@ -121,11 +146,11 @@ impl Service {
             }
             book.commands.push_back(command.clone());
         }
-        let accepted = self.sdk_native(
-            &sandbox,
+        let accepted = self.sdk_context_native(
+            context,
             "commands",
             Some(&json!({"id":command.id,"serverId":self.id,
-            "command":source,"timeoutMillis":input.timeout})),
+            "command":source,"timeoutMillis":timeout})),
         );
         if let Err(error) = accepted {
             self.sdk
@@ -197,7 +222,14 @@ impl Service {
                     return Err((409, "COMMAND_CHANGED"));
                 }
                 if !run.terminal() {
-                    registry.stop_session(&sandbox.id, "closed");
+                    if registry
+                        .sessions
+                        .get(&command.context.id)
+                        .is_none_or(|s| s.incarnation != command.context.incarnation)
+                    {
+                        return Err((409, "CONTEXT_CHANGED"));
+                    }
+                    registry.stop_session(&command.context.id, "closed");
                 }
             } else if command.outcome.lock().unwrap().is_none() {
                 return Err((503, "COMMAND_OUTCOME_UNKNOWN"));
@@ -235,6 +267,27 @@ impl Service {
             }
         }
         Ok((200, value))
+    }
+}
+
+impl Observer {
+    pub(crate) fn wait_setup(self) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            self.service.sdk_collect(&self.command);
+            let outcome = self.command.outcome.lock().unwrap().clone();
+            if let Some(outcome) = outcome {
+                return if outcome.state == "succeeded" {
+                    Ok(())
+                } else {
+                    Err((400, "CONTEXT_INITIALIZATION_FAILED"))
+                };
+            }
+            if Instant::now() >= deadline {
+                return Err((503, "CONTEXT_INITIALIZATION_UNKNOWN"));
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }
 

@@ -22,6 +22,64 @@ def output(execution, stream='stdout'):
     return ''.join(item.text for item in getattr(execution.logs, stream))
 
 
+async def contexts(sandbox, commands, checks):
+    await sandbox.files.create_directories([WriteEntry(path='shell-work/child')])
+    first = await sandbox.commands.create_session(working_directory='/workspace/shell-work')
+    second = await sandbox.commands.create_session()
+    execution = await sandbox.commands.run_in_session(first,
+        'LOCAL=first; marker() { printf function; }; cd child; printf kept > shared')
+    commands.append(execution.id)
+    assert execution.exit_code == 0
+    execution = await sandbox.commands.run_in_session(first, 'printf "%s\\n" "$LOCAL" "$SDK_VALUE"; pwd; marker')
+    commands.append(execution.id)
+    assert output(execution) == "first\nbase ' quoted\n/workspace/shell-work/child\nfunction"
+    execution = await sandbox.commands.run_in_session(second,
+        'printf "%s\\n" "${LOCAL-unset}"; pwd; cat shell-work/child/shared')
+    commands.append(execution.id)
+    assert output(execution) == 'unset\n/workspace\nkept'
+    for directory in ['/workspace', None]:
+        execution = await sandbox.commands.run_in_session(first, 'pwd', working_directory=directory)
+        commands.append(execution.id)
+        assert output(execution) == '/workspace\n'
+    await sandbox.commands.delete_session(first)
+    try:
+        await sandbox.commands.run_in_session(first, 'touch /workspace/revived')
+    except SandboxApiException as error:
+        assert error.status_code == 404
+    else:
+        raise AssertionError('Deleted shell was recreated')
+    assert await sandbox.files.read_file('shell-work/child/shared') == 'kept'
+    checks.append('named-shell-state-working-directory-and-delete-preserve-shared-files')
+
+    execution = await sandbox.commands.run_in_session(second, 'sleep 30', timeout=timedelta(milliseconds=100))
+    commands.append(execution.id)
+    assert execution.error is not None
+    try:
+        await sandbox.commands.run_in_session(second, 'touch /workspace/revived')
+    except SandboxApiException as error:
+        assert error.status_code == 409
+    else:
+        raise AssertionError('Timed-out named shell was recreated')
+    await sandbox.commands.delete_session(second)
+    execution = await sandbox.commands.run('sleep 30', opts=RunCommandOpts(timeout=timedelta(milliseconds=100)))
+    commands.append(execution.id)
+    assert execution.error is not None
+    execution = await sandbox.commands.run('test ! -e revived; cat shell-work/child/shared')
+    commands.append(execution.id)
+    assert execution.exit_code == 0 and output(execution) == 'kept'
+    checks.append('named-and-independent-command-timeouts-preserve-the-sandbox')
+    try:
+        await sandbox.commands.create_session(working_directory='/workspace/missing-context-directory')
+    except SandboxApiException as error:
+        # Pinned 1.1.0 passes the parsed error to a response handler and loses its
+        # HTTP status. The independent wire probe verifies the actual 400 refusal.
+        assert error.status_code == 200 and 'unexpected response' in str(error)
+    else:
+        raise AssertionError('Missing working directory created a usable context')
+    remaining = await sandbox.commands.create_session()
+    return [first, second, remaining]
+
+
 async def files(sandbox, commands, checks):
     data = bytes(range(256)) * 513
     await sandbox.files.write_files([
@@ -221,6 +279,7 @@ async def exercise(args):
         commands.append(execution.id)
         assert execution.exit_code == 0
         checks.append('unsupported-execution-option-refuses-without-side-effects')
+        context_ids = await contexts(sandbox, commands, checks)
         await files(sandbox, commands, checks)
         await directories(sandbox, commands, checks)
 
@@ -245,7 +304,8 @@ async def exercise(args):
                 await sandbox.close()
         await manager.close()
     return {'result': 'PASS', 'client': 'python', 'sdkVersion': importlib.metadata.version('opensandbox'),
-            'checks': checks, 'sandboxIds': identities, 'commandIds': commands,
+            'checks': checks, 'sandboxIds': identities, 'commandIds': commands, 'contextIds': context_ids,
+            'knownLimitations': ['OpenSandbox 1.1.0 create_session reports status 200 for a parsed HTTP 400 error'],
             'packages': {name: importlib.metadata.version(name) for name in ['opensandbox', 'httpx', 'pydantic']}}
 
 

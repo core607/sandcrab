@@ -16,6 +16,7 @@ import time
 import native_probe
 from native_probe import call, http
 import opensandbox_contract_probe
+import opensandbox_contexts_probe
 from resources_probe import ResourcesProbe
 
 
@@ -54,12 +55,26 @@ class SdkProbe(ResourcesProbe):
         config = config.replace('output_limit_bytes = 4096', 'output_limit_bytes = 65536')
         config = config.replace('[profiles.python]', '[profiles.python]\ntransfer_bytes = 1048576')
         self.config.write_text(config + f'\n[tcp]\nlisten = "{self.endpoint}"\ntoken_file = {json.dumps(str(server))}\n')
+        helpers = self.root / 'context-cleanup-fault'
+        helpers.mkdir(mode=0o755)
+        self.context_cleanup_fault = helpers / 'fail-id'
+        (helpers / 'umount').write_text(f'''#!/usr/bin/python3
+import os, sys
+from pathlib import Path
+flag = Path({str(self.context_cleanup_fault)!r})
+if flag.exists() and Path(sys.argv[-1]).name == flag.read_text():
+    raise SystemExit(79)
+os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
+''')
+        (helpers / 'umount').chmod(0o755)
+        self.launch_path = str(helpers) + ':/usr/bin:/bin'
         self.receipt.update(scope='Published OpenSandbox SDK clients through actual native TCP and sandbox units; no model or production cutover',
                             specification={'repository': 'https://github.com/opensandbox-group/OpenSandbox',
                                            'commit': 'b1a29cf93a823a95913f7943010febb3f29de05c',
                                            'files': ['specs/sandbox-lifecycle.yml', 'specs/execd-api.yaml']},
                             opensandboxProbeSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                             contractProbeSha256=hashlib.sha256(Path(opensandbox_contract_probe.__file__).read_bytes()).hexdigest(),
+                            contextsProbeSha256=hashlib.sha256(Path(opensandbox_contexts_probe.__file__).read_bytes()).hexdigest(),
                             pythonClientSha256=hashlib.sha256(client.read_bytes()).hexdigest())
 
     def client_flow(self, command, label):
@@ -84,8 +99,9 @@ class SdkProbe(ResourcesProbe):
             client = json.loads(out)
             assert client['result'] == 'PASS' and client['sdkVersion'] == '1.1.0'
             self.receipt[label] = client
-            for identity in client['sandboxIds']:
+            for identity in client['sandboxIds'] + client['contextIds']:
                 assert http(self.socket, 'GET', '/v1/sessions/' + identity)[0] == 404
+            assert not list((self.socket.parent / 'jobs').iterdir()), 'SDK-owned shell workspace was not released'
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 if all(http(self.socket, 'GET', '/v1/runs/' + identity)[0] == 404 for identity in client['commandIds']):
@@ -109,6 +125,7 @@ class SdkProbe(ResourcesProbe):
                               '-cp', str(self.jvm_libs / '*'), 'example.sandcrab.SdkConformance',
                               self.endpoint, str(self.key), 'barrier'], 'kotlin')
         opensandbox_contract_probe.Contract(self).tests()
+        opensandbox_contexts_probe.Contexts(self).tests()
 
 
 def main():

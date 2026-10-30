@@ -19,6 +19,7 @@ mod multipart;
 mod opensandbox;
 mod runtime;
 mod sdk_commands;
+mod sdk_contexts;
 mod sdk_download;
 mod sdk_file_io;
 mod sdk_files;

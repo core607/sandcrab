@@ -84,7 +84,7 @@ pub(crate) struct Session {
     request: Open,
     pub state: String,
     deadline: Instant,
-    expires_at: u64,
+    pub expires_at: u64,
     cancelled: Arc<AtomicBool>,
     reason: String,
     pending: Option<Work>,

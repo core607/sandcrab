@@ -193,6 +193,17 @@ pub struct Execute {
 pub fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
+pub fn working_directory(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 4096
+        || value.contains('\0')
+        || value.contains('$')
+        || value.starts_with('~')
+    {
+        return Err((400, "UNSUPPORTED_WORKING_DIRECTORY"));
+    }
+    Ok(())
+}
 impl Execute {
     pub fn source(&self, environment: &BTreeMap<String, String>) -> Result<(String, String)> {
         if self.background || self.uid.is_some() || self.gid.is_some() {
@@ -219,14 +230,7 @@ impl Execute {
             _ => return Err((400, "INVALID_COMMAND")),
         };
         let cwd = self.cwd.as_deref().unwrap_or("/workspace");
-        if cwd.is_empty()
-            || cwd.len() > 4096
-            || cwd.contains('\0')
-            || cwd.contains('$')
-            || cwd.starts_with('~')
-        {
-            return Err((400, "UNSUPPORTED_WORKING_DIRECTORY"));
-        }
+        working_directory(cwd)?;
         let mut env = environment.clone();
         env.extend(self.envs.clone());
         if !strings(&env, true) {

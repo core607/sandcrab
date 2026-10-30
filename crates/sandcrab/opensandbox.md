@@ -4,8 +4,7 @@ Set `service.opensandbox = true` with the authenticated loopback TCP listener in
 [config.example.toml](config.example.toml). The adapter is disabled by default.
 It targets the published OpenSandbox 1.1.0 Python and Kotlin SDKs. The
 [independent SDK clients](../../../evals/sdk/README.md) exercise both against
-the native daemon. Named shell contexts remain under the
-[service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
+the native daemon, including named shell contexts.
 
 ## Connection and ownership
 
@@ -103,14 +102,43 @@ execution are refused. Native timeout and output limits still apply.
 Command status retains at most `service.max_records` outcomes across SDK
 sandboxes, evicting completed, unobserved entries first. Native result records are
 reclaimed after observation ends. Disconnecting the SSE stream does not replay
-or cancel a command. Timeout and explicit cancellation terminate the enclosing
-native session, so create another sandbox before executing again.
+or cancel a command. Timeout and explicit cancellation terminate the command's
+internal shell while preserving the sandbox workspace. A subsequent independent
+command creates another internal shell. Unconfirmed cleanup fences the entire
+workspace and retains its storage and admission until restart recovery.
 
 Output is decoded incrementally as UTF-8; invalid bytes become U+FFFD. Use file
 downloads for binary results. An uncertain command outcome emits an error without
 a successful completion event. The [native host-call interface](host-calls.md)
 has separate result ownership; composing it with SDK command retention is not
 yet supported by the adapter.
+
+## Shell contexts
+
+Use `commands.create_session(working_directory=...)`, `run_in_session(id, command)`
+and `delete_session(id)` in Python; Kotlin exposes `createSession`, `runInSession`
+and `deleteSession`. The wire paths are `POST /session`, `POST /session/ID/run`
+and `DELETE /session/ID` beneath the sandbox's execd endpoint. Creating a context
+accepts an empty body and returns `session_id`.
+
+A named context retains variables, functions, working directory and background
+processes. Its initial environment comes from sandbox creation. A literal
+working-directory override persists for subsequent commands; that directory must
+exist. Contexts share `/workspace` and the parent's aggregate resource limits,
+while each has its own `/tmp`. Different contexts may execute concurrently;
+another command in a busy context is refused.
+
+Deleting, exiting, cancelling or timing out a named context preserves shared
+files and other contexts. An ended named context never silently restarts; delete
+its retained identity and create a new context. Sandbox expiry or deletion closes
+every context. Context identities count against native `max_records`; their
+generations prevent an old SDK handle from reaching a reused native ID. Omitted
+or zero session-run timeouts use the bounded profile default.
+
+OpenSandbox Python 1.1.0 loses the HTTP status of a parsed `create_session` error:
+an HTTP 400 becomes a `SandboxApiException` with `status_code=200`. Treat that
+exception as failure. The conformance receipt records this SDK limitation;
+independent wire checks verify Sandcrab's actual status and resource cleanup.
 
 ## Files
 

@@ -44,7 +44,9 @@ checks and cleanup. Failed attempts keep their receipts and separate
 operator diagnostics. Use a different report path for every attempt. Supplying
 only `--python` runs the Python client alone and cannot establish JVM support.
 The harness also exercises credential scope, reused native identities,
-disconnects, timeout, cancellation, directory management, literal replacement,
+disconnects, timeout, cancellation, named shell state and generation binding,
+parent expiry, directory management, literal replacement,
 glob search, byte and line selections,
 and file refusal paths against the same
-service. No result establishes production adoption or model usability.
+service. Receipts retain known SDK limitations separately from wire conformance.
+No result establishes production adoption or model usability.

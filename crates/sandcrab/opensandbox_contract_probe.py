@@ -111,13 +111,14 @@ class Contract:
         self.probe.session_forget(replacement)
         self.probe.done('sdk-stale-credentials-and-delete-do-not-follow-a-reused-native-id')
 
-    def stream(self, identity, headers, command, timeout=None):
+    def stream(self, identity, headers, command, timeout=None, context=None):
         connection = HTTPConnection(self.probe.endpoint, timeout=15)
         body = {'command': command}
         if timeout is not None:
             body['timeout'] = timeout
         try:
-            connection.request('POST', '/opensandbox/' + identity + '/command',
+            action = 'command' if context is None else 'session/' + context + '/run'
+            connection.request('POST', '/opensandbox/' + identity + '/' + action,
                                json.dumps(body).encode(), headers=headers)
             response = connection.getresponse()
             assert response.status == 200
@@ -174,8 +175,11 @@ class Contract:
             group = call('systemctl', 'show', self.probe.name + '-' + identity + '.service',
                          '-p', 'ControlGroup', '--value').stdout.strip()
             assert group.startswith('/') and group != '/'
-            cgroup = Path('/sys/fs/cgroup') / group.lstrip('/')
+            parent_cgroup = Path('/sys/fs/cgroup') / group.lstrip('/')
             connection, response, command = self.stream(identity, headers, 'sleep 30', None if cancel else 100)
+            status, native = http(self.probe.socket, 'GET', '/v1/runs/' + command)
+            assert status == 200 and native['sessionId'] != identity
+            cgroup = parent_cgroup.parent / (self.probe.name + '-' + native['sessionId'] + '.service')
             try:
                 if cancel:
                     assert self.request('DELETE', '/opensandbox/' + identity + '/command?id=' + command,
@@ -186,9 +190,19 @@ class Contract:
                 connection.close()
             self.cleanup_run(command)
             assert not any(path.read_text().strip() for path in cgroup.rglob('cgroup.procs'))
-            self.native_terminal(identity, 'closed' if cancel else 'failed')
-            self.delete(identity, reaped=True)
-        self.probe.done('sdk-command-timeout-and-cancellation-contain-the-native-session')
+            assert http(self.probe.socket, 'GET', '/v1/sessions/' + identity)[1]['state'] == 'ready'
+            connection, response, command = self.stream(identity, headers, 'printf recovered')
+            events = []
+            while (event := self.frame(response)) is not None:
+                events.append(event)
+            response.close()
+            connection.close()
+            assert events[-1]['type'] == 'execution_complete'
+            assert not any(event['type'] == 'error' for event in events)
+            assert ''.join(event.get('text', '') for event in events if event['type'] == 'stdout') == 'recovered'
+            self.cleanup_run(command)
+            self.delete(identity)
+        self.probe.done('sdk-command-timeout-and-cancellation-contain-the-child-and-preserve-the-sandbox')
 
     @staticmethod
     def multipart(entries):

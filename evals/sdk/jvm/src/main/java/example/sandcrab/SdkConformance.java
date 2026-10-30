@@ -44,18 +44,12 @@ public final class SdkConformance {
             String sdkArtifactSha256,
             List<String> checks,
             List<String> sandboxIds,
-            List<String> commandIds) {}
+            List<String> commandIds,
+            List<String> contextIds) {}
 
     public static void main(String[] args) throws Exception {
         require(args.length == 3, "Pass ENDPOINT TOKEN_FILE barrier-or-direct");
-        Path artifact = Path.of(Sandbox.class
-                .getProtectionDomain()
-                .getCodeSource()
-                .getLocation()
-                .toURI());
-        String digest =
-                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(artifact)));
-        require(SDK_SHA.equals(digest), "Unexpected Kotlin SDK artifact");
+        String digest = sdkDigest();
         String token = Files.readString(Path.of(args[1])).strip();
         ConnectionConfig config = ConnectionConfig.builder()
                 .domain(args[0])
@@ -81,6 +75,7 @@ public final class SdkConformance {
                 barrier(args[2], sandbox.getId());
                 lifecycle(sandbox, manager, metadata, token, checks);
                 commands(sandbox, commands, checks);
+                List<String> contexts = SdkContexts.exercise(sandbox, commands, checks);
                 files(sandbox, commands, checks);
                 directories(sandbox, commands, checks);
                 sandbox.renew(Duration.ofSeconds(90));
@@ -94,7 +89,8 @@ public final class SdkConformance {
                         digest,
                         checks,
                         List.of(sandbox.getId()),
-                        commands)));
+                        commands,
+                        contexts)));
             } finally {
                 try {
                     if (!deleted) {
@@ -186,7 +182,19 @@ public final class SdkConformance {
         checks.add("bounded-native-result-reclamation");
     }
 
-    private static String output(Execution execution) {
+    private static String sdkDigest() throws Exception {
+        Path artifact = Path.of(Sandbox.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+        String digest =
+                HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(artifact)));
+        require(SDK_SHA.equals(digest), "Unexpected Kotlin SDK artifact");
+        return digest;
+    }
+
+    static String output(Execution execution) {
         return execution.getLogs().getStdout().stream()
                 .map(OutputMessage::getText)
                 .collect(Collectors.joining());
@@ -450,13 +458,13 @@ public final class SdkConformance {
         remember(sandbox.commands().run("test ! -e /workspace/project && test -f /workspace/text"), ids, 0);
     }
 
-    private static void remember(Execution execution, List<String> ids, int code) {
+    static void remember(Execution execution, List<String> ids, int code) {
         require(execution.getComplete() != null, "Command completion was not observed");
         require(Integer.valueOf(code).equals(execution.getExitCode()), "Command exit code changed");
         ids.add(execution.getId());
     }
 
-    private static void require(boolean condition, String message) {
+    static void require(boolean condition, String message) {
         if (!condition) {
             throw new IllegalStateException(message);
         }

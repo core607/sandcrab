@@ -130,7 +130,10 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             if head.header("expect").is_some()
                 || head.length > 65536
                 || !["GET", "POST", "DELETE"].contains(&head.method.as_str())
-                || (head.method == "POST") != (head.length > 0)
+                || (head.method != "POST" && head.length != 0)
+                || (head.method == "POST"
+                    && head.length == 0
+                    && !crate::opensandbox::empty_post(&head.path))
             {
                 drop(body);
                 let (status, value) = crate::sdk_types::reply((400, "INVALID_HTTP"));
