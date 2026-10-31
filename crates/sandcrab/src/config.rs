@@ -1,6 +1,6 @@
 //! Operator-owned profiles; callers choose a name and may only lower execution limits.
 use sandcrab_core::fs::{normal, protected_directory, protected_file};
-use sandcrab_daemon::install::{execution_account, unit_name};
+use sandcrab_core::install::{execution_account, unit_name};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,

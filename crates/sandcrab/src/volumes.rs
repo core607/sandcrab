@@ -162,14 +162,14 @@ impl Service {
             }
             let code = match result {
                 Ok(result)
-                    if result.end == sandcrab_daemon::job::End::Normal && result.exit_code == 0 =>
+                    if result.end == sandcrab_core::job::End::Normal && result.exit_code == 0 =>
                 {
                     None
                 }
                 Ok(result) => Some(match result.end {
-                    sandcrab_daemon::job::End::Timeout => "VOLUME_TIMEOUT",
-                    sandcrab_daemon::job::End::Cancelled => "INTERRUPTED",
-                    sandcrab_daemon::job::End::ResourceLimit => "RESOURCE_LIMIT",
+                    sandcrab_core::job::End::Timeout => "VOLUME_TIMEOUT",
+                    sandcrab_core::job::End::Cancelled => "INTERRUPTED",
+                    sandcrab_core::job::End::ResourceLimit => "RESOURCE_LIMIT",
                     _ => "CLONE_FAILED",
                 }),
                 Err(_) => Some("CLONE_FAILED"),

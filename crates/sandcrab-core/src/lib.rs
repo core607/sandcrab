@@ -8,6 +8,8 @@ pub mod command;
 pub mod fs;
 pub mod http;
 pub mod ids;
+pub mod install;
+pub mod job;
 pub mod json;
 pub mod mailbox;
 pub mod raw;

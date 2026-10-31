@@ -11,7 +11,7 @@ use sandcrab_core::{
     unit::{Launch, checked, empty_group},
     uuid,
 };
-use sandcrab_daemon::{install, job};
+use sandcrab_core::{install, job};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{

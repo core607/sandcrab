@@ -3,7 +3,7 @@ use crate::{
     config::Profile,
     service::{Registry, Run, Service, error},
 };
-use sandcrab_daemon::job;
+use sandcrab_core::job;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{

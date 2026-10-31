@@ -411,7 +411,6 @@ dependencies = [
  "regex",
  "rustix",
  "sandcrab-core",
- "sandcrab-daemon",
  "sandcrab-launch",
  "sandcrab-shell",
  "serde",

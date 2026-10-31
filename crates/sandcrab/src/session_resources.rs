@@ -212,7 +212,7 @@ mod tests {
         assert!(!Group::owns(&config.service, &first.unit));
         assert_eq!(first.cgroup.parent(), Some(pool));
         assert_eq!(other.cgroup.parent(), Some(pool));
-        assert!(sandcrab_daemon::install::unit_name(&first.unit));
+        assert!(sandcrab_core::install::unit_name(&first.unit));
         assert!(Group::new(&config.service, pool, "../foreign").is_err());
         config.service.resource_slice = format!("{}.slice", "a".repeat(200));
         assert!(validate(&config.service).is_err());

@@ -2,12 +2,12 @@
 //! must not prevent recording deletion or recovery. Published data is never startup garbage.
 use crate::config::{Profile, Storage, invalid, name};
 use rustix::fs::{Gid, OFlags, Uid, chown};
+use sandcrab_core::install;
 use sandcrab_core::{
     fs::{normal, protected_directory, protected_file},
     unit::checked,
     uuid,
 };
-use sandcrab_daemon::install;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

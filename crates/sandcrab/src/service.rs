@@ -4,7 +4,7 @@ use crate::{
     config::{Profile, invalid},
     runtime::Runtime,
 };
-use sandcrab_daemon::job;
+use sandcrab_core::job;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
