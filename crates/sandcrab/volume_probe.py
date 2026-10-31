@@ -19,8 +19,10 @@ class VolumeProbe(Probe):
         super().__init__(binary, tools, report)
         self.storage = self.root / 'storage'
         self.storage.mkdir(mode=0o755)
+        self.storage.chmod(0o755)
         self.data = self.storage / 'data'
         self.data.mkdir(mode=0o755)
+        self.data.chmod(0o755)
         self.image = self.root / 'data.xfs'
         with self.image.open('xb') as image:
             image.truncate(512 * 1024 * 1024)
