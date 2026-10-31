@@ -56,7 +56,11 @@ class Calls:
                 uuid.UUID(incarnation)
                 assert 0 <= int(sequence) <= 64
                 self.cursor = fields['id']
-                return fields['event'], json.loads(fields['data'])
+                value = json.loads(fields['data'])
+                if fields['event'] == 'state':
+                    assert value['runId'] == self.run['id']
+                    assert value['serverId'] == self.run['serverId']
+                return fields['event'], value
             if line.startswith(b':'):
                 continue
             key, value = line.decode().split(':', 1)
@@ -109,6 +113,8 @@ class HostCallsProbe(Probe):
     def records(self, run):
         status, value = http(self.socket, 'GET', f'/v1/runs/{run["id"]}/calls')
         assert status == 200, value
+        assert value['runId'] == run['id'] and value['serverId'] == run['serverId']
+        assert str(uuid.UUID(value['incarnation'])) == value['incarnation']
         return value
 
     def output(self, run, expected):

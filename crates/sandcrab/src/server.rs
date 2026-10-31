@@ -385,6 +385,9 @@ fn send_snapshot(
     });
     let status = if range.is_some() { 206 } else { 200 };
     let mut headers = Vec::new();
+    if !sdk {
+        headers.push(("X-Sandcrab-Server-Id", service.id.as_str()));
+    }
     if let Some(range) = &range {
         headers.push(("Content-Range", range.as_str()));
     } else if !snapshot.text {

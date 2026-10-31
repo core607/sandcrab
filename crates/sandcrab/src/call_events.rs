@@ -104,7 +104,7 @@ impl Subscription {
         self.frame(
             stream,
             "state",
-            &json!({"runId":self.id,"calls":self.calls.list()}),
+            &json!({"runId":self.id,"serverId":self.service.id,"calls":self.calls.list()}),
         )?;
         let deadline = Instant::now() + events::TIMEOUT;
         let mut heartbeat = Instant::now() + Duration::from_secs(1);

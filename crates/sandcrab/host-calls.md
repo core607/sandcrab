@@ -61,10 +61,17 @@ The [OpenAPI contract](openapi.json) defines the schemas; request the bounded
 | `GET /v1/runs/ID/calls/events` | Stream unresolved requests and command completion as SSE |
 | `POST /v1/runs/ID/calls/CALL_ID/reply` | Supply `{"base64":"..."}` with canonical base64 reply bytes |
 
-SSE starts with `state`, carries `call` events with request bytes in `base64`, and
-ends with `result` after confirmed command containment. An `error`, heartbeat or
-EOF does not prove completion. Request IDs, payloads and digests are observations,
-not a grant to perform an outside action.
+SSE starts with `state`, naming `runId`, `serverId` and the call inventory. Its
+cursor identifies the command incarnation and position. Validate these against
+the retained run reference before handling requests; one call stream carries the
+identity needed for that check. `call` events carry request bytes in `base64`, and
+`result` confirms command completion and closure of its host-call mailbox; the
+[command lifecycle](README.md#command-events) determines whether background
+processes remain alive. An `error`, heartbeat or EOF does not prove completion.
+Request IDs, payloads and digests do not authorize an outside action.
+
+The call inventory also names `runId`, `serverId` and `incarnation` alongside its
+retained metadata, so reconciliation can verify which command owns the records.
 
 Each complete frame carries a command incarnation and request sequence. Reconnect
 explicitly with `Last-Event-ID`, or CLI `calls events --after CURSOR`, to continue

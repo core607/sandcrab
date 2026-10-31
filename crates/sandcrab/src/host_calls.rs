@@ -261,12 +261,16 @@ impl crate::service::Service {
         body: &[u8],
     ) -> (u16, Value) {
         use crate::service::error;
-        let (calls, _) = match self.calls(id) {
+        let (calls, incarnation) = match self.calls(id) {
             Ok(value) => value,
             Err(error) => return error,
         };
         if method == "GET" && action == "calls" {
-            return (200, calls.list());
+            let mut inventory = calls.list();
+            inventory["runId"] = id.into();
+            inventory["serverId"] = self.id.clone().into();
+            inventory["incarnation"] = incarnation.into();
+            return (200, inventory);
         }
         let Some(request) = action
             .strip_prefix("calls/")

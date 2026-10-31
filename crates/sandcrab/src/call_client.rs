@@ -82,6 +82,7 @@ pub fn events(endpoint: &Endpoint, id: &str, after: Option<&str>) -> io::Result<
         }
         let mut input = BufReader::new(body);
         let mut initial = true;
+        let mut server = None;
         while let Some(frame) = event_wire::read_frame(&mut input, FRAME)? {
             let next =
                 Cursor::parse(&frame.id).ok_or_else(|| invalid("Invalid host-call cursor"))?;
@@ -93,10 +94,14 @@ pub fn events(endpoint: &Endpoint, id: &str, after: Option<&str>) -> io::Result<
             if initial {
                 if frame.kind != "state"
                     || frame.data["runId"] != id
+                    || !frame.data["serverId"]
+                        .as_str()
+                        .is_some_and(sandcrab_core::uuid)
                     || next.sequence != cursor.as_ref().map_or(0, |c| c.sequence)
                 {
                     return Err(invalid("Invalid host-call initial state"));
                 }
+                server = Some(frame.data["serverId"].clone());
                 initial = false;
             } else {
                 match frame.kind.as_str() {
@@ -119,6 +124,7 @@ pub fn events(endpoint: &Endpoint, id: &str, after: Option<&str>) -> io::Result<
                     }
                     "result" => {
                         if frame.data["run"]["id"] != id
+                            || Some(&frame.data["run"]["serverId"]) != server.as_ref()
                             || frame.data["calls"]["closed"] != true
                             || !frame.data["run"]["state"].as_str().is_some_and(|s| {
                                 [

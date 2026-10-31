@@ -4,8 +4,9 @@
 bash sessions, durable volumes, streamed files, live command output and opaque host calls. It needs no Poketto account, workspace, repository,
 signing key or compiled extension. The service uses a Unix socket or optional
 authenticated loopback TCP. An optional [OpenSandbox adapter](opensandbox.md)
-supports SDK lifecycle, foreground commands, file streams and workspace file management. Remaining SDK
-operations and consumer adoption are under the
+implements the documented OpenSandbox 1.1.0 subset, verified through
+[published Python and Kotlin clients](../../../evals/sdk/README.md).
+Consumer adoption and extraction remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
 ## Installation
@@ -186,8 +187,10 @@ event carries an opaque `id`; explicit reconnects send it as `Last-Event-ID`.
 The initial `state` carries run metadata without output. `stdout` and `stderr`
 carry a starting byte `offset` and `base64` block of at most 4096 raw bytes. Ordering
 is per stream; blocks need not end at UTF-8 boundaries. `result` carries the
-terminal summary and both total byte counts after command containment is confirmed.
-EOF, heartbeat comments and `error` events do not acknowledge completion.
+terminal summary and both total byte counts. A finite run publishes it after
+its process tree stops. A normal session command may leave background processes
+alive; close the session to stop that tree, or use a frozen snapshot to capture
+files while it remains open. EOF, heartbeats and `error` do not acknowledge completion.
 
 An observer owns no command lifetime. Disconnect, a five-second frame write
 deadline or the 350-second observation deadline ends only the subscription.
@@ -386,6 +389,10 @@ admission until restart. Temporary staging counts against workspace or volume qu
 | `POST /v1/uploads/ID/cancel` with `{}` | Cancel pending or active work; inspect the final record |
 | `POST /v1/uploads/ID/forget` with `{}` | Forget a waiting or terminal record when no stage remains |
 | `POST /v1/sessions/ID/snapshot` | Send `path`, `format`, optional `freeze`; receive a fixed-length body with a quoted SHA-256 ETag |
+
+Native snapshot replies include `X-Sandcrab-Server-Id`, the serving daemon epoch.
+Clients retaining a session handle must match this header against its `serverId`
+before exposing snapshot bytes; a missing or different epoch cannot identify that session.
 
 Bulk requests close their connection. Upload bodies support `Expect: 100-continue`
 after admission; other expectations are refused. Profile `transfer_bytes` bounds

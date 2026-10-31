@@ -98,6 +98,7 @@ class FileProbe(VolumeProbe):
         assert status == 200, (status, content)
         assert headers['Content-Length'] == str(len(content))
         assert headers['ETag'] == '"' + hashlib.sha256(content).hexdigest() + '"'
+        assert headers['X-Sandcrab-Server-Id'] == session['serverId']
         return content
 
     def command(self, session, code):
