@@ -36,18 +36,16 @@ then read the workflow summary. The native-only suite selects the `native` clien
 Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
-The [programming evidence receipt](evidence/2026-10-29-workspace-model.json) records
-one paid batch and a controlled regrade of the same artifacts after correcting an
-unstated exit-status requirement. It preserves the original scores separately.
-The [first SDK model receipt](evidence/2026-10-30-workspace-sdk-model.json) retains
-15 successes in 18 attempts: two uploads stopped on a service error classification,
-and one sample reached its token limit without exporting. Fixing that classification
-does not change these recorded outcomes.
-The [second SDK model receipt](evidence/2026-10-31-workspace-sdk-model.json) retains
-15 successes in 18 attempts with no infrastructure errors and complete cleanup.
-Three multi-file attempts reached the token limit without exporting; their tool
-refusals were omitted from model-facing replies. The receipt records that defect
-and the unchanged outcomes, independently of its offline serialization regression.
+The [latest SDK model receipt](evidence/2026-10-31-workspace-sdk-model-post-fix.json)
+records 18 independently graded successes, including recovery after missing-parent
+upload refusals, with complete exports and confirmed cleanup. The
+[first SDK batch](evidence/2026-10-30-workspace-sdk-model.json) and
+[tool-error diagnosis](evidence/2026-10-31-workspace-sdk-model.json) retain their
+original failures and scores. These fixed-corpus observations do not establish
+general programming ability or isolate a causal effect. The
+[native-client receipt](evidence/2026-10-29-workspace-model.json) separately retains
+original scores and a controlled regrade after correcting an unstated exit-status
+requirement.
 
 Configure `DEEPSEEK_EVAL_API_KEY` as a repository secret. The workflow can reuse
 `AI_REVIEW_API_KEY` when review uses the standard DeepSeek endpoint. Only the
