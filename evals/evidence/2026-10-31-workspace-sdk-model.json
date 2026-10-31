@@ -1,0 +1,575 @@
+{
+  "date": "2026-10-31",
+  "scope": "Second complete real-model batch of six synthetic programming tasks through the published OpenSandbox Python SDK against Sandcrab. Independent native sandboxes grade exported sources. No production endpoint, Poketto cutover, general programming claim or native-versus-SDK performance comparison.",
+  "modelBatch": {
+    "workflow": "https://github.com/core607/poketto/actions/runs/41174307526",
+    "workflowAttempt": 1,
+    "workflowConclusion": "success",
+    "inspectLogStatus": "success",
+    "revision": "12ef6ca8a25159d08d880ac05fcb95d4b9911ac5",
+    "binarySha256": "9f824d90c86cd0c085a3d14fad60da845a586518f3a2116703240afd38fae374",
+    "model": "bounded-deepseek/deepseek-flash",
+    "advertisedRelease": "DeepSeek-V4.1-Flash-1017",
+    "servedModels": [
+      "deepseek-flash"
+    ],
+    "systemFingerprints": [
+      "bc19ba97cbe016479903222bb1578db6"
+    ],
+    "evidenceKind": "model-directed",
+    "clientVersion": 6,
+    "workspaceInterface": "sdk",
+    "workspaceGraderInterface": "independent native sandbox",
+    "evaluatorPython": "3.12.14",
+    "clientPackages": {
+      "inspect-ai": "0.3.285",
+      "httpx": "0.28.1",
+      "PyYAML": "6.0.3",
+      "opensandbox": "1.1.0"
+    },
+    "corpusSha256": "a5b70937f1055831bd2f64fed89401d36fcf68752b8146b2de69e8a688e86c95",
+    "sampling": {
+      "thinking": "disabled",
+      "temperature": 0,
+      "maxOutputTokens": 2048
+    },
+    "sandboxPython": [
+      "Python 3.12.3"
+    ],
+    "startedAt": "2026-10-31T05:59:42+00:00",
+    "completedAt": "2026-10-31T06:04:46+00:00",
+    "evaluationSeconds": 304.0,
+    "limits": {
+      "epochs": 3,
+      "turns": 20,
+      "tokensPerSample": 32000,
+      "secondsPerSample": 180,
+      "retryOnError": 0
+    },
+    "attempts": 18,
+    "passes": 15,
+    "infrastructureErrors": 0,
+    "missingExportAfterTokenLimit": 3,
+    "modelRequests": 118,
+    "settledRequests": 118,
+    "unresolvedRequests": 0,
+    "inputTokensIncludingCache": 289349,
+    "outputTokens": 25526,
+    "toolCalls": 112,
+    "agentSdkHttpRequests": 157,
+    "sdkHttpRequestsByPhase": {
+      "setup": 152,
+      "agent": 157,
+      "grading": 18
+    },
+    "agentSdkHttp503Responses": 0,
+    "confirmedSdkRootDeletes": 18,
+    "budget": {
+      "limitUsd": "1.000000",
+      "knownUpperEstimateUsd": "0.117484",
+      "unresolvedReservationUsd": "0.000000",
+      "maximumAccountedUsd": "0.117484",
+      "unresolvedRequests": 0,
+      "stopped": null,
+      "prices": {
+        "model": "deepseek-flash",
+        "advertised_release": "DeepSeek-V4.1-Flash-1017",
+        "verified_on": "2026-10-28",
+        "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+        "context_tokens": 1100000,
+        "max_output_tokens": 2048,
+        "usd_per_million": {
+          "input": "0.30",
+          "output": "1.20"
+        }
+      }
+    },
+    "costBasis": "Peak-rate upper estimate with all input charged uncached; not an invoice.",
+    "archiveSha256": "3a814300797854862f43a7ea64804791340808c50e834257f00bb6acf5f1e168",
+    "inspectLogSha256": "db1cfa434a167c6469017efe0f2ef9fb435fa612a5c2be25f778d892f9d9421c",
+    "artifactId": 13032194935,
+    "artifactRetentionDays": 14,
+    "sampleCleanup": "PASS",
+    "fixtureCleanup": "PASS",
+    "fixtureResult": "PASS"
+  },
+  "failureAnalysis": {
+    "classification": "Cumulative token limit reached without export, with a confirmed provider tool-error serialization defect.",
+    "diagnosis": "Inspect recorded thirteen ToolCallError values across these samples. Client version 6 serialized only message.text, which was empty for every refusal; HTTP 404 FILE_NOT_FOUND and HTTP 409 SANDBOX_NOT_READY diagnostics were omitted from the actual model input. Each transcript treated failed uploads as apparent success before investigating absent files.",
+    "verification": "ModelMessageTests.test_real_inspect_tool_error_reaches_the_next_provider_request makes the real Inspect engine raise ToolError and captures the outbound provider request. The original serializer sends empty tool content; the corrected serializer includes the error type and message. Adjacent tests preserve partial output and the existing pre-dispatch request byte limit.",
+    "tokenAccounting": "The 32000-token limit counts cumulative input, cached input and output across model calls. Final contexts were 4140 to 5578 tokens; tool replies were at most 1265 UTF-8 bytes. These attempts did not hit a context-window or oversized-response limit.",
+    "samples": [
+      {
+        "case": "workspace-multi-file-build",
+        "epoch": 1,
+        "initialTrigger": "Three project/* uploads were attempted before project/ existed; each returned HTTP 404 FILE_NOT_FOUND.",
+        "refusedToolCalls": 3,
+        "emptyModelToolReplies": 3,
+        "inputTokensIncludingCache": 30957,
+        "outputTokens": 2127,
+        "totalTokens": 33084,
+        "modelRequests": 10,
+        "executedToolBatches": 9,
+        "toolReplyBytes": 4081,
+        "largestToolReplyBytes": 1147,
+        "lastModelContextTokens": 4869,
+        "lastGeneratedUnexecutedTools": [
+          "workspace_shell"
+        ],
+        "observation": "After creating project/ and uploading all three files, the model generated a sample and edge-case test command. The token limit stopped that command before execution; no successful project check or export followed."
+      },
+      {
+        "case": "workspace-multi-file-build",
+        "epoch": 2,
+        "initialTrigger": "Three project/* uploads were attempted before project/ existed; each returned HTTP 404 FILE_NOT_FOUND.",
+        "refusedToolCalls": 3,
+        "emptyModelToolReplies": 3,
+        "inputTokensIncludingCache": 33173,
+        "outputTokens": 2237,
+        "totalTokens": 35410,
+        "modelRequests": 10,
+        "executedToolBatches": 9,
+        "toolReplyBytes": 4947,
+        "largestToolReplyBytes": 1144,
+        "lastModelContextTokens": 5578,
+        "lastGeneratedUnexecutedTools": [
+          "workspace_export"
+        ],
+        "observation": "After creating project/ and uploading the files, sample, edge-case, Unicode-whitespace, import and compilation commands returned exit code zero. The model generated workspace_export, but the token limit stopped it before dispatch. No artifact exists for independent grading."
+      },
+      {
+        "case": "workspace-multi-file-build",
+        "epoch": 3,
+        "initialTrigger": "Three project/* uploads were attempted before project/ existed; each returned HTTP 404 FILE_NOT_FOUND.",
+        "refusedToolCalls": 7,
+        "emptyModelToolReplies": 7,
+        "inputTokensIncludingCache": 30339,
+        "outputTokens": 1678,
+        "totalTokens": 32017,
+        "modelRequests": 10,
+        "executedToolBatches": 9,
+        "toolReplyBytes": 3032,
+        "largestToolReplyBytes": 1265,
+        "lastModelContextTokens": 4140,
+        "lastGeneratedUnexecutedTools": [
+          "workspace_restart"
+        ],
+        "observation": "A find / diagnostic reached the ten-second command timeout and ended the shell. Subsequent mkdir and two probes returned SANDBOX_NOT_READY; another upload returned FILE_NOT_FOUND. The model generated workspace_restart, but the token limit stopped it before dispatch."
+      }
+    ]
+  },
+  "measurementBoundary": "All eighteen original outcomes remain unchanged, as do the earlier receipts. These results use client version 6, before the tool-error serialization fix. Offline regressions prove error visibility, not improved model task completion; that requires a separately recorded new batch.",
+  "attempts": [
+    {
+      "case": "workspace-binary-index",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 19.841,
+      "inputTokens": 17486,
+      "outputTokens": 1785,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 2,
+      "artifact": {
+        "sha256": "8bbecd3fcce4f2bd742cffea589882728253cca5e09ba5c5692c46bf9273a820",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 20.343,
+      "inputTokens": 18531,
+      "outputTokens": 1691,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 2,
+      "artifact": {
+        "sha256": "34dec28917e9cbd4cae8c6b5c11661aaf75b27af93dd6be57becd963380c86de",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-binary-index",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 19.485,
+      "inputTokens": 18111,
+      "outputTokens": 1705,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 2,
+      "artifact": {
+        "sha256": "d0276f3907f31716dde07d15fbb24f009d33745e8872971c250b64067471d39a",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.134,
+      "inputTokens": 8246,
+      "outputTokens": 806,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "f0798b7077ed16a62b381e2a104dff2ea127ca27fdc5b3302eeffe9b762abf5a",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.6,
+      "inputTokens": 8425,
+      "outputTokens": 932,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "8ce895d653bfe9ef9d999757380f0336fb035d3ec515fb71362fc926fe19ea4b",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-csv-report",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 11.676,
+      "inputTokens": 8533,
+      "outputTokens": 907,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "3159d8528d556f427a701f9ec4e2b24f092dac10c4c079351a64ffdf8cd0c1c1",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 21.647,
+      "inputTokens": 19704,
+      "outputTokens": 1971,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "88bb639f32182b8ef04c124e4fa7c947a116dafa1271045de3f20bfcc1269107",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 18.414,
+      "inputTokens": 14451,
+      "outputTokens": 1665,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "3e766ee09ba08348673d9444dd016f1619c2c071dc7ad337309e4b4693247534",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-inventory",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 18.316,
+      "inputTokens": 14616,
+      "outputTokens": 1622,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 8,
+      "artifact": {
+        "sha256": "1bb8f7d92b85285b5cff7fb493b4940516d2d0159b1891e77ece894832eec2d7",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 17.05,
+      "inputTokens": 16744,
+      "outputTokens": 1487,
+      "toolCalls": 6,
+      "failedToolCalls": 0,
+      "apiCalls": 9,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "102d2528c5e2669b960222d578c229e28c9b9447b4f2d3b97730354111a36200",
+        "bytes": 10240
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.009,
+      "inputTokens": 9662,
+      "outputTokens": 924,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "8f5062c81c531799fafff20986f195eb565ddb0c7475f3b81dc9a5069cff5382",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-log-repair",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 14.508,
+      "inputTokens": 13043,
+      "outputTokens": 1239,
+      "toolCalls": 5,
+      "failedToolCalls": 0,
+      "apiCalls": 8,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 3,
+      "artifact": {
+        "sha256": "b1b29430d47c8cf21e51138e1d1cb80b0ab11452cf6cbd860545f6d1deec7fca",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 1,
+      "passed": false,
+      "error": null,
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": "token",
+      "cleanup": "PASS",
+      "seconds": 21.07,
+      "inputTokens": 30957,
+      "outputTokens": 2127,
+      "toolCalls": 13,
+      "failedToolCalls": 3,
+      "apiCalls": 13,
+      "refusedCalls": 3,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 2,
+      "passed": false,
+      "error": null,
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": "token",
+      "cleanup": "PASS",
+      "seconds": 21.4,
+      "inputTokens": 33173,
+      "outputTokens": 2237,
+      "toolCalls": 14,
+      "failedToolCalls": 3,
+      "apiCalls": 14,
+      "refusedCalls": 3,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-multi-file-build",
+      "epoch": 3,
+      "passed": false,
+      "error": null,
+      "failedChecks": [
+        "No artifact was exported"
+      ],
+      "limit": "token",
+      "cleanup": "PASS",
+      "seconds": 27.446,
+      "inputTokens": 30339,
+      "outputTokens": 1678,
+      "toolCalls": 12,
+      "failedToolCalls": 7,
+      "apiCalls": 12,
+      "refusedCalls": 7,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 0,
+      "artifact": null
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 1,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 11.994,
+      "inputTokens": 9115,
+      "outputTokens": 871,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "3f787f69835d7dc0dee8a5fed8aef33fde5b841395a29ef2f9795b8b0863b47b",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 2,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 12.625,
+      "inputTokens": 9119,
+      "outputTokens": 927,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "5793ef4102df8317a5ebb6c68d3ee244daa4febfdff83462bdc1a65491a513e1",
+        "bytes": 20480
+      }
+    },
+    {
+      "case": "workspace-range-repair",
+      "epoch": 3,
+      "passed": true,
+      "error": null,
+      "failedChecks": [],
+      "limit": null,
+      "cleanup": "PASS",
+      "seconds": 11.684,
+      "inputTokens": 9094,
+      "outputTokens": 952,
+      "toolCalls": 4,
+      "failedToolCalls": 0,
+      "apiCalls": 7,
+      "refusedCalls": 0,
+      "transportFailures": 0,
+      "oversizedResponses": 0,
+      "gradingChecks": 4,
+      "artifact": {
+        "sha256": "149bcf6243c812d4ee98a24df65a26366a79395cdebb0052b7c0a5a7cd346835",
+        "bytes": 20480
+      }
+    }
+  ]
+}

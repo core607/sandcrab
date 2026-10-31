@@ -229,9 +229,9 @@ def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native'
                 fail_on_error=False, score_on_error=True,
                 metadata={'suite': 'sandcrab-' + suite, 'corpusSha256': digest, 'corporaSha256': digests,
                           'evidenceKind': 'scripted' if baseline else 'model-directed',
-                          'clientVersion': 6, 'workspaceInterface': workspace_client if programming else None,
+                          'clientVersion': 7, 'workspaceInterface': workspace_client if programming else None,
                           'workspaceGraderInterface': 'independent native sandbox' if programming else None,
                           'evaluatorPython': platform.python_version(),
                           'clientPackages': {name: version(name) for name in ('inspect-ai', 'httpx', 'PyYAML', 'opensandbox')},
                           'sampling': {'thinking': 'disabled', 'temperature': 0, 'maxOutputTokens': 2048},
-                          'turnLimit': 20 if programming else 12}, version=6)
+                          'turnLimit': 20 if programming else 12}, version=7)

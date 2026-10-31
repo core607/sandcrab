@@ -43,6 +43,11 @@ The [first SDK model receipt](evidence/2026-10-30-workspace-sdk-model.json) reta
 15 successes in 18 attempts: two uploads stopped on a service error classification,
 and one sample reached its token limit without exporting. Fixing that classification
 does not change these recorded outcomes.
+The [second SDK model receipt](evidence/2026-10-31-workspace-sdk-model.json) retains
+15 successes in 18 attempts with no infrastructure errors and complete cleanup.
+Three multi-file attempts reached the token limit without exporting; their tool
+refusals were omitted from model-facing replies. The receipt records that defect
+and the unchanged outcomes, independently of its offline serialization regression.
 
 Configure `DEEPSEEK_EVAL_API_KEY` as a repository secret. The workflow can reuse
 `AI_REVIEW_API_KEY` when review uses the standard DeepSeek endpoint. Only the
@@ -159,6 +164,8 @@ The client checks observed HTTP status even when the pinned SDK masks a session
 error. Recoverable refusals include the HTTP status and a bounded protocol error
 code; raw server diagnostics are not copied into observations. This is evaluation
 instrumentation, not an SDK patch or a server response change.
+The model provider includes Inspect tool-error types and messages alongside any
+partial tool output, within the same request byte limit as successful replies.
 
 ## Paid-run limits
 

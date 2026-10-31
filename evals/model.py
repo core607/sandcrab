@@ -23,6 +23,9 @@ def messages(input):
         value = {'role': message.role, 'content': message.text}
         if message.role == 'tool':
             value['tool_call_id'] = message.tool_call_id
+            if message.error:
+                separator = '\n\n' if message.text else ''
+                value['content'] += separator + f'Tool error ({message.error.type}): {message.error.message}'
         if message.role == 'assistant' and message.tool_calls:
             value['tool_calls'] = [{'id': call.id, 'type': 'function', 'function': {
                 'name': call.function, 'arguments': json.dumps(call.arguments, ensure_ascii=False, allow_nan=False)}} for call in message.tool_calls]
