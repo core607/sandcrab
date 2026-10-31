@@ -128,6 +128,7 @@ account can connect to the socket. TCP uses the bearer credential above.
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
 | `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files` or `events` selects a bounded view with its referenced schemas |
+| `GET /v1/runs` or `GET /v1/sessions` | List up to 64 retained IDs, with `serverId` and `nextAfter`; continue with `?after=UUID` |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
 | `POST /v1/runs/ID/cancel` with `{}` | Request cancellation; poll until terminal |
@@ -158,6 +159,14 @@ or output reservations must be forgotten. Session records and command results sh
 `max_records`; command output remains reserved until its result is forgotten. `max_output_bytes` bounds reserved raw
 output, not total process memory; the slice bounds runtime, tmpfs and overhead.
 Reserve enough supervisor memory for encoded responses and retained output.
+
+Run and session inventories include active and terminal IDs, without command output.
+Use `sandcrab list --socket PATH` or `sandcrab session list --socket PATH`, with
+`--after UUID` for the next page. Listing neither renews nor forgets records.
+Pages are not a snapshot: an ID inserted before the cursor appears on a fresh
+scan; deleting the cursor record does not invalidate its cursor. Discard an
+inventory if its server epoch changes. Consumers must establish ownership before
+closing or forgetting listed records; discovery alone grants no ownership.
 
 ## Command events
 

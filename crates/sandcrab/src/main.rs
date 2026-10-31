@@ -15,6 +15,7 @@ mod file_records;
 mod files;
 mod guest_call;
 mod host_calls;
+mod inventory;
 mod multipart;
 mod opensandbox;
 mod runtime;
@@ -45,7 +46,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and the configured systemd unit. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -138,6 +139,9 @@ fn execute(args: &[String]) -> io::Result<i32> {
                 )?
             );
             Ok(0)
+        }
+        [mode, flag, socket, rest @ ..] if mode == "list" && connection_flag(flag) => {
+            list_records("runs", &Endpoint::parse(flag, socket, token_file)?, rest)
         }
         [mode, flag, path, id]
             if ["get", "cancel", "forget"].contains(&mode.as_str()) && connection_flag(flag) =>
@@ -289,6 +293,11 @@ fn run(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
 }
 fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     match args {
+        [mode, flag, socket, rest @ ..] if mode == "list" && connection_flag(flag) => list_records(
+            "sessions",
+            &Endpoint::parse(flag, socket, token_file)?,
+            rest,
+        ),
         [mode, flag, socket, profile_flag, profile, rest @ ..]
             if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
@@ -373,6 +382,21 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         }
         _ => Err(config::invalid(HELP)),
     }
+}
+fn list_records(collection: &str, endpoint: &Endpoint, args: &[String]) -> io::Result<i32> {
+    let path = match args {
+        [] => format!("/v1/{collection}"),
+        [flag, id] if flag == "--after" && sandcrab_core::uuid(id) => {
+            format!("/v1/{collection}?after={id}")
+        }
+        _ => {
+            return Err(config::invalid(
+                "Expected list --socket PATH [--after UUID]",
+            ));
+        }
+    };
+    println!("{}", client::request(endpoint, "GET", &path, None)?);
+    Ok(0)
 }
 fn resource_option(resources: &mut config::Resources, key: &str, value: &str) -> io::Result<bool> {
     let target = match key {

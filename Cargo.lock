@@ -280,19 +280,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "poketto-games"
-version = "0.1.0"
-dependencies = [
- "base64",
- "rustix",
- "sandcrab-core",
- "sandcrab-daemon",
- "sandcrab-launch",
- "serde_json",
- "signal-hook",
-]
-
-[[package]]
 name = "poketto-launch"
 version = "0.1.0"
 dependencies = [

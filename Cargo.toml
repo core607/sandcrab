@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "poketto-cli",
-    "poketto-games",
     "poketto-launch",
     "poketto-shell",
     "poketto-syncfs",

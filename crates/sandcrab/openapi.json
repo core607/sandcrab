@@ -119,6 +119,41 @@
             "$ref": "#/components/responses/Error401"
           }
         }
+      },
+      "get": {
+        "operationId": "listRuns",
+        "description": "List up to 64 active or terminal IDs in UUID order, without output. Continue with nextAfter even after its record is deleted. Pages are not snapshots: rescan for new IDs before the cursor or a changed serverId. Listing never renews or forgets.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retained identity page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
       }
     },
     "/v1/runs/{id}": {
@@ -266,7 +301,7 @@
     "/v1/sessions": {
       "post": {
         "operationId": "createSession",
-        "description": "Create an isolated persistent bash session. Repeating the same ID and request returns that session, including its terminal state; different arguments conflict. Poll until ready before submitting a command.",
+        "description": "Create an isolated bash session. Same ID and request return its retained state, even terminal; changed arguments conflict. Await ready before commands.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -306,23 +341,52 @@
             }
           }
         }
+      },
+      "get": {
+        "operationId": "listSessions",
+        "description": "List up to 64 active or terminal IDs in UUID order, without output. Continue with nextAfter even after its record is deleted. Pages are not snapshots: rescan for new IDs before the cursor or a changed serverId. Listing never renews or forgets.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retained identity page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
       }
     },
     "/v1/sessions/{id}": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "get": {
         "operationId": "getSession",
-        "description": "Read the session state. A connection does not own the session lifetime.",
+        "description": "Read state; transport connections do not own session lifetime.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -354,18 +418,12 @@
     "/v1/sessions/{id}/commands": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
         "operationId": "executeSessionCommand",
-        "description": "Admit one command while ready. Commands retain shell state and files. Concurrent commands are refused. Read, cancel and forget the returned command through /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit ends the whole session; it is never silently reset.",
+        "description": "Admit one command while ready; reject concurrent commands. Shell state and files persist. Read/cancel/forget via /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit ends the session without resetting it.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Run200"
@@ -410,18 +468,12 @@
     "/v1/sessions/{id}/renew": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
         "operationId": "renewSession",
-        "description": "Extend a live session from the current time, within its profile TTL. Expired sessions cannot be revived.",
+        "description": "Extend a live session from now within its profile TTL; expired sessions cannot revive.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -474,18 +526,12 @@
     "/v1/sessions/{id}/close": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
         "operationId": "closeSession",
-        "description": "Stop the whole session, including background processes. Poll until closed, expired or failed. Closing means containment or cleanup is unconfirmed and admission stays held until restart.",
+        "description": "Stop the session and descendants; poll for closed, expired or failed. closing retains admission until restart because containment or cleanup is unconfirmed.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -528,29 +574,12 @@
     "/v1/sessions/{id}/forget": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
         "operationId": "forgetSession",
-        "description": "Forget a closed, expired or failed session. Retained command records are independent and must be forgotten separately. Never reuse this session ID.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+        "description": "Forget only a closed, expired or failed session. Forget command records separately. Never reuse this session ID.",
         "requestBody": {
           "required": true,
           "content": {
@@ -932,13 +961,7 @@
     "/v1/uploads/{id}": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "get": {
@@ -962,13 +985,7 @@
     "/v1/uploads/{id}/content": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "put": {
@@ -1028,13 +1045,7 @@
     "/v1/uploads/{id}/cancel": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
@@ -1081,13 +1092,7 @@
     "/v1/uploads/{id}/forget": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
@@ -1150,13 +1155,7 @@
     "/v1/sessions/{id}/snapshot": {
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ],
       "post": {
@@ -1530,7 +1529,7 @@
     "/v1/sessions/{id}/shells": {
       "post": {
         "operationId": "createShellContext",
-        "description": "Create an independent persistent shell in a live root session. Inherit its workspace, profile, aggregate resource budget and expiry. Use the returned ID with session commands, get, close and forget; renew and file operations use the parent ID. Nested contexts are refused. Closing a child preserves the parent workspace and other shells.",
+        "description": "Create an independent shell in a live root session, sharing workspace, profile, aggregate budget and expiry. Child IDs support commands, get, close and forget; renewal and files use the parent. No nested contexts. Closing a child preserves the workspace and other shells.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -1573,13 +1572,7 @@
       },
       "parameters": [
         {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
+          "$ref": "#/components/parameters/Id"
         }
       ]
     }
@@ -2982,6 +2975,37 @@
             "format": "uuid"
           }
         }
+      },
+      "IdentityPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "serverId",
+          "ids",
+          "nextAfter"
+        ],
+        "properties": {
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ids": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "nextAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        }
       }
     },
     "responses": {
@@ -3190,6 +3214,17 @@
         "scheme": "bearer",
         "bearerFormat": "64 lowercase hexadecimal bytes",
         "description": "Required on every TCP request, including discovery and streaming. The no-HTTP-credential alternative applies only to Unix sockets authenticated by peer UID."
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     }
   },

@@ -43,6 +43,7 @@ class ContextsProbe(ResourcesProbe):
         self.forget(request)
 
     def tests(self):
+        self.inventory_tests()
         status, schema = http(self.socket, 'GET', '/v1/openapi?capability=sessions')
         assert status == 200 and '/v1/sessions/{id}/shells' in schema['paths']
         parent = self.session_open(resources={'memoryBytes': 50331648, 'cpuQuotaPercent': 25})

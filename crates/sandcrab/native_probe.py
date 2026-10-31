@@ -166,6 +166,7 @@ network = "none"
     def tests(self):
         assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'events', 'calls']
         self.transport()
+        self.inventory_tests()
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'
         assert schema['paths']['/v1/runs']['post']['operationId'] == 'createRun'
@@ -329,6 +330,38 @@ network = "none"
         for unit in pool.rglob(self.name + '-' + session['id'] + '.service'):
             assert not any(p.read_text().strip() for p in unit.rglob('cgroup.procs'))
         return result
+
+    def inventory_tests(self):
+        session = self.session_open()
+        records = [self.session_exec(session, 'printf private-output')[0] for _ in range(2)]
+        active, _ = self.session_exec(session, 'sleep 30', wait=False)
+        records.append(active)
+        ids = sorted(record['id'] for record in records)
+        status, runs = http(self.socket, 'GET', '/v1/runs')
+        assert status == 200 and runs == {'serverId': self.info['serverId'], 'ids': ids, 'nextAfter': None}, runs
+        prefix = ['runuser', '-u', 'daemon', '--', str(self.binary)]
+        assert json.loads(call(*prefix, 'list', '--socket', str(self.socket)).stdout) == runs
+        status, sessions = http(self.socket, 'GET', '/v1/sessions')
+        assert status == 200 and sessions['ids'] == [session['id']], sessions
+        assert json.loads(call(*prefix, 'session', 'list', '--socket', str(self.socket)).stdout) == sessions
+        for kind in ('runs', 'sessions'):
+            for query in ('after=bad', 'after=', 'limit=2', 'after=' + session['id'] + '&after=' + session['id']):
+                assert http(self.socket, 'GET', '/v1/' + kind + '?' + query) == (400, {'error': {'code': 'INVALID_REQUEST'}})
+        self.session_close(session)
+        assert self.wait(active)['state'] == 'cancelled'
+        assert http(self.socket, 'GET', '/v1/sessions')[1] == sessions, 'closing must not erase retained identity'
+        cursor = ids[1]
+        self.forget({'id': cursor})
+        tail = {'serverId': self.info['serverId'], 'ids': ids[2:], 'nextAfter': None}
+        assert http(self.socket, 'GET', '/v1/runs?after=' + cursor) == (200, tail)
+        assert json.loads(call(*prefix, 'list', '--socket', str(self.socket), '--after', cursor).stdout) == tail
+        for record in records:
+            if record['id'] != cursor:
+                self.forget(record)
+        self.session_forget(session)
+        for kind in ('runs', 'sessions'):
+            assert http(self.socket, 'GET', '/v1/' + kind) == (200, {'serverId': self.info['serverId'], 'ids': [], 'nextAfter': None})
+        self.done('native-inventories-retain-active-and-terminal-identities-without-output')
 
     def session_tests(self):
         session = self.session_open()

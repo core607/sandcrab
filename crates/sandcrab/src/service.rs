@@ -161,6 +161,11 @@ impl Service {
     }
 
     pub fn route(self: &Arc<Self>, method: &str, path: &str, body: &[u8]) -> (u16, Value) {
+        if method == "GET"
+            && let Some(response) = crate::inventory::route(self, path)
+        {
+            return response;
+        }
         if method == "GET" && (path == "/v1/openapi" || path.starts_with("/v1/openapi?")) {
             let capability = if path == "/v1/openapi" {
                 None
