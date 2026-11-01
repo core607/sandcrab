@@ -153,7 +153,7 @@ and truncation, or a failure code. Output bounds apply to combined raw stdout an
 stderr; invalid UTF-8 becomes replacement characters. Runs continue after HTTP
 disconnect and remain bounded by their timeout. Cancellation does not undo work.
 
-`max_sandboxes` bounds live runs and workspace-owning sessions together; child
+`max_sandboxes` accepts 1 through 512 and bounds live runs and workspace-owning sessions together; child
 shells share their parent's reservation. It replaces `max_runs` in
 native TOML configurations. `RUN_CAPACITY` or `SESSION_CAPACITY` refuses before execution. `RESULT_CAPACITY` means retained records
 or output reservations must be forgotten. Session records and command results share

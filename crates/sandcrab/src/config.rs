@@ -293,7 +293,7 @@ impl Config {
         if service.opensandbox && self.tcp.is_none() {
             return Err(invalid("OpenSandbox requires authenticated loopback TCP"));
         }
-        if !(1..=64).contains(&service.max_sandboxes)
+        if !(1..=512).contains(&service.max_sandboxes)
             || !(service.max_sandboxes..=1024).contains(&service.max_records)
             || !(65536..=64 * 1024 * 1024).contains(&service.max_output_bytes)
             || self.profiles.is_empty()
@@ -302,7 +302,7 @@ impl Config {
             || !(1..=16).contains(&service.max_file_transfers)
         {
             return Err(invalid(
-                "Use 1..64 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
+                "Use 1..512 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
             ));
         }
         if let Some(storage) = &self.storage
@@ -431,6 +431,20 @@ mod tests {
             ));
         }
         assert!(serde_json::from_str::<Resources>(r#"{"memoryBytes":33554432,"uid":0}"#).is_err());
+    }
+    #[test]
+    fn large_operator_cohorts_still_require_bounded_record_capacity() {
+        let configured = EXAMPLE
+            .replace("max_sandboxes = 2", "max_sandboxes = 512")
+            .replace("max_records = 128", "max_records = 1024");
+        assert!(Config::parse(&configured).is_ok());
+        assert!(
+            Config::parse(&configured.replace("max_sandboxes = 512", "max_sandboxes = 513"))
+                .is_err()
+        );
+        assert!(
+            Config::parse(&configured.replace("max_records = 1024", "max_records = 511")).is_err()
+        );
     }
     #[test]
     fn unknown_fields_unsafe_mounts_and_unbounded_resources_fail() {
