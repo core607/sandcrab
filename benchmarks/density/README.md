@@ -5,6 +5,10 @@ owns the footprint, readiness, density and breakdown requirements. This director
 contains the seeded workload, scorer, native HTTP client and isolated density
 driver. Component tests do not establish sandbox capacity.
 
+The [manual installation baseline](READINESS.md) measures first-use steps, edits
+and elapsed time on fresh distribution containers. It is separate from density
+host preparation and does not establish turnkey readiness.
+
 ## Workload and scoring
 
 [protocol.json](protocol.json) fixes the measurement parameters before native runs.

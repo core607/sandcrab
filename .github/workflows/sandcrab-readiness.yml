@@ -1,0 +1,110 @@
+name: Sandcrab readiness baseline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - experiments/sandcrab-density/**
+      - executor-service/**
+      - .github/workflows/sandcrab-readiness.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandcrab-readiness-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '26'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - run: ./gradlew buildExecutorRust --no-daemon
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/executor-service/bin/sandcrab
+          if-no-files-found: error
+          retention-days: 14
+
+  measure:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: ubuntu22
+            image: ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
+          - distribution: ubuntu24
+            image: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+          - distribution: debian12
+            image: debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/executor-service/bin
+      - name: Build a disposable systemd distribution
+        env:
+          BASE_IMAGE: ${{ matrix.image }}
+        run: |
+          docker build --build-arg "BASE_IMAGE=$BASE_IMAGE" -t sandcrab-readiness:fixture \
+            -f experiments/sandcrab-density/Dockerfile.readiness experiments/sandcrab-density
+      - name: Measure the manual recipe on a fresh container
+        env:
+          DISTRIBUTION: ${{ matrix.distribution }}
+        run: |
+          python3 experiments/sandcrab-density/readiness_container.py \
+            --image sandcrab-readiness:fixture --source . --binary build/executor-service/bin/sandcrab \
+            --report "executor-native/evidence/readiness-$DISTRIBUTION.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: readiness-${{ matrix.distribution }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: executor-native/evidence/readiness-*.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  native:
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - name: Start the acquisition clock
+        id: acquisition
+        run: python3 -c 'import time; print("started=" + str(time.monotonic_ns()))' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/executor-service/bin
+      - name: Measure the manual recipe on a fresh native runner
+        env:
+          ACQUISITION_STARTED: ${{ steps.acquisition.outputs.started }}
+        run: |
+          sudo env SANDCRAB_READINESS_DISPOSABLE=1 python3 experiments/sandcrab-density/readiness.py \
+            --source . --binary build/executor-service/bin/sandcrab --revision "$(git rev-parse HEAD)" \
+            --acquisition-started-ns "$ACQUISITION_STARTED" \
+            --report "$RUNNER_TEMP/readiness-native.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: readiness-native-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readiness-native.json
+          if-no-files-found: warn
+          retention-days: 30

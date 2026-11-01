@@ -1,0 +1,12 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# Supply the init system a stock VM has; Sandcrab and its tools are installed only
+# by the measured operator recipe. No host cgroup bind mount is used.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends systemd systemd-sysv dbus python3 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+ENV container=docker
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
