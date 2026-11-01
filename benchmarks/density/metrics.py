@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import time
+import uuid
 
 from host import fields, host_memory
 
@@ -36,6 +37,14 @@ class Metrics:
                 live += fields(entry / 'cgroup.events')['populated'] == 1
             except FileNotFoundError:
                 continue
+        finite = 0
+        for entry in fixture.pool_group.glob(fixture.name + '-*.service'):
+            identity = entry.name.removeprefix(fixture.name + '-').removesuffix('.service')
+            try:
+                uuid.UUID(identity)
+                finite += fields(entry / 'cgroup.events')['populated'] == 1
+            except (ValueError, FileNotFoundError):
+                continue
         rss = next(int(line.split()[1]) * 1024 for line in
                    (Path('/proc') / str(fixture.daemon_pid) / 'status').read_text().splitlines() if line.startswith('VmRSS:'))
         return {'monotonicNs': time.monotonic_ns(), 'memoryCurrentBytes': int((fixture.pool_group / 'memory.current').read_text()),
@@ -43,6 +52,7 @@ class Metrics:
                 'cpuUsec': {'pool': total, 'daemon': daemon, 'sandboxes': total - daemon},
                 'oomKills': fields(fixture.pool_group / 'memory.events')['oom_kill'],
                 'pidsCurrent': int((fixture.pool_group / 'pids.current').read_text()),
-                'daemonRssBytes': rss, 'liveKernelSandboxes': live,
+                'daemonRssBytes': rss, 'liveKernelSandboxes': live + finite,
+                'liveKernelSessions': live, 'liveKernelFiniteRuns': finite,
                 'executingObserved': executing, 'systemManagerCpuSecondsOutsideSlice': process_cpu(1),
                 'hostAvailableBytes': host_memory()['MemAvailable']}

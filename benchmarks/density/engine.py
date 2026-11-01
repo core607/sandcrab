@@ -106,9 +106,12 @@ class Engine:
             on_start(row)
         accepted = False
         try:
-            _, initial = await self.call('POST', '/v1/sessions/' + session + '/commands',
-                                        {'id': identity, 'serverId': self.server_id, 'command': command,
-                                         'timeoutMillis': timeout_ms, 'outputLimitBytes': 65536}, (202,))
+            route = '/v1/runs' if session is None else '/v1/sessions/' + session + '/commands'
+            body = {'id': identity, 'serverId': self.server_id, 'command': command,
+                    'timeoutMillis': timeout_ms, 'outputLimitBytes': 65536}
+            if session is None:
+                body['profile'] = 'python'
+            _, initial = await self.call('POST', route, body, (202,))
             accepted = True
             self.executing[identity] = initial.get('state', 'unknown')
             value = await self.observe('/v1/runs/' + identity, ('running', 'closing'), timeout=timeout_ms / 1000 + 15,

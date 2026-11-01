@@ -79,6 +79,18 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('fatal', row)
         self.assertEqual(engine.runs, set())
 
+    async def test_finite_run_uses_the_public_argv_contract_and_same_cleanup(self):
+        engine, _, requests = self.engine([
+            (202, {'state': 'running'}),
+            (200, {'state': 'succeeded', 'result': {'exitCode': 0, 'stdout': '', 'stderr': ''}}), (200, {}),
+        ])
+        row = await engine.execute(None, ['/bin/sleep', '1'], kind='finite')
+        self.assertEqual(requests[0][0:2], ('POST', '/v1/runs'))
+        self.assertEqual(requests[0][2]['command'], ['/bin/sleep', '1'])
+        self.assertEqual(requests[0][2]['profile'], 'python')
+        self.assertEqual(row['outcome'], 'OK')
+        self.assertEqual(engine.runs, set())
+
     async def test_cancelled_observation_retains_attempt_and_resource_identity(self):
         engine, events, _ = self.engine([asyncio.CancelledError()])
         with self.assertRaises(asyncio.CancelledError):

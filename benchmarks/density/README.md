@@ -94,12 +94,94 @@ start and finish timestamps are wall time.
 Daemon RSS and hierarchical memory/CPU counters are observations of this fixture.
 `file` already includes `shmem`; do not add them as disjoint memory categories.
 Sandbox CPU is pool CPU minus daemon CPU; system-manager CPU outside the slice is
-reported separately. Polling can miss brief executing states. Binary/dependency
-footprint, idle 1/10/50 and finite-run costs, fresh-distribution readiness, and the
-cold-start/page-cache breakdown remain separate W0 requirements.
+reported separately. Polling can miss brief executing states. Fresh-distribution
+readiness remains a separate W0 requirement.
 
-The [native smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-density-smoke.json)
+The [native density smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-density-smoke.json)
 records one two-agent run on Ubuntu 24.04 with its source/binary hashes and verified
 cleanup. It checks the measurement entry path, not the canonical capacity or
 fresh-install readiness targets. The full attempt ledger is retained in the
 [workflow artifact](https://github.com/core607/poketto/actions/runs/41352546796).
+
+## Fixed costs
+
+[footprint.py](footprint.py) accepts the same binary, tools, budget and report
+arguments. It measures daemon idle RSS, then 1, 10 and 50 idle bash sessions and
+finite `/bin/sleep` runs. `--smoke` checks only one of each. The workflow runs its
+smoke entry on pull requests and all counts during canonical measurement.
+
+Each cohort has five one-second samples after two seconds of settling. A finite
+run holds for 30 seconds; the whole cohort must become live within 15 seconds and
+remain alive during sampling. Refusal, OOM, a lost cohort or unconfirmed cleanup
+fails the measurement. Minimal bash/sleep workload memory is included. These are
+observed fixed costs of those workloads, not an estimate of an absent process.
+
+Per-item deltas compare cohort medians with an empty baseline. Idle-session counts
+grow within one daemon, with its initial idle samples as the baseline. Each finite
+cohort gets its own baseline after the previous cohort is cleaned. Raw counters,
+negative cache-release deltas and both shared-memory fields remain in the receipt.
+No global page-cache reset is performed. The volume capability is enabled but
+these cohorts contain no volume data.
+
+The binary record checks ELF interpreter and dynamic-library entries as well as
+bytes and SHA-256. The dependency inventory counts distinct executable surfaces
+used by core execution, sessions and optional durable volumes, separately from
+installation tools and workload programs. It is not a distribution package count
+or the transitive shared-library closure; the receipt names that boundary.
+
+The [native footprint smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-footprint-smoke.json)
+covers one idle session and one finite run with verified API and host cleanup.
+It does not establish the 10/50-session fixed costs or any capacity limit.
+
+## Page-cache comparison
+
+[page_cache.py](page_cache.py) uses the same command arguments to compare ten
+sessions over distinct reflink volumes with ten sessions reading one shared tree.
+The corpus and Git commit must match. Public API commands read and checksum every
+Markdown file; the shared tree is mounted through the profile's read-only paths,
+with that mount property checked inside the sandbox. This measures the existing
+read-mount mechanism, not a template API.
+
+The controller flushes and advises eviction only for the synthetic document files,
+then uses root `mincore` observations to require a cold dataset before each case.
+It never drops global caches. Root observation avoids the restricted residency
+view a different unprivileged file owner can receive. Distinct device/inode pairs
+establish that the reflink case does not silently read the same tree ten times.
+Receipts retain cold/warm resident page counts, hierarchical `memory.stat` before
+and after reads, checksums, OOM counters and cleanup outcomes. No cache saving is
+assumed in advance, and an unavailable cold-state observation fails the run.
+
+The shared fixture tree is created before daemon startup; its data pages must be
+evicted before sandbox readers fault them into the measured slice. Inode metadata
+and tool caches are not reset. The controller inspects only its disposable volume
+paths according to the current storage layout. These observations are not an API
+for accessing another daemon's content. Smoke uses 400 documents with all ten readers;
+the canonical comparison uses the full corpus.
+
+The [native page-cache smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-page-cache-smoke.json)
+records that small comparison, including cold-state proof and verified cleanup.
+It does not replace the full-corpus comparison.
+
+## Startup timeline
+
+[cold_start.py](cold_start.py) uses the same arguments and additionally requires
+bpftrace, kernel BTF, the raw cgroup-create tracepoint and scheduler exec/exit
+tracepoints on an isolated Linux 5.7+ host.
+It observes three new persistent sessions; smoke uses the smaller fixture budget.
+Only the fixture's daemon cgroup and new descendants of its pool emit events.
+The trace records D-Bus client exec, session-slice creation, systemd-run exec,
+the sandbox bwrap exec and bash exec. It distinguishes bwrap's version check from
+the actual sandbox launch by matching the launcher's PID and cgroup across its
+`exec` replacement, as implemented by
+[`sandcrab-launch`](../../executor-service/rust/sandcrab-launch/src/lib.rs).
+A process exit invalidates that identity. No user argv pointers are read.
+Unparseable events, reported probe errors and missing required events fail the
+measurement.
+
+The observer runs temporarily in a bounded service inside the fixture slice, with
+its own memory, CPU, task and lifetime limits. Receipt timelines use CLOCK_BOOTTIME
+and include tracing overhead; use the density driver's untraced `coldStartNs` for
+latency comparisons. The trace clock handshake, event ordering, source hash,
+observer diagnostics and cleanup are retained. bpftrace is a measurement tool,
+not a Sandcrab runtime dependency. Fresh-install readiness is not established by
+preparing this instrumented host.
