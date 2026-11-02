@@ -219,6 +219,18 @@ network = "none"
         self.forget(request)
         self.done('host-network-and-unix-socket-denial')
 
+        seccomp_probe = Path(__file__).with_name('seccomp_cases.py').read_bytes()
+        self.receipt['seccompProbeSha256'] = hashlib.sha256(seccomp_probe).hexdigest()
+        request = self.submit(seccomp_probe.decode())
+        response = self.wait(request)
+        assert response['state'] == 'succeeded', response
+        observed = json.loads(response['result']['stdout'])
+        assert len(observed['checks']) == 13, observed
+        self.receipt['nativeSeccomp'] = observed
+        self.forget(request)
+        for name in observed['checks']:
+            self.done('native-seccomp-' + name)
+
         request = self.submit('raise SystemExit(7)')
         response = self.wait(request)
         assert response['state'] == 'failed' and response['result']['exitCode'] == 7, response

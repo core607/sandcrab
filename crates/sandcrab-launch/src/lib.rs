@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
 //! Fail-closed sandbox launch. Supervisors verify the pinned tools before serving; the
 //! unprivileged launcher verifies them again, translates a fixed policy into bubblewrap
-//! arguments and replaces itself with bubblewrap, whose first command installs the pinned
-//! seccomp filter. No failure falls back to an unsandboxed command.
-use sha2::{Digest, Sha256};
+//! arguments and replaces itself with bubblewrap carrying the compiled seccomp filter.
+//! No failure falls back to an unsandboxed command.
+mod seccomp;
+pub use seccomp::Seccomp;
 use std::{
     collections::HashSet,
     fmt, fs,
@@ -21,14 +22,9 @@ use std::{
 use rustix::fs::{Mode, OFlags, open, openat};
 use serde_json::{Value, json};
 
-/// SRT 0.0.75's static x64 helper supplies the filter and its protected PID namespace.
-/// A different helper requires the live equivalence probe, not just a version change.
-pub const SECCOMP_SHA256: &str = "64fa7514fa7199584b836159885e59b9ce3684fb8fef7e13de49965b23f54f6b";
 pub const MIN_BWRAP_VERSION: (u64, u64, u64) = (0, 6, 1);
 /// Tool locations below the prepared tools root.
 pub const BWRAP: &str = "extracted/usr/bin/bwrap";
-pub const SECCOMP: &str =
-    "node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp";
 
 /// A refused launch or verification; the message names the failed requirement.
 #[derive(Debug, PartialEq, Eq)]
@@ -98,27 +94,16 @@ pub fn verify_programs(directory: &Path, programs: &[&str]) -> Result<(), Error>
     Ok(())
 }
 
-/// Verify bubblewrap and the pinned seccomp helper below `tools`; used at supervisor
+/// Verify bubblewrap below `tools`; used at supervisor
 /// startup and again before each launch.
-pub fn verify_tools(tools: &Path) -> Result<(PathBuf, PathBuf), Error> {
-    verify_pinned_tools(tools, SECCOMP_SHA256)
-}
-fn verify_pinned_tools(tools: &Path, pin: &str) -> Result<(PathBuf, PathBuf), Error> {
+pub fn verify_tools(tools: &Path) -> Result<PathBuf, Error> {
     let bwrap = tools.join(BWRAP);
-    let seccomp = tools.join(SECCOMP);
-    for path in [&bwrap, &seccomp] {
-        trusted_executable(path)?;
-    }
-    if format!("{:x}", Sha256::digest(fs::read(&seccomp)?)) != pin {
-        return Err(refuse(
-            "Sandbox apply-seccomp checksum mismatch; prepare the pinned SRT 0.0.75 tools",
-        ));
-    }
+    trusted_executable(&bwrap)?;
     let version = version_output(&bwrap)?;
     if parse_version(version.trim()).is_none_or(|v| v < MIN_BWRAP_VERSION) {
         return Err(refuse("Sandbox requires bubblewrap 0.6.1 or newer"));
     }
-    Ok((bwrap, seccomp))
+    Ok(bwrap)
 }
 /// `bubblewrap X.Y.Z` with decimal components and nothing else.
 fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
@@ -225,12 +210,12 @@ fn keys(value: &Value) -> Option<HashSet<&str>> {
         .map(|object| object.keys().map(String::as_str).collect())
 }
 
-/// Translate the worker policy into bubblewrap arguments ending with the seccomp helper and
+/// Translate the worker policy into bubblewrap arguments carrying the filter descriptor and
 /// the literal command. Unknown fields, weaker settings, network exceptions and overlapping
 /// grants are refused instead of ignored.
 pub fn sandbox_arguments(
     bwrap: &Path,
-    seccomp: &Path,
+    seccomp: &Seccomp,
     policy: &Value,
     command: &[String],
 ) -> Result<Vec<String>, Error> {
@@ -313,11 +298,14 @@ pub fn sandbox_arguments(
             "/proc",
             "--remount-ro",
             "/",
-            "--",
         ]
         .map(String::from),
     );
-    args.push(seccomp.to_string_lossy().into());
+    args.extend([
+        "--seccomp".into(),
+        seccomp.descriptor().to_string(),
+        "--".into(),
+    ]);
     args.extend(command.iter().cloned());
     Ok(args)
 }
@@ -333,7 +321,10 @@ pub fn enter_bootstrap(root: &Path) -> Result<(), Error> {
 }
 
 /// Replace this process with bubblewrap; returns only if the replacement failed.
-pub fn exec(arguments: &[String], environment: &[(String, String)]) -> Error {
+pub fn exec(arguments: &[String], environment: &[(String, String)], seccomp: &Seccomp) -> Error {
+    if let Err(error) = seccomp.prepare_exec() {
+        return error;
+    }
     let error = Command::new(&arguments[0])
         .args(&arguments[1..])
         .env_clear()

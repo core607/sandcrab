@@ -827,8 +827,8 @@ pub fn launch(path: &Path) -> io::Result<()> {
     if record.uid == 0 || rustix::process::geteuid().as_raw() != record.uid {
         return Err(invalid("Wrong execution account"));
     }
-    let (bwrap, seccomp) =
-        sandcrab_launch::verify_tools(&record.tools).map_err(io::Error::other)?;
+    let bwrap = sandcrab_launch::verify_tools(&record.tools).map_err(io::Error::other)?;
+    let seccomp = sandcrab_launch::Seccomp::new().map_err(io::Error::other)?;
     let policy: Value = sandcrab_core::parse(&launch_file(&record.settings)?)
         .map_err(|_| invalid("Invalid policy JSON"))?;
     sandcrab_launch::enter_bootstrap(&record.root).map_err(io::Error::other)?;
@@ -905,7 +905,11 @@ pub fn launch(path: &Path) -> io::Result<()> {
             record.root.file_name().unwrap().to_string_lossy().into(),
         ));
     }
-    Err(io::Error::other(sandcrab_launch::exec(&args, &environment)))
+    Err(io::Error::other(sandcrab_launch::exec(
+        &args,
+        &environment,
+        &seccomp,
+    )))
 }
 
 /// Owns one persistent unit. Storage can be released only after its launcher and cgroup stop.

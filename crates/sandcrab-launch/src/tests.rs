@@ -40,15 +40,13 @@ impl Root {
         path
     }
     /// Tools whose bubblewrap prints `version` and records each run in `ran`.
-    fn tools(&self, version: &str) -> (PathBuf, String) {
+    fn tools(&self, version: &str) -> PathBuf {
         let script = format!(
             "#!/bin/sh\ntouch {}/ran\nprintf '%s\\n' '{version}'\n",
             self.0.display()
         );
         self.file(&format!("tools/{BWRAP}"), script.as_bytes(), 0o755);
-        let helper = self.file(&format!("tools/{SECCOMP}"), b"fixture static helper", 0o755);
-        let digest = format!("{:x}", Sha256::digest(fs::read(helper).unwrap()));
-        (self.0.join("tools"), digest)
+        self.0.join("tools")
     }
 }
 impl Drop for Root {
@@ -78,7 +76,7 @@ fn command() -> Vec<String> {
 fn arguments(policy: &Value) -> Result<Vec<String>, Error> {
     sandbox_arguments(
         Path::new("/tools/bwrap"),
-        Path::new("/tools/apply-seccomp"),
+        &Seccomp::new()?,
         policy,
         &command(),
     )
@@ -91,9 +89,10 @@ fn pair(args: &[String], flag: &str) -> Vec<String> {
 #[test]
 fn the_policy_reaches_the_filter_with_a_literal_command_and_every_namespace() {
     let args = arguments(&policy()).unwrap();
-    let mut tail = vec!["/tools/apply-seccomp".to_string()];
+    let mut tail = vec!["--".to_string()];
     tail.extend(command());
     assert_eq!(args[args.len() - 4..], tail[..]);
+    assert!(pair(&args, "--seccomp")[1].parse::<i32>().unwrap() >= 0);
     for flag in [
         "--unshare-net",
         "--unshare-user",
@@ -163,37 +162,25 @@ fn grants_are_accepted_only_in_their_normalized_spelling() {
 }
 
 #[test]
-fn the_tool_pin_and_the_minimum_version_are_both_required() {
+fn the_minimum_bubblewrap_version_is_required_without_an_external_filter_helper() {
     let root = Root::new();
-    let (tools, digest) = root.tools("bubblewrap 0.6.1");
-    let (_, seccomp) = verify_pinned_tools(&tools, &digest).unwrap();
-    assert_eq!(seccomp, tools.join(SECCOMP));
+    let tools = root.tools("bubblewrap 0.6.1");
+    assert_eq!(verify_tools(&tools).unwrap(), tools.join(BWRAP));
     for version in [
         "bubblewrap 0.6.0",
         "bubblewrap unknown",
         "",
         "bubblewrap 0.6.1 extra",
     ] {
-        let (tools, digest) = root.tools(version);
+        let tools = root.tools(version);
         assert_eq!(
-            verify_pinned_tools(&tools, &digest).unwrap_err().0,
+            verify_tools(&tools).unwrap_err().0,
             "Sandbox requires bubblewrap 0.6.1 or newer",
             "{version:?}"
         );
     }
-    let (tools, digest) = root.tools("bubblewrap 1.0.0");
-    assert!(verify_pinned_tools(&tools, &digest).is_ok());
-    fs::remove_file(root.0.join("ran")).unwrap();
-    fs::write(tools.join(SECCOMP), b"modified").unwrap();
-    let error = verify_pinned_tools(&tools, &digest).unwrap_err();
-    assert!(error.0.contains("checksum mismatch"), "{error}");
-    assert!(!root.0.join("ran").exists());
-    assert!(
-        verify_tools(&tools)
-            .unwrap_err()
-            .0
-            .contains("checksum mismatch")
-    );
+    let tools = root.tools("bubblewrap 1.0.0");
+    assert!(verify_tools(&tools).is_ok());
 }
 
 #[test]

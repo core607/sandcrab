@@ -137,7 +137,7 @@ class Recipe:
         self.claimed_root = True
         self.command('refresh package indexes', ['apt-get', 'update'])
         self.command('install preparation and Python workload dependencies',
-                     ['apt-get', 'install', '--yes', '--no-install-recommends', 'curl', 'ca-certificates', 'xz-utils', 'python3', 'procps'])
+                     ['apt-get', 'install', '--yes', '--no-install-recommends', 'python3', 'procps'])
         self.command('install candidate executable', ['install', '-m', '755', self.binary, self.root / 'sandcrab'])
         self.command('prepare pinned sandbox toolchain',
                      ['bash', self.source / 'executor-service/prepare-tools.sh', self.root / 'tools'])

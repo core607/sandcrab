@@ -79,7 +79,8 @@ it is not a capacity measurement. Run all protocol budgets for W0 and final
 comparisons. Each budget needs a new receipt path. The
 [measurement workflow](../../.github/workflows/sandcrab-density.yml) runs smoke on
 relevant pull requests; manual dispatch with `canonical=true` runs all three budgets
-on separate hosts after smoke. Its binary build uses a separate runner.
+on separate hosts after smoke. Select `budgets=5` for an intermediate change;
+W0 and final comparisons use `budgets=all`. Its binary build uses a separate runner.
 
 The JSON receipt includes source and binary identities, effective resource limits,
 all stage attempts, kernel counters, refusal codes and cleanup results. The sibling

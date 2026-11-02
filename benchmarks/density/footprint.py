@@ -80,9 +80,7 @@ def dependency_inventory(tools):
     for group, programs in groups.items():
         observed[group] = [{'program': name, 'purpose': purpose, 'present': shutil.which(name) is not None}
                            for name, purpose in programs.items()]
-    for relative, purpose in [('extracted/usr/bin/bwrap', 'namespace and mount isolation'),
-                              ('node_modules/@anthropic-ai/sandbox-runtime/vendor/seccomp/x64/apply-seccomp',
-                               'pinned syscall filter and protected PID namespace')]:
+    for relative, purpose in [('extracted/usr/bin/bwrap', 'namespace, mount isolation and compiled seccomp filter')]:
         path = tools / relative
         observed['core'].append({'program': relative, 'purpose': purpose, 'present': path.is_file(),
                                  'bytes': path.stat().st_size,
@@ -91,7 +89,7 @@ def dependency_inventory(tools):
             'runtimeExecutableCount': sum(len(rows) for rows in observed.values()),
             'countScope': 'Distinct command executables used by the current native implementation; '
                           'includes optional sessions and durable volumes; excludes shared-library closure and workload tools',
-            'preparationOnly': [{'name': 'Node.js/npm/SRT package', 'purpose': 'obtain the pinned seccomp helper'}],
+            'preparationOnly': [{'name': 'apt/dpkg-deb', 'purpose': 'extract distribution sandbox tools'}],
             'preparedTreeBytes': sum(path.stat().st_size for path in tools.rglob('*') if path.is_file() and not path.is_symlink()),
             'platform': ['Linux cgroup v2', 'systemd', 'user namespaces', 'XFS with project quotas for durable volumes']}
 
