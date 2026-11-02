@@ -429,6 +429,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "rustix",
+ "sandcrab-spawn",
  "serde",
  "serde_json",
  "sha2",
@@ -465,6 +466,14 @@ dependencies = [
  "base64",
  "rustix",
  "serde_json",
+]
+
+[[package]]
+name = "sandcrab-spawn"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rustix",
 ]
 
 [[package]]

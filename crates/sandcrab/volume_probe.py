@@ -325,18 +325,7 @@ PY"""
     def fault_tests(self, source):
         helpers = self.root / 'volume-helpers'
         helpers.mkdir(mode=0o755)
-        delay = helpers / 'delay'
-        entered = helpers / 'entered'
         failure = helpers / 'failed-unmount'
-        (helpers / 'systemd-run').write_text(f'''#!/usr/bin/python3
-import os,sys,time
-from pathlib import Path
-delay=Path({str(delay)!r})
-if delay.exists() and any({(self.name + '-volume-')!r} in arg for arg in sys.argv):
-    Path({str(entered)!r}).write_text('entered')
-    while delay.exists(): time.sleep(.02)
-os.execv('/usr/bin/systemd-run',['systemd-run',*sys.argv[1:]])
-''')
         (helpers / 'umount').write_text(f'''#!/usr/bin/python3
 import os,sys
 from pathlib import Path
@@ -344,20 +333,17 @@ flag=Path({str(failure)!r})
 if flag.exists() and Path(sys.argv[-1]).name==flag.read_text(): sys.exit(1)
 os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
 ''')
-        for name in ('systemd-run', 'umount'):
-            (helpers / name).chmod(0o755)
+        (helpers / 'umount').chmod(0o755)
         self.launch_path = str(helpers) + ':/usr/bin:/bin'
         self.restart()
+        faults = self.enable_launch_faults(helpers)
+        delay = faults.gate
 
         def delayed_clone():
-            entered.unlink(missing_ok=True)
-            delay.write_text('hold')
+            faults.arm('copy', 'before')
             request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'profile': 'python', 'cloneFrom': source['id']}
             assert http(self.socket, 'POST', '/v1/volumes', request)[0] == 202
-            deadline = time.monotonic() + 5
-            while not entered.exists() and time.monotonic() < deadline:
-                time.sleep(.025)
-            assert entered.exists(), 'copy unit did not reach its controlled delay'
+            faults.wait()
             return request
 
         target = delayed_clone()
@@ -375,8 +361,8 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
 
         target = delayed_clone()
         call('systemctl', 'kill', '--kill-whom=main', '--signal=KILL', self.unit)
-        call('systemctl', 'stop', self.unit, check=False)
         delay.unlink()
+        call('systemctl', 'stop', self.unit, check=False)
         self.restart()
         recovered = self.volume_wait(target)
         assert recovered['state'] == 'failed' and recovered['code'] == 'INTERRUPTED', recovered
@@ -418,18 +404,18 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
         self.write(source, 'test "$(head -c 1 0x-source.bin)" = A')
         self.done('volume-attachment-survives-unconfirmed-session-cleanup')
 
-        # The store's owner binds the cleanup namespace; changing it cannot expose
-        # data whose prior units might still be alive under a different prefix.
+        # The protected owner binds the physical delegation; changing it cannot
+        # adopt data whose old launchers might still be alive in another tree.
         original = self.config.read_text()
         original_unit = self.unit
         call('systemctl', 'stop', self.unit)
         self.unit = self.name + '-other.service'
-        self.config.write_text(original.replace(f'unit_prefix = "{self.name}-"', f'unit_prefix = "{self.name}-other-"')
-                               .replace(f'supervisor_unit = "{original_unit}"', f'supervisor_unit = "{self.unit}"'))
+        changed_root = self.delegated_root.with_name(self.unit)
+        self.config.write_text(original.replace(str(self.delegated_root), str(changed_root)))
         try:
             self.restart()
         except AssertionError:
-            assert 'Volume store belongs to another runtime namespace' in call('journalctl', '-u', self.unit, '--no-pager', '-n', '30').stdout
+            assert 'Runtime belongs to another cgroup delegation' in call('journalctl', '-u', self.unit, '--no-pager', '-n', '30').stdout
         else:
             raise AssertionError('changed cleanup namespace adopted existing data')
         finally:

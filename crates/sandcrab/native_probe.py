@@ -8,18 +8,25 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import signal
 import socket
 import subprocess
 import tempfile
 import threading
 import time
 import uuid
+from fault_probe import LaunchFaults
 
 CLIENT = (0, 0)
 
 
 def call(*args, check=True, timeout=30):
     return subprocess.run(args, check=check, capture_output=True, text=True, timeout=timeout)
+
+
+def service_cgroup(slice_name, unit):
+    parts = slice_name.removesuffix('.slice').split('-')
+    return Path('/sys/fs/cgroup').joinpath(*('-'.join(parts[:n]) + '.slice' for n in range(1, len(parts) + 1)), unit)
 
 
 def connect(stream, path):
@@ -67,6 +74,8 @@ class Probe:
         self.slice = self.name + '.slice'
         self.slice_file = Path('/run/systemd/system') / self.slice
         self.socket = self.root / 'runtime' / 'control.sock'
+        self.delegated_root = service_cgroup(self.slice, self.unit)
+        self.workloads_group = self.delegated_root / ('sandcrab-' + hashlib.sha256(str(self.socket.parent).encode()).hexdigest()) / 'workloads'
         self.config = self.root / 'config.toml'
         self.secret = self.root / 'host-sentinel'
         self.secret.write_text('host-sentinel-is-not-mounted\n')
@@ -78,9 +87,9 @@ runtime_root = {json.dumps(str(self.socket.parent))}
 socket = {json.dumps(str(self.socket))}
 client_uid = {client.pw_uid}
 client_gid = {client.pw_gid}
-resource_slice = "{self.slice}"
-supervisor_unit = "{self.unit}"
-unit_prefix = "{self.name}-"
+cgroup_root = "{self.delegated_root}"
+daemon_memory_bytes = 134217728
+daemon_tasks_max = 128
 max_sandboxes = 2
 max_records = 8
 max_output_bytes = 1048576
@@ -105,11 +114,24 @@ network = "none"
                         'checks': [], 'cleanup': 'NOT_RUN'}
 
     def start(self):
+        command = [str(self.binary), 'serve', '--config', str(self.config)]
+        if getattr(self, 'inherited_fd_probe', False):
+            command = ['/bin/bash', '-c', 'exec 77<"$1"; shift; exec "$@"',
+                       'sandcrab-fixture', str(self.secret), *command]
+        policy = ['-p', 'SystemCallFilter=~clone3', '-p', 'SystemCallErrorNumber=ENOSYS'] if getattr(self, 'deny_clone3', False) else []
         call('systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
-             '-p', 'MemoryMax=128M', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=128',
+             '-p', 'Delegate=yes', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=infinity',
              '-p', 'Environment=PATH=' + getattr(self, 'launch_path', '/usr/bin:/bin'),
-             '-p', 'KillMode=control-group', str(self.binary), 'serve', '--config', str(self.config))
+             '-p', 'KillMode=control-group', *policy, *command)
         self.wait_ready()
+
+    def enable_launch_faults(self, directory):
+        if hasattr(self, 'launch_faults'):
+            self.launch_faults.close()
+        self.launch_faults = LaunchFaults(self.binary, self.socket.parent, directory)
+        pid = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
+        self.launch_faults.start(pid)
+        return self.launch_faults
 
     def wait_ready(self):
         deadline = time.monotonic() + 25
@@ -118,6 +140,9 @@ network = "none"
                 status, info = http(self.socket, 'GET', '/v1/info')
                 if status == 200:
                     self.info = info
+                    if hasattr(self, 'launch_faults'):
+                        pid = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
+                        self.launch_faults.start(pid)
                     return
             except (OSError, ValueError, HTTPException):
                 pass
@@ -244,15 +269,14 @@ network = "none"
         assert len(response['result']['stdout']) + len(response['result']['stderr']) <= 64
         self.forget(request)
         self.done('exit-timeout-and-output-bounds')
+        self.closed_output()
 
         request = self.submit('import errno\ntry:\n open("large","wb").write(b"x"*(16*1024*1024))\nexcept OSError as e:\n assert e.errno==errno.ENOSPC; print("quota")\nelse:\n raise Exception("workspace quota absent")')
         assert self.wait(request)['result']['stdout'] == 'quota\n'
         self.forget(request)
         request = self.submit('import subprocess; subprocess.Popen(["sleep","30"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); print("child")')
         assert self.wait(request)['state'] == 'succeeded'
-        group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
-        unit_group = Path('/sys/fs/cgroup') / group.lstrip('/') / (self.name + '-' + request['id'] + '.service')
-        assert not any(path.read_text().strip() for path in unit_group.rglob('cgroup.procs'))
+        assert not (self.workloads_group / ('run-' + request['id'])).exists()
         assert not list((self.socket.parent / 'jobs').iterdir())
         self.forget(request)
         self.done('workspace-quota-and-descendant-cleanup')
@@ -337,11 +361,36 @@ network = "none"
         result = self.session_wait(session, terminal=True)
         assert result['state'] == 'closed', result
         assert not (self.socket.parent / 'jobs' / session['id']).exists()
-        group = call('systemctl', 'show', self.slice, '-p', 'ControlGroup', '--value').stdout.strip()
-        pool = Path('/sys/fs/cgroup') / group.lstrip('/')
-        for unit in pool.rglob(self.name + '-' + session['id'] + '.service'):
-            assert not any(p.read_text().strip() for p in unit.rglob('cgroup.procs'))
+        assert not (self.workloads_group / ('session-' + session['id'])).exists()
+        assert not list(self.workloads_group.glob('session-*/run-' + session['id']))
         return result
+
+    def closed_output(self):
+        closed = 'import os,time; os.close(1); os.close(2); '
+        request = self.submit(closed + 'time.sleep(2)', timeoutMillis=100)
+        result = self.wait(request)
+        self.receipt['closedOutputTimeout'] = result
+        self.save()
+        assert result['state'] == 'timed_out', result
+        self.forget(request)
+        request = self.submit(closed + 'open("closed-output", "w").close(); time.sleep(30)')
+        marker = self.socket.parent / 'jobs' / request['id'] / 'work/closed-output'
+        deadline = time.monotonic() + 5
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert marker.exists(), 'Workload did not close its output before cancellation'
+        started = time.monotonic()
+        assert http(self.socket, 'POST', f'/v1/runs/{request["id"]}/cancel', {})[0] == 200
+        result = self.wait(request)
+        elapsed = time.monotonic() - started
+        assert result['state'] == 'cancelled' and elapsed < 3, (result, elapsed)
+        self.forget(request)
+        request = self.submit(closed + 'time.sleep(6)', timeoutMillis=9000)
+        result = self.wait(request)
+        assert result['state'] == 'succeeded' and result['result']['stdout'] == result['result']['stderr'] == '', result
+        self.forget(request)
+        self.receipt['closedOutputCancellationSeconds'] = elapsed
+        self.done('finite-timeout-cancellation-and-completion-with-closed-workload-output')
 
     def inventory_tests(self):
         session = self.session_open()
@@ -465,10 +514,7 @@ network = "none"
         self.done('session-results-share-the-global-retention-bound')
 
         session = self.session_open()
-        unit_group = call('systemctl', 'show', self.name + '-' + session['id'] + '.service',
-                          '-p', 'ControlGroup', '--value').stdout.strip()
-        assert unit_group.startswith('/') and unit_group.endswith('/' + self.name + '-' + session['id'] + '.service')
-        group = Path('/sys/fs/cgroup') / unit_group.lstrip('/')
+        group = self.workloads_group / ('session-' + session['id']) / ('run-' + session['id'])
         assert (group / 'memory.oom.group').read_text().strip() == '1'
         for source in ['(exit 137)', "python3 -c 'import os, signal; os.kill(os.getpid(), signal.SIGKILL)'"]:
             request, result = self.session_exec(session, source)
@@ -589,6 +635,14 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         self.done('independent-build-test-example')
 
     def cleanup(self):
+        if hasattr(self, 'launch_faults'):
+            self.launch_faults.close()
+        logs = {}
+        for path in self.root.glob('*/trace-*.log'):
+            assert path.stat().st_size <= 65536, 'Fault controller log exceeds its receipt bound'
+            logs[path.name] = path.read_text()
+        if logs:
+            self.receipt['faultControllerLogs'] = logs
         call('systemctl', 'stop', self.unit, check=False)
         units = call('systemctl', 'list-units', '--all', '--plain', '--no-legend', self.name + '-*.service').stdout
         for line in units.splitlines():
@@ -615,70 +669,102 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         self.receipt['cleanup'] = 'PASS'
 
     def unmount_fixture(self, mount):
-        assert mount.parent == self.socket.parent / 'jobs'
-        uuid.UUID(mount.name)
+        root = mount.parent if mount.name == 'tmp' else mount
+        if root.parent == self.socket.parent / 'helper-jobs':
+            kind, identity = root.name.split('-', 1)
+            assert kind in ('file', 'copy')
+            uuid.UUID(identity)
+        else:
+            assert root.parent == self.socket.parent / 'jobs'
+            uuid.UUID(root.name)
         call('umount', str(mount))
 
     def startup_cancellation(self, session=False):
-        call('systemctl', 'stop', self.unit)
         helpers = self.root / ('delayed-session-launch' if session else 'delayed-launch')
         helpers.mkdir(mode=0o755)
-        entered, release, attempts = [helpers / name for name in ['entered', 'release', 'kill-attempts']]
-        # Delay registration, not the sandbox command. The first kill reaches the real
-        # systemd manager while the unit does not exist; the controller then permits launch.
-        (helpers / 'systemd-run').write_text(f'''#!/usr/bin/python3
-import os, sys, time
-from pathlib import Path
-Path({str(entered)!r}).touch()
-deadline = time.monotonic() + 8
-while not Path({str(release)!r}).exists():
-    if time.monotonic() > deadline:
-        raise SystemExit(91)
-    time.sleep(.01)
-os.execv('/usr/bin/systemd-run', ['systemd-run', *sys.argv[1:]])
-''')
-        (helpers / 'systemctl').write_text(f'''#!/usr/bin/python3
-import subprocess, sys
-result = subprocess.run(['/usr/bin/systemctl', *sys.argv[1:]])
-if sys.argv[1:2] == ['kill']:
-    with open({str(attempts)!r}, 'a') as log:
-        log.write(str(result.returncode) + '\\n')
-raise SystemExit(result.returncode)
-''')
-        for helper in [helpers / 'systemd-run', helpers / 'systemctl']:
-            helper.chmod(0o755)
-        self.launch_path = str(helpers) + ':/usr/bin:/bin'
-        self.start()
+        faults = self.enable_launch_faults(helpers)
+        faults.arm('launch', 'before')
         request = self.session_open(wait=False) if session else self.submit('import time; time.sleep(20)')
-        deadline = time.monotonic() + 5
-        while not entered.exists() and time.monotonic() < deadline:
-            time.sleep(.01)
-        assert entered.exists(), 'launcher did not enter the registration gate'
+        stopped = faults.wait()
+        expected = stopped['cgroup'].removeprefix('/sys/fs/cgroup') + '\n'
+        assert 'populated 1' in stopped['populated']
+        assert expected in stopped['membership'] and expected in stopped['birthMembership'], stopped
+        assert stopped['execFds'] == ['0', '1', '2'], stopped
+        assert int(stopped['birthCaughtSignals'], 16) == 0, stopped
+        assert int(stopped['ignoredSignals'], 16) & (1 << (signal.SIGPIPE - 1)) == 0, stopped
+        if getattr(self, 'inherited_fd_probe', False):
+            daemon = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
+            assert Path(f'/proc/{daemon}/fd/77').resolve() == self.secret
+        pid = stopped['pid']
+        assert Path(f'/proc/{pid}').exists(), 'Trusted launcher is not alive before workload setup'
         started = time.monotonic()
         cancel_path = f'/v1/sessions/{request["id"]}/close' if session else f'/v1/runs/{request["id"]}/cancel'
         assert http(self.socket, 'POST', cancel_path, {})[0] == 200
-        while (not attempts.exists() or not attempts.read_text().strip()) and time.monotonic() < deadline:
-            time.sleep(.01)
-        assert attempts.exists() and attempts.read_text().strip(), 'cancellation did not attempt to kill the pending unit'
-        unit = self.name + '-' + request['id'] + '.service'
-        assert call('systemctl', 'show', unit, '-p', 'LoadState', '--value').stdout.strip() == 'not-found'
-        initial = int(attempts.read_text().splitlines()[0])
-        assert initial != 0, 'first kill unexpectedly found a registered unit'
-        release.touch()
         result = self.session_wait(request, terminal=True) if session else self.wait(request)
         elapsed = time.monotonic() - started
+        assert not Path(f'/proc/{pid}').exists(), 'Pre-workload launcher was not reaped'
+        assert not Path(stopped['cgroup']).exists(), 'Cancelled launch cgroup remains'
+        faults.release()
+        faults.close()
         self.receipt['sessionStartupCancellation' if session else 'startupCancellation'] = {
-            'initialKillExitCode': initial, 'killAttempts': len(attempts.read_text().splitlines()),
+            'boundary': 'kernel exec event before trusted setup; placement observed at birth', 'initialPopulated': 1,
+            'birthMembership': stopped['birthMembership'], 'execFds': stopped['execFds'],
+            'birthCaughtSignals': stopped['birthCaughtSignals'],
+            'ignoredSignals': stopped['ignoredSignals'], 'inheritedFdProbe': getattr(self, 'inherited_fd_probe', False),
+            'ownedLauncherReaped': True,
             'seconds': round(elapsed, 3), 'state': result['state'], 'limitSeconds': 3,
         }
         self.save()
         self.session_forget(request) if session else self.forget(request)
         assert result['state'] == ('closed' if session else 'cancelled'), result
         assert elapsed < 3, f'pending cancellation waited {elapsed:.3f}s for the runtime deadline'
-        self.done('session-close-before-unit-registration' if session else 'cancellation-before-unit-registration')
-        call('systemctl', 'stop', self.unit)
-        del self.launch_path
+        self.done('session-close-before-workload-setup' if session else 'cancellation-before-workload-setup')
+
+    def failed_exec(self):
+        directory = self.root / 'failed-exec'
+        directory.mkdir(mode=0o755)
+        faults = self.enable_launch_faults(directory)
+        faults.arm('launch', 'exec-failure')
+        request = self.submit('print("must-not-execute")')
+        observed = faults.wait()
+        result = self.wait(request)
+        assert observed['exitStatus'] == 127 << 8, observed
+        assert result['state'] == 'failed' and result['result']['exitCode'] == 127, result
+        assert result['result']['stdout'] == result['result']['stderr'] == '', result
+        assert not Path(f'/proc/{observed["pid"]}').exists()
+        assert not list((self.socket.parent / 'jobs').iterdir())
+        assert not [path for path in self.workloads_group.iterdir() if path.is_dir()]
+        assert hashlib.sha256(self.binary.read_bytes()).hexdigest() == self.receipt['binarySha256']
+        faults.close()
+        self.forget(request)
+        self.receipt['failedExec'] = {'observed': observed, 'result': result, 'launcherReaped': True}
+        after = self.submit('print("after-exec-failure")')
+        assert self.wait(after)['result']['stdout'] == 'after-exec-failure\n'
+        self.forget(after)
+        self.done('failed-exec-exits-127-without-workload-or-leaked-admission')
+
+    def rejected_clone(self):
+        call('systemctl', 'stop', self.unit, check=False)
+        call('systemctl', 'reset-failed', self.unit, check=False)
+        self.deny_clone3 = True
+        try:
+            self.start()
+            request = self.submit('print("uncontained-fallback")')
+            result = self.wait(request)
+            assert result['state'] == 'failed' and result['result'] == {'code': 'RUN_FAILED'}, result
+            assert not list((self.socket.parent / 'jobs').iterdir())
+            assert not [path for path in self.workloads_group.iterdir() if path.is_dir()]
+            self.forget(request)
+            self.receipt['deniedClone3'] = result
+            self.done('denied-clone3-has-no-process-fallback-and-releases-contained-admission')
+        finally:
+            call('systemctl', 'stop', self.unit, check=False)
+            call('systemctl', 'reset-failed', self.unit, check=False)
+            self.deny_clone3 = False
         self.start()
+        request = self.submit('print("after-refusal")')
+        assert self.wait(request)['result']['stdout'] == 'after-refusal\n'
+        self.forget(request)
 
     def transport(self):
         with socket.socket(socket.AF_UNIX) as stream:
@@ -907,6 +993,7 @@ def main():
     assert os.geteuid() == 0, 'native probe requires root'
     assert not args.report.exists(), 'preserve the previous receipt; use a fresh output file'
     probe = Probe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
+    probe.inherited_fd_probe = True
     try:
         probe.setup()
         probe.tests()
@@ -916,6 +1003,8 @@ def main():
         probe.session_cleanup_failure()
         probe.startup_cancellation()
         probe.startup_cancellation(session=True)
+        probe.failed_exec()
+        probe.rejected_clone()
         probe.receipt['result'] = 'PASS'
     except BaseException as error:
         probe.receipt['result'] = 'FAIL'

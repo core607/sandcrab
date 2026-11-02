@@ -1,5 +1,4 @@
 """Read hierarchical kernel counters without moving processes or resetting counters."""
-import hashlib
 import os
 from pathlib import Path
 import time
@@ -16,7 +15,6 @@ def process_cpu(pid):
 class Metrics:
     def __init__(self, fixture):
         self.fixture = fixture
-        self.family = fixture.slice.removesuffix('.slice') + '-sandcrab' + hashlib.sha256((fixture.name + '-').encode()).hexdigest()
 
     def sample(self, executing=0):
         fixture = self.fixture
@@ -32,14 +30,14 @@ class Metrics:
         if daemon > total:
             raise RuntimeError('Inconsistent hierarchical CPU counters')
         live = 0
-        for entry in fixture.pool_group.glob(self.family + '*.slice'):
+        for entry in fixture.workloads_group.glob('session-*'):
             try:
                 live += fields(entry / 'cgroup.events')['populated'] == 1
             except FileNotFoundError:
                 continue
         finite = 0
-        for entry in fixture.pool_group.glob(fixture.name + '-*.service'):
-            identity = entry.name.removeprefix(fixture.name + '-').removesuffix('.service')
+        for entry in fixture.workloads_group.glob('run-*'):
+            identity = entry.name.removeprefix('run-')
             try:
                 uuid.UUID(identity)
                 finite += fields(entry / 'cgroup.events')['populated'] == 1

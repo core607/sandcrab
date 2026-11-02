@@ -1,14 +1,16 @@
-//! A generic run owns one quota-bounded workspace, one unit and its protected launch records.
-//! No workspace or record is removed until the unit's containment is confirmed.
+//! A generic run owns a bounded workspace, a cgroup and protected launch records.
+//! No workspace or record is removed before launcher and descendant containment.
 use crate::{
     config::{Config, Profile, invalid},
     storage::{Attachment, Store},
 };
 use rustix::fs::{Gid, OFlags, Uid, chown};
 use sandcrab_core::{
+    cgroup::{Cgroup, Limits},
     command::{Channel, EndReason, Request as CommandRequest},
     fs::{mounted, protected_directory},
-    unit::{Launch, checked, empty_group},
+    process::{Child, Input, Launch},
+    unit::checked,
     uuid,
 };
 use sandcrab_core::{install, job};
@@ -19,10 +21,8 @@ use std::{
     io::{self, Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::{Arc, atomic::AtomicBool},
-    thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[derive(Deserialize, Serialize)]
@@ -32,6 +32,9 @@ struct Record {
     tools: PathBuf,
     settings: PathBuf,
     uid: u32,
+    gid: u32,
+    parent_pid: u32,
+    cgroup: PathBuf,
     command: Vec<String>,
     shell: bool,
     workspace: PathBuf,
@@ -71,7 +74,7 @@ pub struct Runtime {
     pub files: crate::file_records::Store,
     pub storage: Option<Arc<Store>>,
     pub config: Config,
-    pool: PathBuf,
+    resources: crate::delegation::Delegation,
     executable: PathBuf,
     _lock: fs::File,
 }
@@ -80,27 +83,48 @@ pub struct Control<'a> {
     pub calls: Option<Arc<crate::host_calls::Calls>>,
 }
 
+pub(crate) struct SetupError {
+    pub error: io::Error,
+    pub contained: bool,
+}
+impl From<io::Error> for SetupError {
+    fn from(error: io::Error) -> Self {
+        Self {
+            error,
+            contained: true,
+        }
+    }
+}
+
+pub(crate) fn prepare_launch(
+    parent: &Cgroup,
+    name: &str,
+    profile: &Profile,
+    arguments: Vec<String>,
+) -> Result<Launch, SetupError> {
+    let group = parent.create_child(name)?;
+    let result = (|| {
+        group.set_limits(Limits {
+            memory_bytes: profile.memory_bytes,
+            tasks_max: profile.tasks_max,
+            cpu_quota_percent: profile.cpu_quota_percent,
+            oom_group: true,
+        })?;
+        Launch::new(arguments, group.clone())
+    })();
+    result.map_err(|error| SetupError {
+        error,
+        contained: group
+            .kill_and_wait(Duration::from_secs(15))
+            .and_then(|()| group.remove_empty())
+            .is_ok(),
+    })
+}
+
 impl Runtime {
     pub fn start(config: Config) -> io::Result<Self> {
         let executable = std::env::current_exe()?.canonicalize()?;
         sandcrab_launch::trusted_executable(&executable).map_err(io::Error::other)?;
-        let pool = install::resource_pool(&config.service.resource_slice)?;
-        let pid = call(&[
-            "systemctl",
-            "show",
-            &config.service.supervisor_unit,
-            "-p",
-            "MainPID",
-            "--value",
-        ])?;
-        if String::from_utf8_lossy(&pid.stdout)
-            .trim()
-            .parse::<u32>()
-            .ok()
-            != Some(std::process::id())
-        {
-            return Err(invalid("Run serve as the configured supervisor_unit"));
-        }
         let root = &config.service.runtime_root;
         protected_directory(
             root.parent()
@@ -111,13 +135,24 @@ impl Runtime {
         directory(&root.join("jobs"), 0o711)?;
         directory(&root.join("records"), 0o711)?;
         directory(&root.join("file-ops"), 0o700)?;
-        let storage = config.storage.clone().map(|s| Store::open(s, json!({"version":1,
-            "runtimeRoot":config.service.runtime_root,"resourceSlice":config.service.resource_slice,"unitPrefix":config.service.unit_prefix}))).transpose()?;
+        directory(&root.join("helper-jobs"), 0o700)?;
+        let resources = crate::delegation::Delegation::start(&config.service)?;
+        let storage = config
+            .storage
+            .clone()
+            .map(|s| {
+                Store::open(
+                    s,
+                    json!({"version":2,
+            "runtimeRoot":config.service.runtime_root,"cgroupRoot":config.service.cgroup_root}),
+                )
+            })
+            .transpose()?;
         let runtime = Self {
             files: crate::file_records::Store::open(&config)?,
             storage,
             config,
-            pool,
+            resources,
             executable,
             _lock: lock,
         };
@@ -133,60 +168,23 @@ impl Runtime {
     }
 
     pub fn cleanup(&self) -> io::Result<()> {
-        let prefix = &self.config.service.unit_prefix;
-        let units = call(&[
-            "systemctl",
-            "list-units",
-            "--all",
-            "--full",
-            "--plain",
-            "--no-legend",
-            &format!("{prefix}*"),
-        ])?;
-        for line in String::from_utf8_lossy(&units.stdout).lines() {
-            let unit = line.split_whitespace().next().unwrap_or_default();
-            if crate::session_resources::Group::owns(&self.config.service, unit) {
-                continue;
-            }
-            if !unit
-                .strip_prefix(prefix)
-                .and_then(|s| s.strip_suffix(".service"))
-                .is_some_and(|s| {
-                    uuid(s)
-                        || s.strip_prefix("volume-").is_some_and(uuid)
-                        || s.strip_prefix("file-").is_some_and(uuid)
-                })
-            {
-                return Err(invalid("Unexpected unit in Sandcrab namespace"));
-            }
-            let group = call(&["systemctl", "show", unit, "-p", "ControlGroup", "--value"])?;
-            let group = std::str::from_utf8(&group.stdout)
-                .map_err(|_| invalid("Invalid unit cgroup"))?
-                .trim();
-            let group = if group.is_empty() {
-                self.pool.join(unit)
-            } else {
-                if !sandcrab_core::fs::normal(Path::new(group)) {
-                    return Err(invalid("Invalid unit cgroup"));
-                }
-                let group = Path::new("/sys/fs/cgroup").join(group.trim_start_matches('/'));
-                if !group.starts_with(&self.pool)
-                    || group.file_name().and_then(|n| n.to_str()) != Some(unit)
-                {
-                    return Err(invalid("Unit is outside the resource pool"));
-                }
-                group
-            };
-            call(&["systemctl", "stop", unit])?;
-            empty_group(&group)?;
-            let _ = call(&["systemctl", "reset-failed", unit]);
-        }
-        crate::session_resources::Group::recover(&self.config.service, &self.pool)?;
+        self.resources.cleanup()?;
         let root = &self.config.service.runtime_root;
         for entry in fs::read_dir(root.join("jobs"))? {
             let entry = entry?;
             if !entry.file_name().to_str().is_some_and(uuid) {
                 return Err(invalid("Unexpected workspace entry"));
+            }
+            release(&entry.path(), &[])?;
+        }
+        for entry in fs::read_dir(root.join("helper-jobs"))? {
+            let entry = entry?;
+            if !entry.file_name().to_str().is_some_and(|name| {
+                ["file-", "copy-"]
+                    .iter()
+                    .any(|prefix| name.strip_prefix(prefix).is_some_and(uuid))
+            }) {
+                return Err(invalid("Unexpected helper workspace entry"));
             }
             release(&entry.path(), &[])?;
         }
@@ -227,10 +225,10 @@ impl Runtime {
         job: &crate::file_io::Job,
         profile: &Profile,
         cancelled: &AtomicBool,
-        input: Stdio,
+        input: Input,
     ) -> (io::Result<Value>, bool) {
         let execute = || -> io::Result<(io::Result<Value>, bool)> {
-            sandcrab_core::unit::verify_resource_pool(&self.pool)?;
+            self.resources.verify()?;
             let operation = sandcrab_core::new_uuid()?;
             let record = self
                 .config
@@ -239,19 +237,6 @@ impl Runtime {
                 .join("file-ops")
                 .join(format!("{operation}.json"));
             create(&record, job, 0, 0o400)?;
-            let unit = format!("{}file-{operation}", self.config.service.unit_prefix);
-            let limits = sandcrab_core::unit::Profile {
-                tools: profile.tools.clone(),
-                launcher: self.executable.clone(),
-                exec_user: "root".into(),
-                resource_slice: self.config.service.resource_slice.clone(),
-                supervisor_unit: self.config.service.supervisor_unit.clone(),
-                cpu_quota_percent: profile.cpu_quota_percent,
-                memory_bytes: profile.memory_bytes,
-                tasks_max: profile.tasks_max,
-                temporary_bytes: profile.temporary_bytes,
-                temporary_inodes: profile.temporary_inodes,
-            };
             let mut readonly = vec![record.as_path()];
             let mut writable = vec![job.stage.as_path()];
             if ["snapshot", "sdk-query"].contains(&job.action.as_str()) {
@@ -271,47 +256,32 @@ impl Runtime {
             } else {
                 30000
             };
-            let command = limits.command_with_args(
-                &unit,
-                &readonly,
-                &writable,
-                &[
-                    self.executable.to_string_lossy().into(),
-                    "__file".into(),
-                    record.to_string_lossy().into(),
-                ],
-                Some(timeout),
-                &[
-                    "OOMPolicy=kill".into(),
-                    "ProtectSystem=strict".into(),
-                    format!(
-                        "ReadWritePaths={}",
-                        writable
-                            .iter()
-                            .map(|p| p.to_string_lossy())
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    ),
-                    "PrivateNetwork=yes".into(),
-                    "PrivateDevices=yes".into(),
-                    "CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER".into(),
-                ],
-            );
-            let (finished, contained) = job::run_input(
-                &Launch {
-                    command,
-                    unit: unit.clone(),
-                    cgroup: self.pool.join(format!("{unit}.service")),
-                },
+            let (finished, contained) = crate::helper::Context {
+                runtime_root: &self.config.service.runtime_root,
+                executable: &self.executable,
+                workloads: &self.resources.workloads,
+            }
+            .run(
+                profile,
                 cancelled,
-                Duration::from_millis(timeout),
-                if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
-                    65536
-                } else {
-                    16384
-                },
                 input,
-                |_, _| {},
+                crate::helper::Request {
+                    kind: "file",
+                    id: &operation,
+                    argv: vec![
+                        self.executable.to_string_lossy().into(),
+                        "__file".into(),
+                        record.to_string_lossy().into(),
+                    ],
+                    read_only: readonly.into_iter().map(Path::to_path_buf).collect(),
+                    writable: writable.into_iter().map(Path::to_path_buf).collect(),
+                    timeout: Duration::from_millis(timeout),
+                    output_limit: if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
+                        65536
+                    } else {
+                        16384
+                    },
+                },
             );
             if contained.is_ok() {
                 fs::remove_file(record)?;
@@ -371,7 +341,7 @@ impl Runtime {
                 selection: None,
             };
             let (result, contained) =
-                self.file_helper(&job, profile, &AtomicBool::new(false), Stdio::null());
+                self.file_helper(&job, profile, &AtomicBool::new(false), Input::Null);
             if !contained {
                 return Err(invalid("File cleanup containment unconfirmed"));
             }
@@ -407,25 +377,37 @@ impl Runtime {
         });
         let (result, contained) =
             match self.prepare(&root, &records, profile, argv, Some(timeout), None) {
-                Ok((launch, mailbox)) => match start_calls(calls.as_ref(), mailbox.as_ref(), id) {
-                    Ok(mut guard) => {
-                        let (result, contained) = job::run(
-                            &launch,
-                            cancelled,
-                            Duration::from_millis(timeout),
-                            limit,
-                            on_output,
-                        );
-                        let ended = guard.as_mut().map(|g| g.finish()).transpose().map(|_| ());
-                        let closed = mailbox.map(|m| m.close()).transpose().map(|_| ());
-                        (result, contained.and(ended).and(closed))
+                Ok((mut launch, mailbox)) => {
+                    match start_calls(calls.as_ref(), mailbox.as_ref(), id) {
+                        Ok(mut guard) => {
+                            let (result, contained) = job::run(
+                                &mut launch,
+                                cancelled,
+                                Duration::from_millis(timeout),
+                                limit,
+                                on_output,
+                            );
+                            let ended = guard.as_mut().map(|g| g.finish()).transpose().map(|_| ());
+                            let closed = mailbox.map(|m| m.close()).transpose().map(|_| ());
+                            (result, contained.and(ended).and(closed))
+                        }
+                        Err(error) => (
+                            Err(error),
+                            launch
+                                .finish(None, Duration::from_secs(15))
+                                .map(|_| ())
+                                .and(mailbox.map(|m| m.close()).transpose().map(|_| ())),
+                        ),
                     }
-                    Err(error) => (
-                        Err(error),
-                        mailbox.map(|m| m.close()).transpose().map(|_| ()),
-                    ),
-                },
-                Err(error) => (Err(error), Ok(())),
+                }
+                Err(error) => (
+                    Err(error.error),
+                    if error.contained {
+                        Ok(())
+                    } else {
+                        Err(invalid("Launch setup containment unconfirmed"))
+                    },
+                ),
             };
         let cleanup = contained.and_then(|()| release(&root, &records));
         (result, cleanup)
@@ -463,9 +445,7 @@ impl Runtime {
         let id = request.id.as_str();
         let resources = shared
             .map(|s| Ok(s.access.resources.clone()))
-            .unwrap_or_else(|| {
-                crate::session_resources::Group::new(&self.config.service, &self.pool, id)
-            })
+            .unwrap_or_else(|| crate::session_resources::Group::new(&self.resources.workloads, id))
             .map_err(|_| OpenError {
                 code: "SESSION_UNAVAILABLE",
                 contained: true,
@@ -507,7 +487,7 @@ impl Runtime {
             }
             release(&root, &records)
         };
-        if shared.is_none() && resources.start(&self.config.service, profile).is_err() {
+        if shared.is_none() && resources.start(profile).is_err() {
             return Err(OpenError {
                 code: "SESSION_UNAVAILABLE",
                 contained: cleanup().is_ok(),
@@ -517,7 +497,7 @@ impl Runtime {
             .map(|s| s.access.workspace.clone())
             .or_else(|| attachment.as_ref().map(Attachment::path))
             .unwrap_or_else(|| root.join("work"));
-        let (launch, mailbox) = match self.prepare(
+        let (mut launch, mailbox) = match self.prepare(
             &root,
             &records,
             profile,
@@ -526,25 +506,20 @@ impl Runtime {
             Some((&workspace, &resources)),
         ) {
             Ok(launch) => launch,
-            Err(_) => {
+            Err(error) => {
                 return Err(OpenError {
                     code: "SESSION_UNAVAILABLE",
-                    contained: cleanup().is_ok(),
+                    contained: error.contained && cleanup().is_ok(),
                 });
             }
         };
-        let child = match Command::new(&launch.command[0])
-            .args(&launch.command[1..])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
+        let child = match launch.spawn(Input::Pipe) {
             Ok(child) => child,
             Err(_) => {
                 return Err(OpenError {
                     code: "SESSION_UNAVAILABLE",
-                    contained: cleanup().is_ok(),
+                    contained: launch.finish(None, Duration::from_secs(15)).is_ok()
+                        && cleanup().is_ok(),
                 });
             }
         };
@@ -585,55 +560,35 @@ impl Runtime {
         profile: &Profile,
         stopped: &AtomicBool,
     ) -> (io::Result<job::Finished>, io::Result<()>) {
-        if let Err(error) = sandcrab_core::unit::verify_resource_pool(&self.pool) {
+        if let Err(error) = self.resources.verify() {
             return (Err(error), Ok(()));
         }
         let storage = self.storage.as_ref().expect("configured volume store");
-        let unit = format!("{}volume-{operation}", self.config.service.unit_prefix);
-        let limits = sandcrab_core::unit::Profile {
-            tools: profile.tools.clone(),
-            launcher: self.executable.clone(),
-            exec_user: "root".into(),
-            resource_slice: self.config.service.resource_slice.clone(),
-            supervisor_unit: self.config.service.supervisor_unit.clone(),
-            cpu_quota_percent: profile.cpu_quota_percent,
-            memory_bytes: profile.memory_bytes,
-            tasks_max: profile.tasks_max,
-            temporary_bytes: profile.temporary_bytes,
-            temporary_inodes: profile.temporary_inodes,
-        };
-        let argv = vec![
-            self.executable.to_string_lossy().into(),
-            "__copy-tree".into(),
-            source.to_string_lossy().into(),
-            destination.to_string_lossy().into(),
-            storage.config.root.join("data").to_string_lossy().into(),
-        ];
-        let command = limits.command_with_args(
-            &unit,
-            &[source],
-            &[destination],
-            &argv,
-            Some(profile.timeout_millis),
-            &[
-                "OOMPolicy=kill".into(),
-                "ProtectSystem=strict".into(),
-                format!("ReadWritePaths={}", destination.display()),
-                "PrivateNetwork=yes".into(),
-                "PrivateDevices=yes".into(),
-                "CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER".into(),
-            ],
-        );
-        job::run(
-            &Launch {
-                command,
-                unit: unit.clone(),
-                cgroup: self.pool.join(format!("{unit}.service")),
-            },
+        let pool = storage.config.root.join("data");
+        crate::helper::Context {
+            runtime_root: &self.config.service.runtime_root,
+            executable: &self.executable,
+            workloads: &self.resources.workloads,
+        }
+        .run(
+            profile,
             stopped,
-            Duration::from_millis(profile.timeout_millis),
-            65536,
-            |_, _| {},
+            Input::Null,
+            crate::helper::Request {
+                kind: "copy",
+                id: operation,
+                argv: vec![
+                    self.executable.to_string_lossy().into(),
+                    "__copy-tree".into(),
+                    source.to_string_lossy().into(),
+                    destination.to_string_lossy().into(),
+                    pool.to_string_lossy().into(),
+                ],
+                read_only: vec![pool],
+                writable: vec![destination.into()],
+                timeout: Duration::from_millis(profile.timeout_millis),
+                output_limit: 65536,
+            },
         )
     }
 
@@ -645,14 +600,18 @@ impl Runtime {
         argv: &[String],
         timeout: Option<u64>,
         session: Option<(&Path, &crate::session_resources::Group)>,
-    ) -> io::Result<(Launch, Option<Arc<sandcrab_core::mailbox::Mailbox>>)> {
+    ) -> Result<(Launch, Option<Arc<sandcrab_core::mailbox::Mailbox>>), SetupError> {
         let workspace = session.map(|(workspace, _)| workspace);
+        let parent = match session {
+            Some((_, resources)) => resources.kernel()?,
+            None => self.resources.workloads.clone(),
+        };
         let id = root
             .file_name()
             .and_then(|s| s.to_str())
             .filter(|s| uuid(s))
             .ok_or_else(|| invalid("Invalid workspace identity"))?;
-        sandcrab_core::unit::verify_resource_pool(&self.pool)?;
+        self.resources.verify()?;
         let options = format!(
             "size={},nr_inodes={},mode=0750,nosuid,nodev",
             profile.temporary_bytes, profile.temporary_inodes
@@ -667,6 +626,19 @@ impl Runtime {
             &root.to_string_lossy(),
         ])?;
         owned(root, 0, profile.gid, 0o750)?;
+        directory(&root.join("tmp"), 0o755)?;
+        call(&[
+            "mount",
+            "-t",
+            "tmpfs",
+            "-o",
+            &format!(
+                "size={},nr_inodes={},mode=1777,nosuid,nodev",
+                profile.temporary_bytes, profile.temporary_inodes
+            ),
+            "tmpfs",
+            &root.join("tmp").to_string_lossy(),
+        ])?;
         directory(&root.join("bootstrap"), 0o555)?;
         directory(&root.join("work"), 0o750)?;
         owned(&root.join("work"), profile.uid, profile.gid, 0o750)?;
@@ -687,6 +659,9 @@ impl Runtime {
                 tools: profile.tools.clone(),
                 settings: settings.clone(),
                 uid: profile.uid,
+                gid: profile.gid,
+                parent_pid: std::process::id(),
+                cgroup: parent.path().join(format!("run-{id}")),
                 command: argv.into(),
                 shell: timeout.is_none(),
                 workspace: workspace.unwrap_or(&root.join("work")).into(),
@@ -704,54 +679,21 @@ impl Runtime {
         create(
             settings,
             &json!({"network":{"allowedDomains":[],"deniedDomains":[],"allowAllUnixSockets":false},
-            "filesystem":{"denyRead":["/","/sys"],"allowRead":read,"allowWrite":["/tmp"],"denyWrite":[]},"enableWeakerNestedSandbox":false}),
+            "filesystem":{"denyRead":["/","/sys"],"allowRead":read,"allowWrite":[],"denyWrite":[]},"enableWeakerNestedSandbox":false}),
             profile.gid,
             0o440,
         )?;
-        let unit = format!("{}{id}", self.config.service.unit_prefix);
-        let limits = sandcrab_core::unit::Profile {
-            tools: profile.tools.clone(),
-            launcher: self.executable.clone(),
-            exec_user: profile.exec_user.clone(),
-            resource_slice: session
-                .map(|(_, group)| group.unit.clone())
-                .unwrap_or_else(|| self.config.service.resource_slice.clone()),
-            supervisor_unit: self.config.service.supervisor_unit.clone(),
-            cpu_quota_percent: profile.cpu_quota_percent,
-            memory_bytes: profile.memory_bytes,
-            tasks_max: profile.tasks_max,
-            temporary_bytes: profile.temporary_bytes,
-            temporary_inodes: profile.temporary_inodes,
-        };
-        let mut writable = vec![root];
-        if let Some(workspace) = workspace.filter(|workspace| !workspace.starts_with(root)) {
-            writable.push(workspace);
-        }
-        // One OOM ends the session, including its shell and background processes.
-        // Do not inherit the host's DefaultOOMPolicy.
-        let command = limits.command_with_args(
-            &unit,
-            &[record, settings],
-            &writable,
-            &[
+        let launch = prepare_launch(
+            &parent,
+            &format!("run-{id}"),
+            profile,
+            vec![
                 self.executable.to_string_lossy().into(),
                 "__launch".into(),
                 record.to_string_lossy().into(),
             ],
-            timeout,
-            &["OOMPolicy=kill".into()],
-        );
-        Ok((
-            Launch {
-                command,
-                cgroup: session
-                    .map(|(_, group)| &group.cgroup)
-                    .unwrap_or(&self.pool)
-                    .join(format!("{unit}.service")),
-                unit,
-            },
-            mailbox,
-        ))
+        )?;
+        Ok((launch, mailbox))
     }
 }
 
@@ -773,9 +715,16 @@ fn start_calls(
     result
 }
 
-fn release(root: &Path, records: &[PathBuf]) -> io::Result<()> {
+pub(crate) fn release(root: &Path, records: &[PathBuf]) -> io::Result<()> {
     if !fs::symlink_metadata(root)?.is_dir() {
         return Err(invalid("Invalid workspace directory"));
+    }
+    let temporary = root.join("tmp");
+    if mounted(&temporary)? {
+        if !fs::symlink_metadata(&temporary)?.is_dir() {
+            return Err(invalid("Invalid private temporary directory"));
+        }
+        call(&["umount", &temporary.to_string_lossy()])?;
     }
     if mounted(root)? {
         call(&["umount", &root.to_string_lossy()])?;
@@ -819,14 +768,20 @@ fn launch_file(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Internal entry point reached only after systemd changes to the profile's execution user.
+/// Trusted child joins its configured cgroup and drops identity before sandbox setup.
 pub fn launch(path: &Path) -> io::Result<()> {
     let value =
         sandcrab_core::parse(&launch_file(path)?).map_err(|_| invalid("Invalid launch JSON"))?;
     let record: Record = serde_json::from_value(value)?;
-    if record.uid == 0 || rustix::process::geteuid().as_raw() != record.uid {
+    if record.uid == 0 || record.gid == 0 {
         return Err(invalid("Wrong execution account"));
     }
+    sandcrab_core::process::enter(
+        &Cgroup::open(&record.cgroup)?,
+        record.uid,
+        record.gid,
+        record.parent_pid,
+    )?;
     let bwrap = sandcrab_launch::verify_tools(&record.tools).map_err(io::Error::other)?;
     let seccomp = sandcrab_launch::Seccomp::new().map_err(io::Error::other)?;
     let policy: Value = sandcrab_core::parse(&launch_file(&record.settings)?)
@@ -880,6 +835,9 @@ pub fn launch(path: &Path) -> io::Result<()> {
         separator..separator,
         [
             "--bind".into(),
+            record.root.join("tmp").to_string_lossy().into(),
+            "/tmp".into(),
+            "--bind".into(),
             record.workspace.to_string_lossy().into(),
             "/workspace".into(),
             "--chdir".into(),
@@ -912,14 +870,14 @@ pub fn launch(path: &Path) -> io::Result<()> {
     )))
 }
 
-/// Owns one persistent unit. Storage can be released only after its launcher and cgroup stop.
+/// Owns one persistent shell. Storage can be released only after its launcher and cgroup stop.
 pub struct OpenError {
     pub code: &'static str,
     pub contained: bool,
 }
 pub struct Shell {
     pub files: Arc<crate::file_access::Access>,
-    pub channel: Channel,
+    pub channel: Channel<Child>,
     launch: Launch,
     root: PathBuf,
     records: [PathBuf; 2],
@@ -952,49 +910,8 @@ impl Shell {
         if self.shared.is_none() {
             self.files.stop();
         }
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while self.channel.process().try_wait()?.is_none() {
-            let _ = call(&[
-                "systemctl",
-                "kill",
-                "--kill-who=all",
-                "--signal=KILL",
-                &self.launch.unit,
-            ]);
-            self.channel.drain()?;
-            if Instant::now() >= deadline {
-                return Err(invalid("Session launcher containment unconfirmed"));
-            }
-            thread::sleep(Duration::from_millis(50));
-        }
-        if let Err(error) = call(&["systemctl", "stop", &self.launch.unit]) {
-            // Successful transient units may already be collected. A completed launcher
-            // plus a witnessed ready frame rules out a registration still in flight.
-            if !self.channel.ready()
-                || !call(&[
-                    "systemctl",
-                    "show",
-                    &self.launch.unit,
-                    "-p",
-                    "LoadState",
-                    "-p",
-                    "ActiveState",
-                ])
-                .is_ok_and(|state| {
-                    state
-                        .stdout
-                        .split(|b| *b == b'\n')
-                        .any(|line| line == b"LoadState=not-found")
-                        && state
-                            .stdout
-                            .split(|b| *b == b'\n')
-                            .any(|line| line == b"ActiveState=inactive")
-                })
-            {
-                return Err(error);
-            }
-        }
-        empty_group(&self.launch.cgroup)?;
+        self.launch
+            .finish(Some(self.channel.process()), Duration::from_secs(15))?;
         if self.shared.is_none() {
             self.files.wait()?;
         }
@@ -1004,7 +921,6 @@ impl Shell {
         if self.shared.is_none() {
             self.resources.stop()?;
         }
-        let _ = call(&["systemctl", "reset-failed", &self.launch.unit]);
         release(&self.root, &self.records)?;
         if let Some(attachment) = self.attachment.take() {
             attachment.release();
@@ -1026,7 +942,7 @@ impl Shell {
     ) -> (job::Finished, bool) {
         let Control { cancelled, calls } = control;
         let mut guard = match if self.mailbox.is_some() {
-            sandcrab_core::unit::frozen(&self.launch.cgroup, cancelled, || {
+            sandcrab_core::unit::frozen(self.launch.group().path(), cancelled, || {
                 start_calls(calls.as_ref(), self.mailbox.as_ref(), id)
             })
         } else {
@@ -1059,37 +975,21 @@ impl Shell {
             || {},
             on_output,
         );
+        let oom = self.launch.group().oom_kills();
+        let observation_failed = oom.is_err();
         let end = match result.reason {
             Some(EndReason::Timeout) => job::End::Timeout,
             Some(EndReason::OutputLimit) => job::End::OutputLimit,
             Some(EndReason::Cancelled) => job::End::Cancelled,
-            _ if fs::read_to_string(self.launch.cgroup.join("memory.events")).is_ok_and(
-                |events| {
-                    events.lines().any(|line| {
-                        line.split_once(' ').is_some_and(|(key, value)| {
-                            key == "oom_kill" && value.trim().parse::<u64>().is_ok_and(|n| n > 0)
-                        })
-                    })
-                },
-            ) || (result.shell_exited
-                && call(&[
-                    "systemctl",
-                    "show",
-                    &self.launch.unit,
-                    "-p",
-                    "Result",
-                    "--value",
-                ])
-                .is_ok_and(|value| value.stdout == b"oom-kill\n")) =>
-            {
-                job::End::ResourceLimit
-            }
+            _ if oom.is_ok_and(|count| count > 0) => job::End::ResourceLimit,
             _ => job::End::Normal,
         };
-        let mut reusable = !result.shell_exited && end == job::End::Normal;
+        let mut reusable = !observation_failed && !result.shell_exited && end == job::End::Normal;
         if let Some(guard) = &mut guard {
             let ended = if reusable {
-                sandcrab_core::unit::frozen(&self.launch.cgroup, cancelled, || guard.finish())
+                sandcrab_core::unit::frozen(self.launch.group().path(), cancelled, || {
+                    guard.finish()
+                })
             } else {
                 guard.finish()
             };

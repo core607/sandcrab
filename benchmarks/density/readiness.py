@@ -11,8 +11,12 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'executor-service/rust/sandcrab'))
+import native_probe
 
 
 def save(path, receipt):
@@ -146,8 +150,9 @@ class Recipe:
                      ['useradd', '--system', '--no-create-home', '--shell', '/usr/sbin/nologin', self.user])
         text = (self.source / 'executor-service/rust/sandcrab/config.example.toml').read_text()
         values = {'runtime_root': str(self.root / 'runtime'), 'socket': str(self.root / 'runtime/control.sock'),
-                  'client_uid': 0, 'client_gid': 0, 'resource_slice': self.slice, 'supervisor_unit': self.unit,
-                  'unit_prefix': self.name + '-', 'exec_user': self.user, 'tools': str(self.root / 'tools')}
+                  'client_uid': 0, 'client_gid': 0,
+                  'cgroup_root': str(native_probe.service_cgroup(self.slice, self.unit)),
+                  'exec_user': self.user, 'tools': str(self.root / 'tools')}
         for name, value in values.items():
             text, count = re.subn(r'(?m)^' + name + r' = .*$', name + ' = ' + json.dumps(value), text, count=1)
             if count != 1:
@@ -166,7 +171,7 @@ class Recipe:
         self.command('start the resource slice', ['systemctl', 'start', self.slice])
         self.command('start the root service in its bounded unit',
                      ['systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
-                      '-p', 'MemoryMax=128M', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=128',
+                      '-p', 'Delegate=yes', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=infinity',
                       '-p', 'KillMode=control-group', '-p', 'RuntimeMaxSec=180',
                       self.root / 'sandcrab', 'serve', '--config', self.root / 'config.toml'])
         deadline = time.monotonic() + 20

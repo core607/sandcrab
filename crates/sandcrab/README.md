@@ -14,8 +14,8 @@ Consumer adoption and extraction remain under the
 Build with `./gradlew buildExecutorRust`; the static binary is
 `build/executor-service/bin/sandcrab`. It is excluded from the Poketto worker bundle.
 Install it with mode 0755 in a root-owned directory with root-owned ancestors. The host needs
-systemd with `systemctl`, `systemd-run` and `busctl`, cgroup v2, unprivileged user
-namespaces and bubblewrap 0.6.1+ from the executor's
+a writable delegated cgroup v2 subtree, unprivileged user namespaces,
+`mount`/`umount` and bubblewrap 0.6.1+ from the executor's
 [tool preparation](../../prepare-tools.sh). The seccomp filter is compiled into
 the binary; Node.js, npm and SRT are not Sandcrab runtime dependencies.
 
@@ -26,18 +26,31 @@ account. Profiles choose readable paths, tools, finite resource limits and
 accounts, mounts or isolation policy. Sessions need `/bin/bash` and its libraries
 in the profile's read mounts. Read mounts cannot expose runtime storage.
 
-Each session has a child systemd slice under the configured resource slice. Its
+Each session has a child cgroup under the configured delegation. Its
 aggregate memory, CPU and task limits apply to every process in the session.
 Memory caps round down to whole kernel pages; swap is disabled. File freezing
-covers that child slice. Closing and restart recovery confirm process containment
+covers that child cgroup. Closing and restart recovery confirm process containment
 before releasing the workspace or attached volume.
 
-Configure the slice with finite `MemoryMax`, `MemorySwapMax`, `TasksMax` and
-`CPUQuota`, then run `sandcrab serve --config FILE` as root in `supervisor_unit`
-under that slice. Give the supervisor its own memory/task limits. Startup requires
-that unit's MainPID, verifies the pool and tools, takes the runtime lock and cleans
-up previous runs. `sandcrab check --config FILE` checks protected configuration,
-accounts and tools; it does not prove the runtime slice or sandbox works.
+Set `service.cgroup_root` to a root-owned cgroup whose effective ancestors bound
+memory, CPU and tasks and disable swap. Delegate `cpu`, `memory` and `pids`.
+The daemon creates separate `daemon` and `workloads` subtrees; its own limits are
+`daemon_memory_bytes` and `daemon_tasks_max`. It moves itself before enabling
+controllers, so the delegation must contain no unrelated processes.
+For systemd, use `Delegate=yes`, `TasksMax=infinity` and `OOMPolicy=continue` on
+the service, with aggregate limits on its enclosing slice. Set `cgroup_root` to
+the service's full cgroup path; a per-service memory cap also caps its sandboxes.
+An already delegated container or root host can run `sandcrab serve --config FILE`
+directly. No per-sandbox service manager invocation is required.
+The daemon creates launchers directly in their configured leaves with
+`clone3(CLONE_INTO_CGROUP)`. It also requires `close_range` and `cgroup.kill`;
+unsupported or filtered operations fail without an uncontained fallback.
+Child setup or executable failure exits 127 without running the workload.
+Startup locks the runtime and contains old owned leaves before publishing a new
+epoch. The protected ownership marker binds the runtime to its delegation;
+pre-delegation runtime/storage directories require a fresh location.
+`sandcrab check --config FILE` checks configuration, accounts and tools; it does
+not prove that delegation or a sandbox works.
 
 Each run executes as the profile's account in a fresh bounded tmpfs at
 `/workspace`, with a private `/tmp`, isolated network and PID namespaces and
@@ -265,7 +278,7 @@ Children inherit the parent's effective profile, aggregate memory/CPU/process
 limits and expiry; they cannot select another profile or create grandchildren.
 Renewal and file operations use the parent ID. Frozen file operations cover every
 shell in that workspace. Kernel OOM victims are selected within the aggregate
-budget; an unaffected shell's results do not inherit another unit's OOM history.
+budget; an unaffected shell's results do not inherit another leaf's OOM history.
 Every child consumes a retained `max_records` entry until explicitly forgotten.
 Parent closure, expiry, primary-shell failure or shutdown contains all children
 before releasing storage. Unconfirmed child cleanup fences the parent and keeps
@@ -315,7 +328,7 @@ The selected profile must use the volume's execution UID/GID. One session owns a
 volume exclusively until confirmed cleanup; a failed cleanup retains that ownership.
 Cloning requires an unattached source and holds it for the operation. Reflinks
 preserve hard links and symlinks without following them, and subsequent writes
-are independent. Clone work uses the selected profile's bounded unit and timeout.
+are independent. Clone work uses the selected profile's bounded cgroup and timeout.
 
 Byte quotas count allocated XFS blocks, including managed metadata, rather than
 sparse logical lengths. Inode quotas also count managed metadata. Requests may
@@ -341,7 +354,7 @@ ID needs the current server epoch. The CLI prints its recovery ID before submiss
 `--id UUID` permits an explicit replay. Never substitute a new ID after a lost response.
 Forgetting ends replay protection; never reuse that client ID.
 
-Startup contains prior units before recovering unfinished creation or deletion.
+Startup contains owned cgroups before recovering unfinished creation or deletion.
 Published volumes remain intact. Uncertain metadata or volume cleanup fences
 mutations (`STORAGE_UNCERTAIN`, `storage.available=false`) until restart and
 reconciliation; it never exposes uncommitted data as ready. Unexpected data,
@@ -430,7 +443,19 @@ Linux, creates its own bounded slice and service and exercises real CLI/HTTP,
 containment, cancellation, replay, capacity, session build/repair, renewal, expiry, restart and cleanup. It uses no
 model API and reports deterministic evidence only. It does not establish agent
 usability, OpenSandbox compatibility or Poketto adoption. Injected cleanup failure
-must retain session admission, and delayed unit registration must remain cancellable.
+must retain session admission, and a launcher stopped before workload setup must
+remain cancellable in its leaf. The external `fault_probe.py` controller uses kernel fork/exec/exit
+stops on this fixture's daemon; it is not installed with the service.
+`delegation_probe.py` also takes `--parent CGROUP`, an existing parent delegating
+cpu, memory and pids. It starts the daemon directly, without service-manager calls,
+and checks limits, private temporary storage, recovery and ownership refusal.
+For its disposable container mode, run the probe as PID 1 with
+`--initialize-container --parent /sys/fs/cgroup`. The tested Docker bounds are
+`--privileged --cgroupns private --memory 512m --memory-swap 512m --cpus 2
+--pids-limit 512 --network none`, with `/run` and `/tmp` as 64 MiB tmpfs mounts.
+Copy the probe sources, binary and prepared tools into root-owned container paths;
+no host cgroup bind mount is used. This acceptance fixture is separate from the
+release installer/container workstream.
 `volume_probe.py` takes the same binary/tools/report arguments and additionally
 requires `xfsprogs`. It owns a disposable 512 MiB XFS image, verifies file readback,
 reflinks, quotas, durable replay and failure recovery, and unmounts it only after

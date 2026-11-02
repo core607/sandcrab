@@ -169,6 +169,7 @@ pub fn checked(args: &[String], timeout: Duration) -> io::Result<Output> {
     use rustix::{
         event::{PollFd, PollFlags, Timespec, poll},
         fs::{OFlags, fcntl_getfl, fcntl_setfl},
+        process::{Pid, PidfdFlags, pidfd_open},
     };
     let (program, args) = args.split_first().ok_or_else(unavailable)?;
     let mut child = Command::new(program)
@@ -179,6 +180,10 @@ pub fn checked(args: &[String], timeout: Duration) -> io::Result<Output> {
         .spawn()?;
     let deadline = Instant::now() + timeout;
     let result = (|| {
+        // Acquire before any reap: even an already-exited child retains its PID.
+        // Pipe EOF can precede waitable exit, so pipes alone cannot wake that wait.
+        let pid = Pid::from_raw(child.id() as i32).ok_or_else(unavailable)?;
+        let process = pidfd_open(pid, PidfdFlags::empty())?;
         let mut out = child.stdout.take().ok_or_else(unavailable)?;
         let mut err = child.stderr.take().ok_or_else(unavailable)?;
         fcntl_setfl(&out, fcntl_getfl(&out)? | OFlags::NONBLOCK)?;
@@ -211,9 +216,17 @@ pub fn checked(args: &[String], timeout: Duration) -> io::Result<Output> {
                 if open[1] {
                     fds.push(PollFd::new(&err, PollFlags::IN));
                 }
+                // After exit, descendants may still hold an output pipe. Omit
+                // the ready pidfd so draining that pipe cannot spin until timeout.
+                if status.is_none() {
+                    fds.push(PollFd::new(&process, PollFlags::IN));
+                }
                 poll(
                     &mut fds,
-                    Some(&Timespec::try_from(Duration::from_millis(20)).unwrap()),
+                    Some(
+                        &Timespec::try_from(deadline.saturating_duration_since(Instant::now()))
+                            .unwrap(),
+                    ),
                 )?;
                 let ready = |fd: &PollFd<'_>| {
                     fd.revents()
@@ -377,5 +390,35 @@ mod tests {
         ] {
             assert!(checked(&["/bin/sh".into(), "-c".into(), command.into()], timeout).is_err());
         }
+    }
+
+    #[test]
+    fn helper_exit_and_pipe_lifetimes_are_independent() {
+        let run = |script: &str, timeout| {
+            checked(&["/bin/sh".into(), "-c".into(), script.into()], timeout)
+        };
+        // EOF does not authorize success before the child's actual status.
+        assert!(
+            run(
+                "exec >/dev/null 2>&1; sleep .02; exit 7",
+                Duration::from_secs(2)
+            )
+            .is_err()
+        );
+        assert!(
+            run(
+                "exec >/dev/null 2>&1; exec sleep 1",
+                Duration::from_millis(20)
+            )
+            .is_err()
+        );
+        assert!(run("exec >/dev/null 2>&1; sleep .02", Duration::from_secs(2)).is_ok());
+        // A reaped parent does not authorize dropping output retained by a child.
+        let output = run(
+            "(sleep .02; printf retained) & exit 0",
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(output.stdout, b"retained");
     }
 }

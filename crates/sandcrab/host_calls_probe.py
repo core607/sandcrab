@@ -106,6 +106,13 @@ class HostCallsProbe(Probe):
         self.receipt['hostCallsProbeSha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         self.receipt['callerExampleSha256'] = hashlib.sha256(example.read_bytes()).hexdigest()
 
+    def restart(self):
+        # Each intentional configuration/recovery case starts a new burst;
+        # faster sandboxes must not turn separate cases into a crash-loop limit.
+        call('systemctl', 'reset-failed', self.unit)
+        call('systemctl', 'restart', self.unit)
+        self.wait_ready()
+
     def reply(self, run, request, payload):
         return http(self.socket, 'POST', f'/v1/runs/{run["id"]}/calls/{request["id"]}/reply',
                     {'base64': base64.b64encode(payload).decode()})
@@ -382,8 +389,7 @@ while True: time.sleep(1)
         os.chown(client_key, *native_probe.CLIENT)
         authority = f'{address[0]}:{address[1]}'
         self.config.write_text(original + f'\n[tcp]\nlisten = "{authority}"\ntoken_file = {json.dumps(str(server_key))}\n')
-        call('systemctl', 'restart', self.unit)
-        self.wait_ready()
+        self.restart()
         run = self.submit(program(b'TCP request'))
         with Calls(self.socket, run, connection=socket.create_connection(address, timeout=8),
                    headers={'Authorization': 'Bearer ' + key}) as events:
@@ -413,8 +419,7 @@ while True: time.sleep(1)
         assert key not in result.stdout + result.stderr
         self.forget(run)
         self.config.write_text(original)
-        call('systemctl', 'restart', self.unit)
-        self.wait_ready()
+        self.restart()
         self.done('authenticated-tcp-host-call-events-and-cli-replies-refuse-unauthenticated-bodies')
 
     def command_limits(self):
@@ -469,8 +474,7 @@ for child in children: child.wait()
         with Calls(self.socket, run) as events:
             request = events.until('call')
         epoch = self.info['serverId']
-        call('systemctl', 'restart', self.unit)
-        self.wait_ready()
+        self.restart()
         assert self.info['serverId'] != epoch
         assert self.reply(run, request, b'old epoch')[1]['error']['code'] == 'RUN_NOT_FOUND'
         assert not (self.socket.parent / 'jobs' / run['id']).exists()
@@ -501,8 +505,7 @@ for child in children: child.wait()
     def disabled_default(self):
         enabled = self.config.read_text()
         self.config.write_text(enabled.replace('\nhost_calls = true', ''))
-        call('systemctl', 'restart', self.unit)
-        self.wait_ready()
+        self.restart()
         assert self.info['profiles']['python']['hostCalls'] is False
         run = self.submit('''import os
 from pathlib import Path
@@ -521,8 +524,7 @@ print('disabled')
         request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'profile': 'python', 'command': ['true'], 'hostCalls': True}
         assert http(self.socket, 'POST', '/v1/runs', request)[1]['error']['code'] == 'INVALID_REQUEST'
         self.config.write_text(enabled)
-        call('systemctl', 'restart', self.unit)
-        self.wait_ready()
+        self.restart()
         self.done('host-calls-default-off-without-guest-mounts-and-callers-cannot-enable-them')
 
     def retained_cli(self):

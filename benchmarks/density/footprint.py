@@ -67,10 +67,10 @@ def cost(baseline, active, count):
 def dependency_inventory(tools):
     # Required executable surfaces, not a distribution package/dependency-closure count.
     groups = {
-        'core': {'systemctl': 'unit lifecycle and containment', 'systemd-run': 'sandbox launch',
-                 'env': 'clear the sandbox launcher environment', 'mount': 'bounded workspace',
+        'core': {'id': 'validate the execution account during service startup',
+                 'mount': 'bounded workspace and private temporary storage',
                  'umount': 'workspace cleanup'},
-        'sessions': {'busctl': 'session resource slice', 'bash': 'persistent shell'},
+        'sessions': {'bash': 'persistent shell'},
         'durableVolumes': {'findmnt': 'verify the volume mount', '/usr/sbin/xfs_spaceman': 'reflink verification',
                            '/usr/sbin/xfs_io': 'project identity', '/usr/sbin/xfs_quota': 'project quotas',
                            '/usr/bin/cp': 'clone volume data'},
@@ -91,7 +91,7 @@ def dependency_inventory(tools):
                           'includes optional sessions and durable volumes; excludes shared-library closure and workload tools',
             'preparationOnly': [{'name': 'apt/dpkg-deb', 'purpose': 'extract distribution sandbox tools'}],
             'preparedTreeBytes': sum(path.stat().st_size for path in tools.rglob('*') if path.is_file() and not path.is_symlink()),
-            'platform': ['Linux cgroup v2', 'systemd', 'user namespaces', 'XFS with project quotas for durable volumes']}
+            'platform': ['Linux cgroup v2 delegation', 'user namespaces', 'XFS with project quotas for durable volumes']}
 
 
 async def measure(fixture, receipt, counts, report, ledger):

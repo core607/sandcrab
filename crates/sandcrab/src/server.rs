@@ -527,7 +527,20 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
             let mut stream = match accept(&listener, tcp.as_ref(), tcp_first) {
                 Ok(Some(stream)) => stream,
                 Ok(None) => {
-                    thread::sleep(Duration::from_millis(10));
+                    use rustix::event::{PollFd, PollFlags, Timespec, poll};
+                    let mut listeners = vec![PollFd::new(&listener, PollFlags::IN)];
+                    if let Some(tcp) = &tcp {
+                        listeners.push(PollFd::new(tcp, PollFlags::IN));
+                    }
+                    // Wake immediately for either transport. The upper bound
+                    // preserves idle session/SDK maintenance and shutdown checks.
+                    if let Err(error) = poll(
+                        &mut listeners,
+                        Some(&Timespec::try_from(Duration::from_millis(10)).unwrap()),
+                    ) && error != rustix::io::Errno::INTR
+                    {
+                        return Err(error.into());
+                    }
                     continue;
                 }
                 Err(e) => return Err(e),

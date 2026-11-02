@@ -36,9 +36,11 @@ pub struct Service {
     pub socket: PathBuf,
     pub client_uid: u32,
     pub client_gid: u32,
-    pub resource_slice: String,
-    pub supervisor_unit: String,
-    pub unit_prefix: String,
+    pub cgroup_root: PathBuf,
+    #[serde(default = "daemon_memory")]
+    pub daemon_memory_bytes: u64,
+    #[serde(default = "daemon_tasks")]
+    pub daemon_tasks_max: u64,
     pub max_sandboxes: usize,
     pub max_records: usize,
     pub max_output_bytes: usize,
@@ -120,6 +122,12 @@ impl Profile {
 }
 fn file_records() -> usize {
     256
+}
+fn daemon_memory() -> u64 {
+    128 * 1024 * 1024
+}
+fn daemon_tasks() -> u64 {
+    128
 }
 fn connections() -> usize {
     32
@@ -260,28 +268,14 @@ impl Config {
                 "service.socket must be inside a normalized absolute runtime_root",
             ));
         }
-        if !unit_name(&service.resource_slice)
-            || !service.resource_slice.ends_with(".slice")
-            || !unit_name(&service.supervisor_unit)
-            || !service.supervisor_unit.ends_with(".service")
-            || !service
-                .unit_prefix
-                .strip_prefix("sandcrab-")
-                .and_then(|s| s.strip_suffix('-'))
-                .is_some_and(name)
+        if !normal(&service.cgroup_root)
+            || !(16 * 1024 * 1024..=16 * 1024 * 1024 * 1024).contains(&service.daemon_memory_bytes)
+            || !(32..=8192).contains(&service.daemon_tasks_max)
         {
             return Err(invalid(
-                "Service requires slice/service names and a sandcrab-NAME- unit_prefix",
+                "Use an absolute cgroup_root, 16 MiB..16 GiB daemon memory and 32..8192 daemon tasks",
             ));
         }
-        if service.unit_prefix
-            != format!("{}-", service.supervisor_unit.trim_end_matches(".service"))
-        {
-            return Err(invalid(
-                "unit_prefix must be the supervisor unit name followed by '-'",
-            ));
-        }
-        crate::session_resources::validate(service)?;
         if !(8..=256).contains(&service.max_connections)
             || !(1..=service.max_connections.saturating_sub(4).min(128))
                 .contains(&service.max_event_streams)

@@ -72,14 +72,14 @@ def main():
         with tempfile.TemporaryDirectory(prefix='sandcrab-readiness-') as temporary:
             archive = Path(temporary) / 'source.tar'
             call('git', '-C', source, 'archive', 'HEAD', '-o', archive)
-            call('docker', 'cp', source / 'experiments/sandcrab-density/readiness.py', name + ':/root/readiness.py')
             started = call('docker', 'exec', name, 'python3', '-c', 'import time; print(time.monotonic_ns())').stdout.strip()
             call('docker', 'cp', archive, name + ':/root/source.tar')
             call('docker', 'cp', binary, name + ':/root/sandcrab')
             call('docker', 'exec', name, 'mkdir', '/source')
             call('docker', 'exec', name, 'tar', '-xf', '/root/source.tar', '-C', '/source')
             recipe_result = call('docker', 'exec', '-e', 'SANDCRAB_READINESS_DISPOSABLE=1', name,
-                                 'python3', '/root/readiness.py', '--source', '/source', '--binary', '/root/sandcrab',
+                                 'python3', '/source/experiments/sandcrab-density/readiness.py',
+                                 '--source', '/source', '--binary', '/root/sandcrab',
                                  '--revision', receipt['sourceCommit'], '--report', '/root/readiness.json',
                                  '--acquisition-started-ns', started, check=False, timeout=900)
         receipt.update(recipeExitCode=recipe_result.returncode, recipeStdout=recipe_result.stdout[-8192:],

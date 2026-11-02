@@ -197,6 +197,40 @@ fn version_parsing_requires_three_decimal_components() {
 }
 
 #[test]
+fn version_helper_waits_for_status_and_bounds_inherited_output() {
+    let root = Root::new();
+    let finished = root.0.join("finished");
+    let helper = root.file(
+        "valid",
+        format!(
+            "#!/bin/sh\nprintf 'bubblewrap 0.9.0\\n'\nexec 1>/dev/null\nsleep .02\ntouch {}\n",
+            finished.display()
+        )
+        .as_bytes(),
+        0o755,
+    );
+    assert_eq!(
+        read_version(&helper, Duration::from_secs(2)).unwrap(),
+        "bubblewrap 0.9.0\n"
+    );
+    assert!(finished.is_file());
+    let failed = root.file(
+        "failed",
+        b"#!/bin/sh\nexec 1>/dev/null\nsleep .02\nexit 7\n",
+        0o755,
+    );
+    assert!(read_version(&failed, Duration::from_secs(2)).is_err());
+    let inherited = root.file(
+        "inherited",
+        b"#!/bin/sh\nprintf 'bubblewrap 0.9.0\\n'\nsleep 1 &\nexit 0\n",
+        0o755,
+    );
+    assert!(read_version(&inherited, Duration::from_millis(200)).is_err());
+    let oversized = root.file("oversized", b"#!/bin/sh\nhead -c 8192 /dev/zero\n", 0o755);
+    assert!(read_version(&oversized, Duration::from_secs(2)).is_err());
+}
+
+#[test]
 fn tool_and_ancestor_ownership_cannot_be_bypassed_by_links_or_modes() {
     let root = Root::new();
     let safe = root.file("safe/bwrap", b"#!/bin/sh\n", 0o755);

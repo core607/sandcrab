@@ -82,6 +82,12 @@ relevant pull requests; manual dispatch with `canonical=true` runs all three bud
 on separate hosts after smoke. Select `budgets=5` for an intermediate change;
 W0 and final comparisons use `budgets=all`. Its binary build uses a separate runner.
 
+`cold_start.py --volume` traces attachment of a prepared empty XFS volume, including
+its validation helpers. The default traces an ephemeral workspace. Both include
+observer overhead; neither replaces the density driver's untraced cold-start metric.
+Add `--syscalls` for at most 256 syscall numbers, durations and return values per
+launcher before placement; arguments and file contents are not collected.
+
 The JSON receipt includes source and binary identities, effective resource limits,
 all stage attempts, kernel counters, refusal codes and cleanup results. The sibling
 `.attempts.jsonl` records a command's identity before submission, including setup
@@ -173,13 +179,16 @@ It does not replace the full-corpus comparison.
 ## Startup timeline
 
 [cold_start.py](cold_start.py) uses the same arguments and additionally requires
-bpftrace, kernel BTF, the raw cgroup-create tracepoint and scheduler exec/exit
+bpftrace, kernel BTF, cgroup-create/attach and scheduler fork/exec/exit
 tracepoints on an isolated Linux 5.7+ host.
 It observes three new persistent sessions; smoke uses the smaller fixture budget.
-Only the fixture's daemon cgroup and new descendants of its pool emit events.
-The trace records D-Bus client exec, session-slice creation, systemd-run exec,
-the sandbox bwrap exec and bash exec. It distinguishes bwrap's version check from
-the actual sandbox launch by matching the launcher's PID and cgroup across its
+Only the fixture's daemon cgroup and new descendants of its workload subtree emit events.
+The trace records session cgroup creation, placement in its leaf, trusted launcher
+exec, sandbox bwrap exec and bash exec. Placement is observed from the child's
+cgroup at the kernel fork event, or a later cgroup attachment for migration-based
+launches. It follows only the measured session tree, excluding volume validation
+helpers. It distinguishes bwrap's version check from the actual sandbox launch
+by following the verified launcher's PID through its
 `exec` replacement, as implemented by
 [`sandcrab-launch`](../../executor-service/rust/sandcrab-launch/src/lib.rs).
 A process exit invalidates that identity. No user argv pointers are read.

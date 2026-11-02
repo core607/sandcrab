@@ -35,7 +35,7 @@ pub struct Lease {
     count: Arc<AtomicUsize>,
     released: bool,
 }
-/// A child unit pins the shared workspace until its own containment is confirmed.
+/// A child shell pins the shared workspace until its own containment is confirmed.
 pub struct ShellLease {
     pub access: Arc<Access>,
     id: String,

@@ -269,7 +269,7 @@ class FileProbe(VolumeProbe):
         uploads = self.storage / 'state/uploads'
         owner = json.loads((uploads / 'owner.json').read_text())
         assert owner['runtimeRoot'] == str(self.socket.parent)
-        assert owner['unitPrefix'] == self.name + '-'
+        assert owner['cgroupRoot'] == str(self.delegated_root)
         (uploads / 'records').rmdir()
         (uploads / 'stages').rmdir()
         (uploads / 'owner.json').unlink()
@@ -498,48 +498,14 @@ class FileProbe(VolumeProbe):
     def publication_faults(self):
         helpers = self.root / 'file-helpers'
         helpers.mkdir(mode=0o755)
-        gate, entered = helpers / 'gate.json', helpers / 'entered'
-        (helpers / 'systemd-run').write_text(f'''#!/usr/bin/python3
-import json,os,subprocess,sys,time
-from pathlib import Path
-args=sys.argv[1:]
-gate=Path({str(gate)!r})
-if '__file' not in args or not gate.exists():
-    os.execv('/usr/bin/systemd-run',['systemd-run',*args])
-job=json.loads(Path(args[args.index('__file')+1]).read_text())
-fault=json.loads(gate.read_text())
-if job['action']!=fault['action']:
-    os.execv('/usr/bin/systemd-run',['systemd-run',*args])
-def hold():
-    Path({str(entered)!r}).write_text(job['action'])
-    while gate.exists(): time.sleep(.02)
-if fault['phase']=='fail':
-    # Fail inside the real bounded unit, so Result/ExecMainStatus describe the fault.
-    args=args[:args.index('__file')-1]+['/usr/bin/false']
-if fault['phase']=='before': hold()
-if fault['phase']=='oom':
-    args=['MemoryMax=8388608' if arg.startswith('MemoryMax=') else arg for arg in args]
-result=subprocess.run(['/usr/bin/systemd-run',*args])
-if fault['phase']=='oom':
-    unit=args[args.index('--unit')+1]
-    observed=subprocess.run(['/usr/bin/systemctl','show',unit,'-p','Result','--value'],capture_output=True,text=True,check=True)
-    Path({str(entered)!r}).write_text(observed.stdout.strip())
-if result.returncode==0 and fault['phase']=='after': hold()
-sys.exit(result.returncode)
-''')
-        (helpers / 'systemd-run').chmod(0o755)
-        self.launch_path = str(helpers) + ':/usr/bin:/bin'
-        self.restart()
+        faults = self.enable_launch_faults(helpers)
+        gate, entered = faults.gate, faults.entered
 
         def arm(action, phase):
-            entered.unlink(missing_ok=True)
-            gate.write_text(json.dumps({'action': action, 'phase': phase}))
+            faults.arm('file', phase, action)
 
         def await_gate():
-            deadline = time.monotonic() + 10
-            while not entered.exists() and time.monotonic() < deadline:
-                time.sleep(.025)
-            assert entered.exists(), 'file helper did not reach the controlled delay'
+            faults.wait()
 
         volume, result = self.volume()
         assert result['state'] == 'ready', result
@@ -628,8 +594,7 @@ sys.exit(result.returncode)
                 stream.sendall((f'POST /v1/sessions/{session["id"]}/snapshot HTTP/1.1\r\nHost: sandcrab\r\n'
                                 f'Content-Length: {len(body)}\r\n\r\n').encode() + body)
                 await_gate()
-                group = call('systemctl', 'show', self.name + '-' + session['id'], '-p', 'ControlGroup', '--value').stdout.strip()
-                events = Path('/sys/fs/cgroup') / group.lstrip('/') / 'cgroup.events'
+                events = self.workloads_group / ('session-' + session['id']) / 'cgroup.events'
                 assert 'frozen 1' in events.read_text()
             gate.unlink()
             deadline = time.monotonic() + 15
@@ -673,8 +638,9 @@ sys.exit(result.returncode)
             except (BrokenPipeError, ConnectionResetError, native_probe.HTTPException):
                 result = self.upload_wait(request)
             assert result['state'] == 'failed' and result['code'] == 'FILE_RESOURCE_LIMIT', result
-            assert entered.read_text() == 'oom-kill'
-            self.receipt['fileHelperOom'] = {'injectedMemoryMaxBytes': 8388608, 'unitResult': 'oom-kill'}
+            oom = json.loads(entered.read_text())
+            assert oom['oomKills'] > 0, oom
+            self.receipt['fileHelperOom'] = {'injectedMemoryMaxBytes': 8388608, 'oomKills': oom['oomKills']}
             gate.unlink()
             assert http(self.socket, 'GET', '/v1/info')[1]['serverId'] == epoch
             assert self.command(session, 'test ! -e oversized-name; printf alive') == 'alive'
@@ -686,7 +652,7 @@ sys.exit(result.returncode)
             self.done('files-receive-helper-oom-is-contained-without-ending-the-service-or-session')
         finally:
             gate.unlink(missing_ok=True)
-            del self.launch_path
+            faults.close()
         self.restart()
         self.volume_delete(volume)
         self.volume_forget(volume)

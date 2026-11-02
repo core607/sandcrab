@@ -11,13 +11,13 @@ use rustix::{
     fs::{OFlags, fcntl_getfl, fcntl_setfl},
     pipe::{PipeFlags, pipe_with},
 };
+use sandcrab_core::process::Input;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Write},
     os::unix::fs::OpenOptionsExt,
-    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -322,7 +322,7 @@ impl Service {
                     &job,
                     &lease.access.profile,
                     &lease.cancelled,
-                    Stdio::null(),
+                    Input::Null,
                 );
                 contained &= ended;
                 published?;
@@ -404,7 +404,7 @@ impl Service {
                     job,
                     &lease.access.profile,
                     &lease.cancelled,
-                    Stdio::from(input),
+                    Input::File(input),
                 )
             }) {
                 Ok(worker) => worker,
@@ -478,7 +478,7 @@ impl Service {
                     &job,
                     &lease.access.profile,
                     &lease.cancelled,
-                    Stdio::null(),
+                    Input::Null,
                 );
                 contained &= ended;
                 result

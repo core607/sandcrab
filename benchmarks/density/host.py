@@ -59,9 +59,11 @@ class Fixture(Probe):
             raise RuntimeError('Insufficient host memory outside the requested benchmark slice')
         if free < self.pool_bytes + 2 * 1024**3 or other_loads():
             raise RuntimeError('Insufficient free storage or another load controller is active')
+        if any(Path('/var/lib').glob('poketto-java-native-*')) or any(Path('/var/lib').glob('sandcrab-native-*')):
+            raise RuntimeError('Another native fixture directory is present; reconcile it before measuring')
         if call('systemctl', 'list-units', '--all', '--plain', '--no-legend', 'sandcrab-probe-*.service').stdout.strip():
             raise RuntimeError('Another native fixture is present; reconcile it before measuring')
-        for program in ('systemd-run', 'busctl', 'mkfs.xfs', 'findmnt', 'git', 'rg', 'bash', 'python3'):
+        for program in ('systemd-run', 'mkfs.xfs', 'findmnt', 'git', 'rg', 'bash', 'python3'):
             if shutil.which(program) is None:
                 raise RuntimeError('Missing benchmark dependency: ' + program)
         self.host_lock = os.open('/var/lib/sandcrab-density.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -97,9 +99,9 @@ runtime_root = {json.dumps(str(self.socket.parent))}
 socket = {json.dumps(str(self.socket))}
 client_uid = 0
 client_gid = 0
-resource_slice = "{self.slice}"
-supervisor_unit = "{self.unit}"
-unit_prefix = "{self.name}-"
+cgroup_root = "{self.delegated_root}"
+daemon_memory_bytes = 536870912
+daemon_tasks_max = 2048
 max_sandboxes = 512
 max_records = 1024
 max_output_bytes = 16777216
@@ -175,16 +177,27 @@ network = "none"
             if cpu[0] != 'max' and int(cpu[0]) < 2 * int(cpu[1]):
                 raise RuntimeError('An ancestor supplies less than two CPUs of quota')
         self.start()
-        self.daemon_group = group(self.unit)
+        self.daemon_pid = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
+        membership = Path(f'/proc/{self.daemon_pid}/cgroup').read_text().strip().split(':', 2)
+        if membership[:2] != ['0', ''] or not membership[2].startswith('/'):
+            raise RuntimeError('Invalid daemon cgroup v2 membership')
+        self.daemon_group = Path('/sys/fs/cgroup') / membership[2].lstrip('/')
         if not self.daemon_group.is_relative_to(self.pool_group):
             raise RuntimeError('Daemon is outside the measured slice')
-        self.daemon_pid = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
+        self.workloads_group = self.daemon_group.parent / 'workloads'
+        if self.daemon_group.name != 'daemon' or not self.workloads_group.is_dir():
+            raise RuntimeError('Missing distinct daemon and workload cgroups')
+        daemon_limits = {name: int((self.daemon_group / name).read_text()) for name in
+                         ('memory.max', 'memory.swap.max', 'pids.max')}
+        if daemon_limits != {'memory.max': 536870912, 'memory.swap.max': 0, 'pids.max': 2048}:
+            raise RuntimeError('Daemon leaf no longer has the W0 limits')
+        self.receipt['daemonEffectiveLimits'] = daemon_limits
         self.receipt['binaryBytes'] = self.binary.stat().st_size
 
     def start(self):
         call('systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
-             '-p', 'MemoryMax=512M', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=2048',
-             '-p', 'OOMPolicy=stop', '-p', 'OOMScoreAdjust=-900', '-p', 'RuntimeMaxSec=5400',
+             '-p', 'Delegate=yes', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=infinity',
+             '-p', 'OOMPolicy=continue', '-p', 'OOMScoreAdjust=-900', '-p', 'RuntimeMaxSec=5400',
              '-p', 'Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin', '-p', 'KillMode=control-group',
              str(self.binary), 'serve', '--config', str(self.config))
         self.wait_ready()

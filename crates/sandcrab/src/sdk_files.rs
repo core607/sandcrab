@@ -3,9 +3,9 @@ use crate::{
     config::invalid, file_io::Format, files, opensandbox::Sandbox, sdk_types::Result,
     service::Service,
 };
+use sandcrab_core::process::Input;
 use std::{
     io::{self, Read},
-    process::Stdio,
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
@@ -104,7 +104,7 @@ impl Service {
                     &job,
                     &lease.access.profile,
                     &lease.cancelled,
-                    Stdio::null(),
+                    Input::Null,
                 );
                 contained &= ended;
                 result

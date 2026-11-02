@@ -4,6 +4,7 @@
 //! Nothing here knows which product requested a lease.
 
 pub mod artifacts;
+pub mod cgroup;
 pub mod command;
 pub mod fs;
 pub mod http;
@@ -12,6 +13,7 @@ pub mod install;
 pub mod job;
 pub mod json;
 pub mod mailbox;
+pub mod process;
 pub mod raw;
 pub mod transfer;
 pub mod unit;

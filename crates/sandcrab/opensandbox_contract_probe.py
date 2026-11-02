@@ -172,14 +172,12 @@ class Contract:
 
         for cancel in (False, True):
             identity, headers = self.create()
-            group = call('systemctl', 'show', self.probe.name + '-' + identity + '.service',
-                         '-p', 'ControlGroup', '--value').stdout.strip()
-            assert group.startswith('/') and group != '/'
-            parent_cgroup = Path('/sys/fs/cgroup') / group.lstrip('/')
+            parent_cgroup = self.probe.workloads_group / ('session-' + identity)
+            assert parent_cgroup.is_dir()
             connection, response, command = self.stream(identity, headers, 'sleep 30', None if cancel else 100)
             status, native = http(self.probe.socket, 'GET', '/v1/runs/' + command)
             assert status == 200 and native['sessionId'] != identity
-            cgroup = parent_cgroup.parent / (self.probe.name + '-' + native['sessionId'] + '.service')
+            cgroup = parent_cgroup / ('run-' + native['sessionId'])
             try:
                 if cancel:
                     assert self.request('DELETE', '/opensandbox/' + identity + '/command?id=' + command,
@@ -293,7 +291,7 @@ class Contract:
         self.probe.done('sdk-upload-prepublication-refusals-preserve-the-whole-batch-and-allow-explicit-recovery')
         assert self.request('GET', '/opensandbox/' + identity + '/files/download?path=%2Fworkspace%2Flink%2Fpasswd',
                             headers=headers)[0] >= 400
-        self.probe.upload_reply_fault.touch()
+        self.probe.launch_faults.arm('file', 'drop-record', 'sdk-publish')
         body = self.multipart([({'path': '/workspace/guard'}, b'published-without-receipt')])
         status, failure = self.upload(identity, headers, body)
         assert status == 503 and failure['code'] == 'PUBLICATION_UNKNOWN', (status, failure)

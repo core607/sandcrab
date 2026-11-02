@@ -6,12 +6,12 @@ use crate::{
     sdk_types::{self, Result},
     service::Service,
 };
+use sandcrab_core::process::Input;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,
-    process::Stdio,
     sync::{Arc, atomic::Ordering},
 };
 
@@ -344,7 +344,7 @@ impl Service {
                     &job,
                     &lease.access.profile,
                     &lease.cancelled,
-                    Stdio::null(),
+                    Input::Null,
                 );
                 contained &= ended;
                 result

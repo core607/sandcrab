@@ -740,7 +740,7 @@ impl Store {
         fs::remove_dir_all(&path)?;
         sync(&self.config.root.join("data/volumes"))
     }
-    /// Called only after the runtime has stopped every unit in its bound namespace.
+    /// Called only after the runtime has contained its owned cgroup namespace.
     pub fn recover(&self) -> io::Result<()> {
         let records: Vec<_> = self
             .state
@@ -805,7 +805,7 @@ impl Store {
     }
 }
 
-/// Fixed root helper invoked only inside the daemon's bounded copy unit.
+/// Fixed root helper invoked only inside the daemon's bounded copy cgroup.
 pub fn copy_tree(source: &Path, destination: &Path, pool: &Path) -> io::Result<()> {
     if rustix::process::geteuid() != Uid::ROOT || !normal(pool) || source == destination {
         return Err(invalid("Invalid volume copy authority"));

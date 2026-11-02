@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trace a new session's actual cgroup, D-Bus client, launcher and sandbox exec events."""
+"""Trace a new session's cgroup creation, launcher placement and sandbox exec."""
 import argparse
 import asyncio
 import datetime
@@ -17,27 +17,36 @@ import traceback
 from density import save
 from engine import Engine
 from host import Fixture
-from metrics import Metrics
 
 
-def program(name, daemon_group, pool_group):
-    if not re.fullmatch(r'sandcrab-probe-[a-f0-9]{10}', name) or min(daemon_group, pool_group) <= 0:
+def program(name, daemon_group, workloads_group, launcher=None):
+    if not re.fullmatch(r'sandcrab-probe-[a-f0-9]{10}', name) or min(daemon_group, workloads_group) <= 0:
         raise ValueError('Invalid trace namespace')
     # Parent cgroup IDs avoid path truncation and work in a cgroup namespace.
     # Exec identity comes from the kernel; no process argv pointers are read.
-    return f'''
+    source = f'''
 BEGIN {{ printf("READY\\t%llu\\n", nsecs); }}
 rawtracepoint:cgroup_mkdir {{
  $group = (struct cgroup *)arg0;
  $parent = $group->self.parent;
  if ((uint64)$parent != 0) {{
   $parent_id = $parent->cgroup->kn->id;
-  if ($parent_id == {pool_group} || @owned[$parent_id]) {{
+  if ($parent_id == {workloads_group} || @owned[$parent_id]) {{
    $id = $group->kn->id;
    @owned[$id] = 1;
-   printf("%llu\\tgroup\\t%llu\\n", nsecs, $id);
+   printf("%llu\\tgroup\\t%llu\\t%llu\\n", nsecs, $id, $parent_id);
   }}
  }}
+}}
+rawtracepoint:sched_process_fork {{
+ $child = (struct task_struct *)arg1;
+ $id = $child->cgroups->dfl_cgrp->kn->id;
+ if ($child->pid == $child->tgid && @owned[$id]) {{
+  printf("%llu\\tbirth\\t%u\\t%llu\\n", nsecs, $child->tgid, $id);
+ }}
+}}
+tracepoint:cgroup:cgroup_attach_task /@owned[args->dst_id]/ {{
+ printf("%llu\\tattach\\t%u\\t%llu\\n", nsecs, args->pid, args->dst_id);
 }}
 tracepoint:sched:sched_process_exec /cgroup == {daemon_group} || @owned[cgroup]/ {{
  printf("%llu\\texec\\t%u\\t%llu\\t%s\\n", nsecs, pid, cgroup, str(args->filename));
@@ -45,48 +54,103 @@ tracepoint:sched:sched_process_exec /cgroup == {daemon_group} || @owned[cgroup]/
 tracepoint:sched:sched_process_exit /pid == tid && (cgroup == {daemon_group} || @owned[cgroup])/ {{
  printf("%llu\\texit\\t%u\\t%llu\\n", nsecs, pid, cgroup);
 }}
-END {{ clear(@owned); }}
 '''
+    cleanup = 'clear(@owned);'
+    if launcher is not None:
+        if not re.fullmatch(r'/var/lib/sandcrab-native-[a-zA-Z0-9_-]+/sandcrab', launcher):
+            raise ValueError('Invalid traced launcher path')
+        source += f'''
+tracepoint:sched:sched_process_exec /cgroup == {daemon_group}/ {{
+ if (str(args->filename) == "{launcher}") {{ @tracking[pid] = 1; }}
+}}
+tracepoint:raw_syscalls:sys_enter /@tracking[pid] && @count[pid] < 256/ {{
+ @count[pid] = @count[pid] + 1;
+ @started[tid] = nsecs;
+ @number[tid] = args->id;
+}}
+tracepoint:raw_syscalls:sys_exit /@started[tid]/ {{
+ printf("%llu\\tsyscall\\t%u\\t%u\\t%llu\\t%lld\\n", nsecs, pid, @number[tid], nsecs - @started[tid], args->ret);
+ delete(@started[tid]); delete(@number[tid]);
+}}
+tracepoint:cgroup:cgroup_attach_task /@tracking[args->pid]/ {{
+ delete(@tracking[args->pid]); delete(@count[args->pid]);
+}}
+tracepoint:sched:sched_process_exit /@tracking[pid]/ {{
+ delete(@tracking[pid]); delete(@count[pid]); delete(@started[tid]); delete(@number[tid]);
+}}
+'''
+        cleanup += ' clear(@tracking); clear(@count); clear(@started); clear(@number);'
+    return source + 'END { ' + cleanup + ' }\n'
 
 
 def parse_event(line):
     values = line.rstrip('\n').split('\t')
-    if len(values) == 3 and values[1] == 'group':
-        return {'bootNs': int(values[0]), 'event': 'cgroup-created', 'cgroupId': int(values[2])}
+    if len(values) == 4 and values[1] == 'group':
+        return {'bootNs': int(values[0]), 'event': 'cgroup-created', 'cgroupId': int(values[2]),
+                'parentCgroupId': int(values[3])}
     if len(values) == 5 and values[1] == 'exec' and values[4]:
         return {'bootNs': int(values[0]), 'event': 'exec', 'pid': int(values[2]),
                 'cgroupId': int(values[3]), 'filename': values[4]}
     if len(values) == 4 and values[1] == 'exit':
         return {'bootNs': int(values[0]), 'event': 'exit', 'pid': int(values[2]), 'cgroupId': int(values[3])}
+    if len(values) == 4 and values[1] == 'attach':
+        return {'bootNs': int(values[0]), 'event': 'cgroup-placement', 'pid': int(values[2]), 'cgroupId': int(values[3])}
+    if len(values) == 4 and values[1] == 'birth':
+        return {'bootNs': int(values[0]), 'event': 'process-birth', 'pid': int(values[2]), 'cgroupId': int(values[3])}
+    if len(values) == 6 and values[1] == 'syscall':
+        return {'bootNs': int(values[0]), 'event': 'syscall', 'pid': int(values[2]),
+                'number': int(values[3]), 'durationNs': int(values[4]), 'result': int(values[5])}
     raise ValueError('Unrecognized trace event')
 
 
 def timeline(events, started, ready, session_group, launcher):
     observed = sorted((event for event in events if started <= event['bootNs'] <= ready), key=lambda event: event['bootNs'])
     points = {'apiSubmit': 0, 'apiReadyObserved': ready - started}
-    launchers = set()
+    launchers, candidates, births = {}, {}, {}
+    owned = {session_group}
+    placement = None
     for event in observed:
         label = None
-        if event['event'] == 'cgroup-created' and event['cgroupId'] == session_group:
-            label = 'sessionSliceCreated'
+        if event['event'] == 'cgroup-created':
+            if event['parentCgroupId'] in owned:
+                owned.add(event['cgroupId'])
+            if event['cgroupId'] == session_group:
+                label = 'sessionCgroupCreated'
+        elif event['event'] == 'process-birth':
+            births[event['pid']] = event
+        elif event['event'] == 'cgroup-placement' and event['pid'] in candidates and event['cgroupId'] in owned:
+            launchers[event['pid']] = event['cgroupId']
+            points.setdefault('trustedLauncherExec', candidates[event['pid']]['bootNs'] - started)
+            if 'launcherPlaced' not in points:
+                placement = 'cgroup-attach-task'
+                label = 'launcherPlaced'
         elif event['event'] == 'exec':
-            identity = (event['pid'], event['cgroupId'])
             if event['filename'] == launcher:
-                launchers.add(identity)
+                candidates[event['pid']] = event
+                birth = births.get(event['pid'])
+                if event['cgroupId'] in owned and birth is not None and birth['cgroupId'] == event['cgroupId']:
+                    launchers[event['pid']] = event['cgroupId']
+                    label = 'trustedLauncherExec'
+                    if 'launcherPlaced' not in points:
+                        points['launcherPlaced'] = birth['bootNs'] - started
+                        placement = 'sched-process-fork-child-cgroup'
             name = Path(event['filename']).name
-            label = {'busctl': 'dbusClientExec', 'systemd-run': 'systemdRunExec', 'bash': 'bashExec'}.get(name)
+            if name == 'bash' and event['cgroupId'] in owned:
+                label = 'bashExec'
             # sandcrab_launch::exec replaces the launcher process with bwrap;
             # its version check is a separate child, never that same identity.
-            if name == 'bwrap' and identity in launchers:
+            if name == 'bwrap' and launchers.get(event['pid']) == event['cgroupId']:
                 label = 'bwrapSandboxExec'
         elif event['event'] == 'exit':
-            launchers.discard((event['pid'], event['cgroupId']))
+            launchers.pop(event['pid'], None)
+            candidates.pop(event['pid'], None)
+            births.pop(event['pid'], None)
         if label and label not in points:
             points[label] = event['bootNs'] - started
-    required = {'sessionSliceCreated', 'dbusClientExec', 'systemdRunExec', 'bwrapSandboxExec', 'bashExec'}
+    required = {'sessionCgroupCreated', 'trustedLauncherExec', 'launcherPlaced', 'bwrapSandboxExec', 'bashExec'}
     missing = sorted(required - points.keys())
     return {'status': 'INCOMPLETE' if missing else 'COMPLETE', 'missing': missing,
-            'nanosecondsFromSubmit': points, 'events': observed}
+            'placementObservation': placement, 'nanosecondsFromSubmit': points, 'events': observed}
 
 
 class Trace:
@@ -129,7 +193,8 @@ class Trace:
             raise RuntimeError('The trace clock requires Linux 5.7+ CLOCK_BOOTTIME')
         self.version = subprocess.check_output(['bpftrace', '--version'], text=True, timeout=10).strip()
         source = program(self.fixture.name, self.fixture.daemon_group.stat().st_ino,
-                         self.fixture.pool_group.stat().st_ino)
+                         self.fixture.workloads_group.stat().st_ino,
+                         str(self.fixture.binary) if getattr(self.fixture, 'trace_syscalls', False) else None)
         self.source_sha256 = hashlib.sha256(source.encode()).hexdigest()
         before = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
         self.process = await asyncio.create_subprocess_exec(
@@ -175,19 +240,21 @@ class Trace:
                 'sourceSha256': getattr(self, 'source_sha256', None), 'events': self.events}
 
 
-async def measure(fixture, receipt, report, trials):
+async def measure(fixture, receipt, report, trials, with_volume=False):
     engine = Engine(fixture.socket, fixture.info['serverId'])
     trace = Trace(fixture)
     receipt['trials'] = []
     try:
+        volume = await engine.volume() if with_volume else None
+        receipt['volumeId'] = volume
         await trace.start()
         for _ in range(trials):
             item = {'status': 'STARTING', 'submitBootNs': time.clock_gettime_ns(time.CLOCK_BOOTTIME)}
             receipt['trials'].append(item)
-            session, elapsed = await engine.session()
+            session, elapsed = await engine.session(volume)
             item.update(readyBootNs=time.clock_gettime_ns(time.CLOCK_BOOTTIME), session=session,
                         apiElapsedMonotonicNs=elapsed)
-            group = fixture.pool_group / (Metrics(fixture).family + session.replace('-', '') + '.slice')
+            group = fixture.workloads_group / ('session-' + session)
             item['sessionCgroupId'] = group.stat().st_ino
             await engine.close(session)
             item['status'] = 'OBSERVED'
@@ -218,6 +285,8 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--budget', type=int, choices=(4, 5, 8), default=5)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--volume', action='store_true', help='Trace attachment of a prepared empty XFS volume')
+    parser.add_argument('--syscalls', action='store_true', help='Record at most 256 pre-placement syscalls per launcher, without arguments')
     args = parser.parse_args()
     report = args.report.resolve()
     if report.exists() or report.with_name(report.name + '.pending').exists():
@@ -233,7 +302,8 @@ def main():
                                 for path in Path(__file__).parent.glob('*.py')},
                'scope': 'Traced persistent-session startup, diagnostic timing with observer overhead. '
                         'Use density coldStartNs for untraced latency distributions. No model or private content.',
-               'parameters': {'trials': 3},
+               'parameters': {'trials': 3, 'workspace': 'empty-volume' if args.volume else 'ephemeral',
+                              'prePlacementSyscalls': args.syscalls},
                'measurementStatus': 'STARTING', 'apiCleanup': 'NOT_RUN', 'hostCleanup': 'NOT_RUN',
                'modelTokens': 0, 'containsProductionContent': False}
     with report.open('x') as output:
@@ -245,9 +315,10 @@ def main():
     try:
         fixture = Fixture(args.binary.resolve(), args.tools.resolve(), report,
                           1024**3 if args.smoke else args.budget * 1_000_000_000, args.smoke)
+        fixture.trace_syscalls = args.syscalls
         fixture.setup()
         receipt['fixture'] = fixture.receipt
-        asyncio.run(measure(fixture, receipt, report, receipt['parameters']['trials']))
+        asyncio.run(measure(fixture, receipt, report, receipt['parameters']['trials'], args.volume))
     except BaseException as error:
         receipt.update(measurementStatus='ERROR', errorType=type(error).__name__)
         report.with_suffix('.diagnostic.txt').write_text(traceback.format_exc())

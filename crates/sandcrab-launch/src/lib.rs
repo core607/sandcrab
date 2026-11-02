@@ -15,7 +15,6 @@ use std::{
     },
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -120,6 +119,15 @@ fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
 }
 /// Run `bwrap --version` with a fixed environment, no input and a five-second bound.
 fn version_output(bwrap: &Path) -> Result<String, Error> {
+    read_version(bwrap, Duration::from_secs(5))
+}
+
+fn read_version(bwrap: &Path, timeout: Duration) -> Result<String, Error> {
+    use rustix::{
+        event::{PollFd, PollFlags, Timespec, poll},
+        fs::{fcntl_getfl, fcntl_setfl},
+        process::{Pid, PidfdFlags, pidfd_open},
+    };
     let mut child = Command::new(bwrap)
         .arg("--version")
         .env_clear()
@@ -128,32 +136,83 @@ fn version_output(bwrap: &Path) -> Result<String, Error> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| refuse("No version output"))?;
-    let reader = thread::spawn(move || {
-        let mut text = String::new();
-        let _ = (&mut stdout).take(4096).read_to_string(&mut text);
-        text
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
+    let deadline = Instant::now() + timeout;
+    let result = (|| {
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| refuse("No version output"))?;
+        fcntl_setfl(
+            &stdout,
+            fcntl_getfl(&stdout).map_err(io::Error::from)? | OFlags::NONBLOCK,
+        )
+        .map_err(io::Error::from)?;
+        let pid =
+            Pid::from_raw(child.id() as i32).ok_or_else(|| refuse("Invalid version helper PID"))?;
+        let process = pidfd_open(pid, PidfdFlags::empty()).map_err(io::Error::from)?;
+        let mut bytes = Vec::new();
+        let mut open = true;
+        loop {
+            if Instant::now() >= deadline {
+                return Err(refuse("Sandbox bubblewrap version check timed out"));
+            }
+            let status = child.try_wait()?;
+            if let Some(status) = status {
+                if !status.success() {
+                    return Err(refuse("Sandbox bubblewrap version check failed"));
+                }
+                if !open {
+                    return String::from_utf8(bytes).map_err(|_| refuse("Invalid version output"));
+                }
+            }
+            let output_ready = {
+                let mut fds = Vec::new();
+                if open {
+                    fds.push(PollFd::new(&stdout, PollFlags::IN));
+                }
+                if status.is_none() {
+                    fds.push(PollFd::new(&process, PollFlags::IN));
+                }
+                match poll(
+                    &mut fds,
+                    Some(
+                        &Timespec::try_from(deadline.saturating_duration_since(Instant::now()))
+                            .unwrap(),
+                    ),
+                ) {
+                    Err(rustix::io::Errno::INTR) => continue,
+                    Err(error) => return Err(io::Error::from(error).into()),
+                    Ok(_) => {}
+                }
+                open && fds[0]
+                    .revents()
+                    .intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR)
+            };
+            if output_ready {
+                let mut buffer = [0; 1024];
+                match stdout.read(&mut buffer) {
+                    Ok(0) => open = false,
+                    Ok(size) => bytes.extend_from_slice(&buffer[..size]),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                        ) => {}
+                    Err(error) => return Err(error.into()),
+                }
+                if bytes.len() > 4096 {
+                    return Err(refuse(
+                        "Sandbox bubblewrap version output exceeds its bound",
+                    ));
+                }
+            }
         }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(refuse("Sandbox bubblewrap version check timed out"));
-        }
-        thread::sleep(Duration::from_millis(5));
-    };
-    let text = reader.join().unwrap_or_default();
-    if !status.success() {
-        return Err(refuse("Sandbox bubblewrap version check failed"));
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
     }
-    Ok(text)
+    result
 }
 
 /// Python's `posixpath.normpath`, so a grant is accepted only in its normalized spelling.

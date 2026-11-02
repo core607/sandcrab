@@ -6,9 +6,10 @@ use rustix::{
 };
 use serde_json::{Value, json};
 use std::{
+    fs::File,
     io::{self, Read, Write},
-    os::fd::AsFd,
-    process::{Child, ChildStderr, ChildStdin, ChildStdout},
+    os::fd::{AsFd, OwnedFd},
+    process::{Child, ExitStatus},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -76,11 +77,47 @@ pub struct Request<'a> {
     pub timeout: Duration,
     pub output_limit: usize,
 }
-pub struct Channel {
-    child: Child,
-    input: ChildStdin,
-    output: ChildStdout,
-    diagnostic: ChildStderr,
+pub trait Process {
+    fn take_stdio(&mut self) -> io::Result<(File, File, File)>;
+    fn kill(&mut self) -> io::Result<()>;
+    fn wait(&mut self) -> io::Result<ExitStatus>;
+}
+impl Process for Child {
+    fn take_stdio(&mut self) -> io::Result<(File, File, File)> {
+        Ok((
+            File::from(OwnedFd::from(self.stdin.take().ok_or_else(invalid)?)),
+            File::from(OwnedFd::from(self.stdout.take().ok_or_else(invalid)?)),
+            File::from(OwnedFd::from(self.stderr.take().ok_or_else(invalid)?)),
+        ))
+    }
+    fn kill(&mut self) -> io::Result<()> {
+        Child::kill(self)
+    }
+    fn wait(&mut self) -> io::Result<ExitStatus> {
+        Child::wait(self)
+    }
+}
+impl Process for sandcrab_spawn::Child {
+    fn take_stdio(&mut self) -> io::Result<(File, File, File)> {
+        Ok((
+            self.stdin.take().ok_or_else(invalid)?,
+            self.stdout.take().ok_or_else(invalid)?,
+            self.stderr.take().ok_or_else(invalid)?,
+        ))
+    }
+    fn kill(&mut self) -> io::Result<()> {
+        sandcrab_spawn::Child::kill(self)
+    }
+    fn wait(&mut self) -> io::Result<ExitStatus> {
+        sandcrab_spawn::Child::wait(self)
+    }
+}
+
+pub struct Channel<P: Process = Child> {
+    child: P,
+    input: File,
+    output: File,
+    diagnostic: File,
     buffer: Vec<u8>,
     ready: bool,
     output_open: bool,
@@ -96,11 +133,9 @@ enum Event {
     Frame(Value),
     Diagnostic(Vec<u8>),
 }
-impl Channel {
-    pub fn new(mut child: Child) -> io::Result<Self> {
-        let input = child.stdin.take().ok_or_else(invalid)?;
-        let output = child.stdout.take().ok_or_else(invalid)?;
-        let diagnostic = child.stderr.take().ok_or_else(invalid)?;
+impl<P: Process> Channel<P> {
+    pub fn new(mut child: P) -> io::Result<Self> {
+        let (input, output, diagnostic) = child.take_stdio()?;
         nonblocking(&input)?;
         nonblocking(&output)?;
         nonblocking(&diagnostic)?;
@@ -115,7 +150,7 @@ impl Channel {
             diagnostic_open: true,
         })
     }
-    pub fn process(&mut self) -> &mut Child {
+    pub fn process(&mut self) -> &mut P {
         &mut self.child
     }
     /// Discard buffered output during unit shutdown; no frame can delay containment checks.
@@ -364,7 +399,7 @@ impl Channel {
         }
     }
 }
-impl Drop for Channel {
+impl<P: Process> Drop for Channel<P> {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();

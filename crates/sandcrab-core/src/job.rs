@@ -1,20 +1,17 @@
-//! Finite process execution, bounded output and confirmed unit containment.
+//! Finite process execution, bounded output and confirmed delegated-cgroup containment.
 //! Admission, identity and authorization belong to the caller.
-use crate::unit::{Launch, checked, empty_group};
+use crate::process::{Child, Input, Launch};
 use rustix::{
     event::{PollFd, PollFlags, Timespec, poll},
     fs::{OFlags, fcntl_getfl, fcntl_setfl},
 };
 use std::{
-    fs::File,
     io::{self, Read},
-    os::fd::OwnedFd,
-    process::{Child, Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
-/// Why a job's unit ended.
+/// Why a bounded job ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum End {
     Normal,
@@ -31,51 +28,35 @@ pub struct Finished {
     pub end: End,
 }
 fn unavailable() -> io::Error {
-    io::Error::other("Job unit unavailable")
+    io::Error::other("Job process unavailable")
 }
-fn systemctl(args: &[&str], unit: &str, seconds: u64) -> io::Result<std::process::Output> {
-    let mut command = vec!["systemctl".to_string()];
-    command.extend(args.iter().map(|v| v.to_string()));
-    command.push(unit.into());
-    checked(&command, Duration::from_secs(seconds))
-}
-
 /// Run `launch` once. The timeout, cancellation or output beyond `limit` bytes over both
-/// streams kills the unit. The first result is the job's; the second confirms that the unit
-/// stopped and left no process, and is an error whenever that is unknown.
+/// streams kills the launcher and cgroup. The first result is the job's; the second
+/// confirms launcher reaping and descendant containment, failing when either is unknown.
 /// The synchronous observer receives retained raw output while the job runs; it must not
 /// block or interpret progress as proof of completion or containment.
 pub fn run(
-    launch: &Launch,
+    launch: &mut Launch,
     cancelled: &AtomicBool,
     timeout: Duration,
     limit: usize,
     on_output: impl FnMut(usize, &[u8]),
 ) -> (io::Result<Finished>, io::Result<()>) {
-    run_input(launch, cancelled, timeout, limit, Stdio::null(), on_output)
+    run_input(launch, cancelled, timeout, limit, Input::Null, on_output)
 }
 
 /// The caller owns the input producer and must stop it on cancellation. Passing a
-/// pipe lets a bounded unit charge staged file pages to its own cgroup.
+/// pipe lets the helper charge staged file pages to its own cgroup.
 pub fn run_input(
-    launch: &Launch,
+    launch: &mut Launch,
     cancelled: &AtomicBool,
     timeout: Duration,
     limit: usize,
-    input: Stdio,
+    input: Input,
     mut on_output: impl FnMut(usize, &[u8]),
 ) -> (io::Result<Finished>, io::Result<()>) {
-    let (program, args) = match launch.command.split_first() {
-        Some(parts) => parts,
-        None => return (Err(unavailable()), Ok(())),
-    };
-    let child = Command::new(program)
-        .args(args)
-        .stdin(input)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-    let (finished, mut child) = match child {
+    let child = launch.spawn(input);
+    let (mut finished, mut child) = match child {
         Ok(mut child) => (
             watch(
                 launch,
@@ -89,18 +70,23 @@ pub fn run_input(
         ),
         Err(error) => (Err(error), None),
     };
-    let _ = systemctl(&["stop"], &launch.unit, 15);
-    let mut contained = Ok(());
-    if let Some(child) = &mut child
-        && child.try_wait().ok().flatten().is_none()
-    {
-        let _ = child.kill();
-        contained = child.wait().map(|_| ());
+    let contained = launch.finish(child.as_mut(), Duration::from_secs(15));
+    if let (Ok(finished), Ok(exit)) = (&mut finished, &contained) {
+        if finished.end == End::Normal && exit.oom_kills > 0 {
+            finished.end = End::ResourceLimit;
+        }
+        finished.exit_code = exit.code().unwrap_or(-1);
+        if finished.end != End::Normal && finished.exit_code == 0 {
+            finished.exit_code = if finished.end == End::Timeout {
+                124
+            } else {
+                137
+            };
+        }
     }
-    let contained = contained.and_then(|()| empty_group(&launch.cgroup));
-    let _ = systemctl(&["reset-failed"], &launch.unit, 5);
-    (finished, contained)
+    (finished, contained.map(|_| ()))
 }
+
 fn watch(
     launch: &Launch,
     child: &mut Child,
@@ -110,8 +96,8 @@ fn watch(
     on_output: &mut impl FnMut(usize, &[u8]),
 ) -> io::Result<Finished> {
     let mut streams = [
-        File::from(OwnedFd::from(child.stdout.take().ok_or_else(unavailable)?)),
-        File::from(OwnedFd::from(child.stderr.take().ok_or_else(unavailable)?)),
+        child.stdout.take().ok_or_else(unavailable)?,
+        child.stderr.take().ok_or_else(unavailable)?,
     ];
     for stream in &streams {
         fcntl_setfl(stream, fcntl_getfl(stream)? | OFlags::NONBLOCK)?;
@@ -122,30 +108,26 @@ fn watch(
     let mut truncated = false;
     let mut end = End::Normal;
     let mut next_kill = started;
-    let mut kill = |reason: End, end: &mut End| {
+    let mut kill = |reason: End, end: &mut End, child: &mut Child| {
         if *end == End::Normal {
             *end = reason;
         }
-        // systemd-run can still be registering the unit. Neither a failed kill nor a
-        // successful kill of an activating unit proves its future processes are gone.
+        // Retain direct ownership before and after exec; empty cgroup state
+        // cannot substitute for reaping the known launcher.
         if Instant::now() >= next_kill {
-            let _ = systemctl(
-                &["kill", "--kill-who=all", "--signal=KILL"],
-                &launch.unit,
-                5,
-            );
+            let _ = launch.interrupt(child);
             next_kill = Instant::now() + Duration::from_millis(100);
         }
     };
     while open[0] || open[1] {
         if end != End::Normal {
-            kill(end, &mut end);
+            kill(end, &mut end, child);
         } else if cancelled.load(Ordering::SeqCst) {
-            kill(End::Cancelled, &mut end);
+            kill(End::Cancelled, &mut end, child);
         } else if started.elapsed() > timeout {
-            kill(End::Timeout, &mut end);
+            kill(End::Timeout, &mut end, child);
         }
-        // A killed unit closes its pipes promptly; a launcher that does not is abandoned.
+        // Failed containment remains an error even when output collection is abandoned.
         if started.elapsed() > timeout + Duration::from_secs(15) {
             return Err(unavailable());
         }
@@ -182,7 +164,7 @@ fn watch(
                     }
                     if n > available {
                         truncated = true;
-                        kill(End::OutputLimit, &mut end);
+                        kill(End::OutputLimit, &mut end, child);
                     }
                 }
                 Err(e)
@@ -204,31 +186,7 @@ fn watch(
         }
         std::thread::sleep(Duration::from_millis(10));
     };
-    let shown = systemctl(
-        &["show", "-p", "Result", "-p", "ExecMainStatus"],
-        &launch.unit,
-        5,
-    )?;
-    let shown = String::from_utf8_lossy(&shown.stdout);
-    let property = |name: &str| {
-        shown
-            .lines()
-            .find_map(|line| line.strip_prefix(name)?.strip_prefix('='))
-    };
-    if end == End::Normal {
-        match property("Result") {
-            Some("timeout") => end = End::Timeout,
-            Some("oom-kill") => end = End::ResourceLimit,
-            _ => {}
-        }
-    }
-    let mut exit_code = property("ExecMainStatus")
-        .and_then(|v| v.parse().ok())
-        .or(status.code())
-        .unwrap_or(-1);
-    if end != End::Normal && exit_code == 0 {
-        exit_code = if end == End::Timeout { 124 } else { 137 };
-    }
+    let exit_code = status.code().unwrap_or(-1);
     Ok(Finished {
         exit_code,
         output,

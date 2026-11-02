@@ -643,7 +643,7 @@ impl Service {
                 thread::sleep(Duration::from_millis(25));
             }
         }
-        // Block new commands before stopping the unit. Internal shell exits do not turn a
+        // Block new commands before stopping the shell. Internal shell exits do not turn a
         // successful `exit 0` or a timeout into a caller cancellation.
         {
             let mut registry = self.registry.lock().unwrap();

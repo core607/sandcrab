@@ -203,8 +203,8 @@ impl Store {
             |s| s.root.join("state/uploads"),
         );
         directory(&root)?;
-        let owner = json!({"version":1,"runtimeRoot":config.service.runtime_root,
-            "resourceSlice":config.service.resource_slice,"unitPrefix":config.service.unit_prefix});
+        let owner = json!({"version":2,"runtimeRoot":config.service.runtime_root,
+            "cgroupRoot":config.service.cgroup_root});
         let owner_path = root.join("owner.json");
         match read::<Value>(&owner_path) {
             Ok(old) if old != owner => return Err(invalid("File cleanup namespace changed")),
