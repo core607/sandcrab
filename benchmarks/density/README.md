@@ -5,6 +5,9 @@ owns the footprint, readiness, density and breakdown requirements. This director
 contains the seeded workload, scorer, native HTTP client and isolated density
 driver. Component tests do not establish sandbox capacity.
 
+The [W0 measurement report](../../executor-native/evidence/sandcrab-w0-2026-11-02/README.md)
+links retained raw results, failed attempts and their measurement boundaries.
+
 The [manual installation baseline](READINESS.md) measures first-use steps, edits
 and elapsed time on fresh distribution containers. It is separate from density
 host preparation and does not establish turnkey readiness.
