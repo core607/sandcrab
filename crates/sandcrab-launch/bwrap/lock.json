@@ -1,0 +1,29 @@
+{
+  "version": "0.13.1",
+  "binarySha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+  "binaryBytes": 141736,
+  "sources": [
+    {
+      "name": "bubblewrap-0.13.1.tar.xz",
+      "url": "https://github.com/containers/bubblewrap/releases/download/v0.13.1/bubblewrap-0.13.1.tar.xz",
+      "algorithm": "sha256",
+      "digest": "0e85c8702248b8dd64144f594147553650cdd0e4c951690345faace79c217c4d",
+      "license": "bubblewrap-0.13.1/COPYING"
+    },
+    {
+      "name": "libcap-2.78.tar.xz",
+      "url": "https://kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz",
+      "algorithm": "sha512",
+      "digest": "a156a8708dd59f13400f701f4e1ddc81f915fe4e7b32f93a328f7d6f030b7a004fb985fa9ac60812dfffeb8ad860d2e1f59895485497350250efd9378682626b",
+      "license": "libcap-2.78/License"
+    },
+    {
+      "name": "musl-1.2.6.tar.gz",
+      "url": "https://distfiles.alpinelinux.org/distfiles/v3.24/musl-1.2.6.tar.gz",
+      "upstream": "https://musl.libc.org/releases/musl-1.2.6.tar.gz",
+      "algorithm": "sha512",
+      "digest": "1adad96eddb3a2eb0cacb3e363b0046568925fcdd75cf8b0503f2139df1f693d64730779ca0ce8131b7624ab2d37f4247bb1d3393c523de6e30d2b1d7732555c",
+      "license": "musl-1.2.6/COPYRIGHT"
+    }
+  ]
+}

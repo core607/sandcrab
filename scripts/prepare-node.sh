@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 tools=$(realpath -e -- "${1:?Usage: prepare-node.sh EXISTING_TOOLS_DIRECTORY}")
-test -x "$tools/extracted/usr/bin/bwrap"
+test -x "$tools/extracted/usr/bin/rg"
 parent=$tools
 while :; do
     test "$(stat -c %u -- "$parent")" = 0

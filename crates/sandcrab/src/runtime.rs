@@ -818,7 +818,8 @@ pub fn launch(path: &Path) -> io::Result<()> {
         record.gid,
         record.parent_pid,
     )?;
-    let bwrap = sandcrab_launch::verify_tools(&record.tools).map_err(io::Error::other)?;
+    let bwrap = sandcrab_launch::verify_bundled_bwrap(&std::env::current_exe()?)
+        .map_err(io::Error::other)?;
     let seccomp = sandcrab_launch::Seccomp::new().map_err(io::Error::other)?;
     let policy: Value = sandcrab_core::parse(&launch_file(&record.settings)?)
         .map_err(|_| invalid("Invalid policy JSON"))?;

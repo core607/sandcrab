@@ -11,13 +11,20 @@ Consumer adoption and extraction remain under the
 
 ## Installation
 
-Build with `./gradlew buildExecutorRust`; the static binary is
-`build/executor-service/bin/sandcrab`. It is excluded from the Poketto worker bundle.
-Install it with mode 0755 in a root-owned directory with root-owned ancestors. The host needs
-a writable delegated cgroup v2 subtree, unprivileged user namespaces,
-`mount`/`umount` and bubblewrap 0.6.1+ from the executor's
-[tool preparation](../../prepare-tools.sh). The seccomp filter is compiled into
-the binary; Node.js, npm and SRT are not Sandcrab runtime dependencies.
+Build with `./gradlew buildExecutorRust`. In `build/executor-service/bin`,
+`sandcrab` and `bwrap` are static executables; install both with mode 0755 in
+the same root-owned directory with protected ancestors. Keep `bwrap-notices.txt`
+and `bwrap-source.tar.xz` alongside them with mode 0644. The
+[helper build](../sandcrab-launch/bwrap/README.md) owns its version, source and
+reproduction instructions. The native daemon is excluded from the Poketto worker bundle.
+
+Startup and every launch verify the helper beside the resolved executable,
+including its protected path and pinned SHA-256. A missing, modified or mismatched
+helper refuses execution. The host needs writable delegated cgroup v2,
+unprivileged user namespaces and `mount`/`umount`.
+[Tool preparation](../../prepare-tools.sh) supplies workload utilities; the helper
+comes from the release. The seccomp filter is compiled into Sandcrab, which needs
+no Node.js, npm or SRT runtime.
 
 Copy [config.example.toml](config.example.toml) to a root-owned file with mode 0600
 in a protected directory. Set the client's numeric UID/GID and a separate execution

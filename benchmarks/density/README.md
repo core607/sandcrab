@@ -81,13 +81,13 @@ sudo python3 experiments/sandcrab-density/density.py --budget 5 \
   --report /operator/evidence/density-5gb-unique.json
 ```
 
-Smoke uses two agents and a small corpus to check the actual entry path and cleanup;
-it is not a capacity measurement. Run all protocol budgets for W0 and final
-comparisons. Each budget needs a new receipt path. The
-[measurement workflow](../../.github/workflows/sandcrab-density.yml) runs smoke on
-relevant pull requests; manual dispatch with `canonical=true` runs all three budgets
-on separate hosts after smoke. Select `budgets=5` for an intermediate change;
-W0 and final comparisons use `budgets=all`. Its binary build uses a separate runner.
+Smoke uses two agents and a small corpus to check the entry path and cleanup.
+[CI](../../.github/workflows/ci.yml) tests collector changes on pull requests.
+At L2, L7 and L9, select the checkpoint in the [measurement workflow](../../.github/workflows/sandcrab-density.yml)
+to run all three budgets on separate hosts after smoke. Compare
+these results to W0; there is no intermediate capacity run. Commit a
+`summary.json` linking the CI run; leave raw receipts, ledgers and diagnostics
+in its artifacts. Record a performance miss in a follow-up issue.
 Select `storage=plain` for the periodic-accounting variant. Footprint, cache and
 startup-trace collectors keep their XFS fixture; only density selects that backend.
 
@@ -130,8 +130,8 @@ fresh-install readiness targets. The full attempt ledger is retained in the
 
 [footprint.py](footprint.py) accepts the same binary, tools, budget and report
 arguments. It measures daemon idle RSS, then 1, 10 and 50 idle bash sessions and
-finite `/bin/sleep` runs. `--smoke` checks only one of each. The workflow runs its
-smoke entry on pull requests and all counts during canonical measurement.
+finite `/bin/sleep` runs. `--smoke` checks only one of each before the full
+checkpoint measurement.
 
 Each cohort has five one-second samples after two seconds of settling. A finite
 run holds for 30 seconds; the whole cohort must become live within 15 seconds and
@@ -196,8 +196,7 @@ The trace records session cgroup creation, placement in its leaf, trusted launch
 exec, sandbox bwrap exec and bash exec. Placement is observed from the child's
 cgroup at the kernel fork event, or a later cgroup attachment for migration-based
 launches. It follows only the measured session tree, excluding volume validation
-helpers. It distinguishes bwrap's version check from the actual sandbox launch
-by following the verified launcher's PID through its
+helpers. It identifies the actual sandbox launch by following the verified launcher's PID through its
 `exec` replacement, as implemented by
 [`sandcrab-launch`](../../executor-service/rust/sandcrab-launch/src/lib.rs).
 A process exit invalidates that identity. No user argv pointers are read.

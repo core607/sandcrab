@@ -39,7 +39,7 @@ Build a fixture image using one of the workflow's pinned `BASE_IMAGE` values, th
 python3 experiments/sandcrab-density/readiness_container.py \
   --image sandcrab-readiness:fixture --source . \
   --binary build/executor-service/bin/sandcrab \
-  --report executor-native/evidence/readiness-NEW-RUN.json
+  --report /operator/evidence/readiness-NEW-RUN.json
 ```
 
 [readiness_container.py](readiness_container.py) requires Docker and a built

@@ -75,6 +75,8 @@ def main():
             started = call('docker', 'exec', name, 'python3', '-c', 'import time; print(time.monotonic_ns())').stdout.strip()
             call('docker', 'cp', archive, name + ':/root/source.tar')
             call('docker', 'cp', binary, name + ':/root/sandcrab')
+            for companion in ('bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz'):
+                call('docker', 'cp', binary.with_name(companion), name + ':/root/' + companion)
             call('docker', 'exec', name, 'mkdir', '/source')
             call('docker', 'exec', name, 'tar', '-xf', '/root/source.tar', '-C', '/source')
             recipe_result = call('docker', 'exec', '-e', 'SANDCRAB_READINESS_DISPOSABLE=1', name,

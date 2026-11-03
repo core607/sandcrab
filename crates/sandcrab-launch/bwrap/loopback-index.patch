@@ -1,0 +1,20 @@
+--- a/network.c
++++ b/network.c
+@@ -3,0 +4,2 @@
++ * Sandcrab modification, 2026-11-03: use an IPv4 ioctl socket for the
++ * loopback index lookup under the inherited AF_UNIX-denying filter.
+@@ -23,0 +26 @@
++#include <sys/ioctl.h>
+@@ -140,0 +144,2 @@
++  cleanup_fd int index_fd = -1;
++  struct ifreq interface = { 0 };
+@@ -150,2 +155,5 @@
+-  if_loopback = (int) if_nametoindex ("lo");
+-  if (if_loopback <= 0)
++  index_fd = socket (AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
++  if (index_fd < 0)
++    die_with_error ("loopback: Failed to create interface lookup socket");
++  memcpy (interface.ifr_name, "lo", sizeof ("lo"));
++  if (ioctl (index_fd, SIOCGIFINDEX, &interface) != 0)
+@@ -152,0 +161 @@
++  if_loopback = interface.ifr_ifindex;

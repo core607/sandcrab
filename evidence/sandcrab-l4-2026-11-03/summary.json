@@ -1,0 +1,50 @@
+{
+  "milestone": "L4",
+  "change": "Bundled static bubblewrap",
+  "candidateHead": "b1a38c6208e69e0f98bd5809dc8bf797eab6fa57",
+  "pullRequest": "https://github.com/core607/poketto/pull/364",
+  "helper": {
+    "version": "0.13.1",
+    "bytes": 141736,
+    "sha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+    "elfInterpreter": false,
+    "dynamicDependencies": 0
+  },
+  "localChecks": {
+    "rustTestsPassed": 139,
+    "serviceTestsPassed": 176,
+    "deploymentTestsPassed": 60,
+    "nativeChecksPassed": 48,
+    "publishedSdkChecksPassed": 21,
+    "damagedHelperDeniedAtStartupAndLaunch": true,
+    "appImageWorkerBundle": "pass",
+    "javaAndGames": "flat and managed layouts passed; cleanup passed"
+  },
+  "fixtureCorrection": {
+    "revision": "1beb1a45ae892e380b68c060cca9ed6ffccc975c",
+    "managedNativePeerAndCleanup": "pass"
+  },
+  "ci": {
+    "scriptedEval": {
+      "artifact": "https://github.com/core607/poketto/actions/runs/41567259187/artifacts/13199818546",
+      "model": "mockllm/model",
+      "sandbox": "native",
+      "cases": 22,
+      "attempts": 66,
+      "passed": 66,
+      "cleanupPassed": 66,
+      "modelTokens": 0
+    },
+    "installRecipe": "https://github.com/core607/poketto/actions/runs/41567259163",
+    "priorCollectorSmoke": "https://github.com/core607/poketto/actions/runs/41567259142",
+    "firstHttpFixture": {
+      "job": "https://github.com/core607/poketto/actions/runs/41567259187/job/125691782835",
+      "outcome": "Worker fixture omitted bwrap; HTTP 503 before load; cleanup passed."
+    }
+  },
+  "capacity": {
+    "status": "not measured at L4",
+    "cancelledRun": "https://github.com/core607/poketto/actions/runs/41567919314",
+    "previousPerformanceMisses": "https://github.com/core607/poketto/issues/365"
+  }
+}

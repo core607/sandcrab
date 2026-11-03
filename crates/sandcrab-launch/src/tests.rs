@@ -39,15 +39,6 @@ impl Root {
         fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
         path
     }
-    /// Tools whose bubblewrap prints `version` and records each run in `ran`.
-    fn tools(&self, version: &str) -> PathBuf {
-        let script = format!(
-            "#!/bin/sh\ntouch {}/ran\nprintf '%s\\n' '{version}'\n",
-            self.0.display()
-        );
-        self.file(&format!("tools/{BWRAP}"), script.as_bytes(), 0o755);
-        self.0.join("tools")
-    }
 }
 impl Drop for Root {
     fn drop(&mut self) {
@@ -162,72 +153,29 @@ fn grants_are_accepted_only_in_their_normalized_spelling() {
 }
 
 #[test]
-fn the_minimum_bubblewrap_version_is_required_without_an_external_filter_helper() {
+fn unverified_helpers_are_rejected_without_executing_them() {
     let root = Root::new();
-    let tools = root.tools("bubblewrap 0.6.1");
-    assert_eq!(verify_tools(&tools).unwrap(), tools.join(BWRAP));
-    for version in [
-        "bubblewrap 0.6.0",
-        "bubblewrap unknown",
-        "",
-        "bubblewrap 0.6.1 extra",
+    let executable = root.0.join("sandcrab");
+    let script = format!(
+        "#!/bin/sh\ntouch {}/ran\nprintf 'bubblewrap 0.13.1\\n'\n",
+        root.0.display()
+    );
+    let mut bytes = script.into_bytes();
+    bytes.resize(BWRAP_BYTES as usize, b' ');
+    for candidate in [
+        bytes.clone(),
+        bytes[..bytes.len() - 1].to_vec(),
+        [bytes, vec![0]].concat(),
     ] {
-        let tools = root.tools(version);
-        assert_eq!(
-            verify_tools(&tools).unwrap_err().0,
-            "Sandbox requires bubblewrap 0.6.1 or newer",
-            "{version:?}"
+        root.file("bwrap", &candidate, 0o755);
+        assert!(
+            verify_bundled_bwrap(&executable)
+                .unwrap_err()
+                .0
+                .contains("checksum mismatch")
         );
+        assert!(!root.0.join("ran").exists());
     }
-    let tools = root.tools("bubblewrap 1.0.0");
-    assert!(verify_tools(&tools).is_ok());
-}
-
-#[test]
-fn version_parsing_requires_three_decimal_components() {
-    assert_eq!(parse_version("bubblewrap 0.11.0"), Some((0, 11, 0)));
-    for text in [
-        "bubblewrap 0.6",
-        "bubblewrap 0.6.1.2",
-        "bubblewrap 0.6.x",
-        "bwrap 0.6.1",
-    ] {
-        assert_eq!(parse_version(text), None, "{text}");
-    }
-}
-
-#[test]
-fn version_helper_waits_for_status_and_bounds_inherited_output() {
-    let root = Root::new();
-    let finished = root.0.join("finished");
-    let helper = root.file(
-        "valid",
-        format!(
-            "#!/bin/sh\nprintf 'bubblewrap 0.9.0\\n'\nexec 1>/dev/null\nsleep .02\ntouch {}\n",
-            finished.display()
-        )
-        .as_bytes(),
-        0o755,
-    );
-    assert_eq!(
-        read_version(&helper, Duration::from_secs(2)).unwrap(),
-        "bubblewrap 0.9.0\n"
-    );
-    assert!(finished.is_file());
-    let failed = root.file(
-        "failed",
-        b"#!/bin/sh\nexec 1>/dev/null\nsleep .02\nexit 7\n",
-        0o755,
-    );
-    assert!(read_version(&failed, Duration::from_secs(2)).is_err());
-    let inherited = root.file(
-        "inherited",
-        b"#!/bin/sh\nprintf 'bubblewrap 0.9.0\\n'\nsleep 1 &\nexit 0\n",
-        0o755,
-    );
-    assert!(read_version(&inherited, Duration::from_millis(200)).is_err());
-    let oversized = root.file("oversized", b"#!/bin/sh\nhead -c 8192 /dev/zero\n", 0o755);
-    assert!(read_version(&oversized, Duration::from_secs(2)).is_err());
 }
 
 #[test]

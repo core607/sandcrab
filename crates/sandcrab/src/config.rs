@@ -190,6 +190,8 @@ impl Config {
         if let Some(tcp) = &mut config.tcp {
             tcp.token = Some(crate::auth::read_token(&tcp.token_file, 0)?);
         }
+        sandcrab_launch::verify_bundled_bwrap(&std::env::current_exe()?)
+            .map_err(io::Error::other)?;
         for profile in config.profiles.values_mut() {
             (profile.uid, profile.gid) = execution_account(
                 &profile.exec_user,
@@ -197,7 +199,6 @@ impl Config {
                 config.service.client_gid,
             )?;
             protected_directory(&profile.tools)?;
-            sandcrab_launch::verify_tools(&profile.tools).map_err(io::Error::other)?;
             for path in &profile.read_only {
                 let resolved = path.canonicalize()?;
                 if profile.host_calls && host_call_mount(&resolved) {

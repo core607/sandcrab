@@ -457,6 +457,7 @@ dependencies = [
  "rustix",
  "seccompiler",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

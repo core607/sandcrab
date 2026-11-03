@@ -10,6 +10,8 @@ publish = false
 rustix = { workspace = true, features = ["fs", "process"] }
 serde_json.workspace = true
 seccompiler = "=0.5.0"
+sha2 = "0.10"
 
 [build-dependencies]
 seccompiler = "=0.5.0"
+serde_json.workspace = true

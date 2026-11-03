@@ -14,16 +14,14 @@ use std::{
         process::CommandExt,
     },
     path::{Component, Path, PathBuf},
-    process::{Command, Stdio},
-    time::{Duration, Instant},
+    process::Command,
 };
 
 use rustix::fs::{Mode, OFlags, open, openat};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
-pub const MIN_BWRAP_VERSION: (u64, u64, u64) = (0, 6, 1);
-/// Tool locations below the prepared tools root.
-pub const BWRAP: &str = "extracted/usr/bin/bwrap";
+include!(concat!(env!("OUT_DIR"), "/bwrap.rs"));
 
 /// A refused launch or verification; the message names the failed requirement.
 #[derive(Debug, PartialEq, Eq)]
@@ -93,126 +91,27 @@ pub fn verify_programs(directory: &Path, programs: &[&str]) -> Result<(), Error>
     Ok(())
 }
 
-/// Verify bubblewrap below `tools`; used at supervisor
-/// startup and again before each launch.
-pub fn verify_tools(tools: &Path) -> Result<PathBuf, Error> {
-    let bwrap = tools.join(BWRAP);
+/// Verify the pinned helper beside the resolved executable, without running unverified code.
+/// Both service startup and each unprivileged launch check its ownership and exact digest.
+pub fn verify_bundled_bwrap(executable: &Path) -> Result<PathBuf, Error> {
+    let bwrap = executable.with_file_name("bwrap");
     trusted_executable(&bwrap)?;
-    let version = version_output(&bwrap)?;
-    if parse_version(version.trim()).is_none_or(|v| v < MIN_BWRAP_VERSION) {
-        return Err(refuse("Sandbox requires bubblewrap 0.6.1 or newer"));
+    let file = fs::File::from(
+        open(
+            &bwrap,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+            Mode::empty(),
+        )
+        .map_err(io::Error::from)?,
+    );
+    let mut bytes = Vec::new();
+    file.take(BWRAP_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 != BWRAP_BYTES || Sha256::digest(&bytes)[..] != BWRAP_SHA256 {
+        return Err(refuse(
+            "Bundled bubblewrap checksum mismatch; install the complete matching release",
+        ));
     }
     Ok(bwrap)
-}
-/// `bubblewrap X.Y.Z` with decimal components and nothing else.
-fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
-    let mut parts = text.strip_prefix("bubblewrap ")?.split('.');
-    let mut number = || {
-        parts
-            .next()
-            .filter(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))?
-            .parse()
-            .ok()
-    };
-    let version = (number()?, number()?, number()?);
-    parts.next().is_none().then_some(version)
-}
-/// Run `bwrap --version` with a fixed environment, no input and a five-second bound.
-fn version_output(bwrap: &Path) -> Result<String, Error> {
-    read_version(bwrap, Duration::from_secs(5))
-}
-
-fn read_version(bwrap: &Path, timeout: Duration) -> Result<String, Error> {
-    use rustix::{
-        event::{PollFd, PollFlags, Timespec, poll},
-        fs::{fcntl_getfl, fcntl_setfl},
-        process::{Pid, PidfdFlags, pidfd_open},
-    };
-    let mut child = Command::new(bwrap)
-        .arg("--version")
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let deadline = Instant::now() + timeout;
-    let result = (|| {
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| refuse("No version output"))?;
-        fcntl_setfl(
-            &stdout,
-            fcntl_getfl(&stdout).map_err(io::Error::from)? | OFlags::NONBLOCK,
-        )
-        .map_err(io::Error::from)?;
-        let pid =
-            Pid::from_raw(child.id() as i32).ok_or_else(|| refuse("Invalid version helper PID"))?;
-        let process = pidfd_open(pid, PidfdFlags::empty()).map_err(io::Error::from)?;
-        let mut bytes = Vec::new();
-        let mut open = true;
-        loop {
-            if Instant::now() >= deadline {
-                return Err(refuse("Sandbox bubblewrap version check timed out"));
-            }
-            let status = child.try_wait()?;
-            if let Some(status) = status {
-                if !status.success() {
-                    return Err(refuse("Sandbox bubblewrap version check failed"));
-                }
-                if !open {
-                    return String::from_utf8(bytes).map_err(|_| refuse("Invalid version output"));
-                }
-            }
-            let output_ready = {
-                let mut fds = Vec::new();
-                if open {
-                    fds.push(PollFd::new(&stdout, PollFlags::IN));
-                }
-                if status.is_none() {
-                    fds.push(PollFd::new(&process, PollFlags::IN));
-                }
-                match poll(
-                    &mut fds,
-                    Some(
-                        &Timespec::try_from(deadline.saturating_duration_since(Instant::now()))
-                            .unwrap(),
-                    ),
-                ) {
-                    Err(rustix::io::Errno::INTR) => continue,
-                    Err(error) => return Err(io::Error::from(error).into()),
-                    Ok(_) => {}
-                }
-                open && fds[0]
-                    .revents()
-                    .intersects(PollFlags::IN | PollFlags::HUP | PollFlags::ERR)
-            };
-            if output_ready {
-                let mut buffer = [0; 1024];
-                match stdout.read(&mut buffer) {
-                    Ok(0) => open = false,
-                    Ok(size) => bytes.extend_from_slice(&buffer[..size]),
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
-                        ) => {}
-                    Err(error) => return Err(error.into()),
-                }
-                if bytes.len() > 4096 {
-                    return Err(refuse(
-                        "Sandbox bubblewrap version output exceeds its bound",
-                    ));
-                }
-            }
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    result
 }
 
 /// Python's `posixpath.normpath`, so a grant is accepted only in its normalized spelling.

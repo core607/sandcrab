@@ -2,10 +2,19 @@ name: Sandcrab readiness baseline
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
     paths:
-      - experiments/sandcrab-density/**
-      - executor-service/**
+      - experiments/sandcrab-density/readiness*.py
+      - experiments/sandcrab-density/Dockerfile.readiness
+      - executor-service/prepare-tools.sh
+      - executor-service/install-sandbox-tools.sh
+      - executor-service/rust/sandcrab/README.md
+      - executor-service/rust/sandcrab/config.example.toml
+      - executor-service/rust/sandcrab/native_probe.py
+      - executor-service/rust/sandcrab/src/config.rs
+      - executor-service/rust/sandcrab/src/helper.rs
+      - executor-service/rust/sandcrab-launch/bwrap/**
+      - gradle/executor-service.gradle.kts
       - .github/workflows/sandcrab-readiness.yml
   workflow_dispatch:
 
@@ -31,7 +40,11 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/executor-service/bin/sandcrab
+          path: |
+            build/executor-service/bin/sandcrab
+            build/executor-service/bin/bwrap
+            build/executor-service/bin/bwrap-notices.txt
+            build/executor-service/bin/bwrap-source.tar.xz
           if-no-files-found: error
           retention-days: 14
 
@@ -67,12 +80,12 @@ jobs:
         run: |
           python3 experiments/sandcrab-density/readiness_container.py \
             --image sandcrab-readiness:fixture --source . --binary build/executor-service/bin/sandcrab \
-            --report "executor-native/evidence/readiness-$DISTRIBUTION.json"
+            --report "$RUNNER_TEMP/readiness-$DISTRIBUTION.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: readiness-${{ matrix.distribution }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: executor-native/evidence/readiness-*.json
+          path: ${{ runner.temp }}/readiness-${{ matrix.distribution }}.json
           if-no-files-found: warn
           retention-days: 30
 

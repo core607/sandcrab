@@ -142,7 +142,11 @@ class Recipe:
         self.command('refresh package indexes', ['apt-get', 'update'])
         self.command('install preparation and Python workload dependencies',
                      ['apt-get', 'install', '--yes', '--no-install-recommends', 'python3', 'procps'])
-        self.command('install candidate executable', ['install', '-m', '755', self.binary, self.root / 'sandcrab'])
+        self.command('install candidate executables',
+                     ['install', '-m', '755', self.binary, self.binary.with_name('bwrap'), self.root])
+        self.command('install bundled helper source and notices',
+                     ['install', '-m', '644', self.binary.with_name('bwrap-notices.txt'),
+                      self.binary.with_name('bwrap-source.tar.xz'), self.root])
         self.command('prepare pinned sandbox toolchain',
                      ['bash', self.source / 'executor-service/prepare-tools.sh', self.root / 'tools'])
         self.created_user = True

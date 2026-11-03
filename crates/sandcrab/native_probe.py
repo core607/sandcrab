@@ -69,6 +69,9 @@ class Probe:
         self.binary = self.root / 'sandcrab'
         shutil.copyfile(binary, self.binary)
         self.binary.chmod(0o755)
+        self.bwrap = self.root / 'bwrap'
+        shutil.copyfile(binary.with_name('bwrap'), self.bwrap)
+        self.bwrap.chmod(0o755)
         self.name = 'sandcrab-probe-' + uuid.uuid4().hex[:10]
         self.unit = self.name + '.service'
         self.slice = self.name + '.slice'
@@ -110,6 +113,8 @@ network = "none"
         self.config.chmod(0o600)
         self.receipt = {'scope': 'Standalone binary, real systemd/bubblewrap/cgroup isolation; no model or Poketto application',
                         'binarySha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+                        'bwrapSha256': hashlib.sha256(self.bwrap.read_bytes()).hexdigest(),
+                        'bwrapBytes': self.bwrap.stat().st_size,
                         'probeSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                         'checks': [], 'cleanup': 'NOT_RUN'}
 
@@ -188,10 +193,37 @@ network = "none"
         self.report.parent.mkdir(parents=True, exist_ok=True)
         self.report.write_text(json.dumps(self.receipt, indent=2) + '\n')
 
+    def helper_integrity(self):
+        original = self.bwrap.read_bytes()
+        for name, expected in (('writable', 'root-owned and not writable'),
+                               ('non-executable', 'not executable'),
+                               ('checksum', 'checksum mismatch')):
+            try:
+                if name == 'writable':
+                    self.bwrap.chmod(0o777)
+                elif name == 'non-executable':
+                    self.bwrap.chmod(0o644)
+                else:
+                    changed = bytearray(original)
+                    changed[-1] ^= 1
+                    self.bwrap.write_bytes(changed)
+                checked = call(str(self.binary), 'check', '--config', str(self.config), check=False)
+                assert checked.returncode != 0 and expected in checked.stderr, checked.stderr
+                request = self.submit("print('unverified-helper-ran')")
+                value = self.wait(request)
+                assert value['result']['exitCode'] != 0 and value['result']['stdout'] == '', value
+                assert expected in value['result']['stderr'], value
+                self.forget(request)
+            finally:
+                self.bwrap.write_bytes(original)
+                self.bwrap.chmod(0o755)
+            self.done('bundled-helper-' + name + '-refused-at-startup-and-launch')
+
     def tests(self):
         assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'events', 'calls']
         self.transport()
         self.inventory_tests()
+        self.helper_integrity()
         status, schema = http(self.socket, 'GET', '/v1/openapi')
         assert status == 200 and schema['openapi'] == '3.1.0'
         assert schema['paths']['/v1/runs']['post']['operationId'] == 'createRun'

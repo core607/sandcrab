@@ -165,7 +165,7 @@ pub fn launch(path: &Path) -> io::Result<()> {
     }
     sandcrab_core::process::enter(&Cgroup::open(&record.cgroup)?, 0, 0, record.parent_pid)?;
     sandcrab_launch::trusted_executable(&executable).map_err(io::Error::other)?;
-    let bwrap = sandcrab_launch::verify_tools(&record.tools).map_err(io::Error::other)?;
+    let bwrap = sandcrab_launch::verify_bundled_bwrap(&executable).map_err(io::Error::other)?;
     let seccomp = sandcrab_launch::Seccomp::new().map_err(io::Error::other)?;
     sandcrab_launch::enter_bootstrap(&record.root).map_err(io::Error::other)?;
     let mut read = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]

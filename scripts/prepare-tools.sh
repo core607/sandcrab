@@ -9,7 +9,7 @@ mkdir -m 755 -- "$target"
 target=$(cd -- "$target" && pwd)
 (
   cd -- "$target"
-  apt download bubblewrap socat ripgrep debianutils
+  apt download socat ripgrep debianutils
   for package in ./*.deb; do dpkg-deb -x "$package" extracted; done
   # The host /etc/alternatives links are outside the sandbox read grants.
   ln -sfn which.debianutils extracted/usr/bin/which

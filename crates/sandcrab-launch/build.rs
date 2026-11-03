@@ -11,6 +11,22 @@ fn instruction(code: u16, jt: u8, jf: u8, k: u32) -> sock_filter {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=bwrap/lock.json");
+    let lock: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string("bwrap/lock.json").unwrap()).unwrap();
+    let digest = lock["binarySha256"].as_str().unwrap();
+    assert_eq!(digest.len(), 64);
+    let digest: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&digest[i * 2..i * 2 + 2], 16).unwrap())
+        .collect();
+    fs::write(
+        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("bwrap.rs"),
+        format!(
+            "const BWRAP_SHA256: [u8; 32] = {digest:?};\nconst BWRAP_BYTES: u64 = {};\n",
+            lock["binaryBytes"].as_u64().unwrap()
+        ),
+    )
+    .unwrap();
     assert_eq!(env::var("CARGO_CFG_TARGET_OS").unwrap(), "linux");
     assert_eq!(env::var("CARGO_CFG_TARGET_ARCH").unwrap(), "x86_64");
     assert_eq!(env::var("CARGO_CFG_TARGET_ENDIAN").unwrap(), "little");

@@ -64,7 +64,7 @@ def cost(baseline, active, count):
     return result
 
 
-def dependency_inventory(tools):
+def dependency_inventory(binary, tools):
     # Required executable surfaces, not a distribution package/dependency-closure count.
     groups = {
         'core': {'id': 'validate the execution account during service startup',
@@ -80,11 +80,10 @@ def dependency_inventory(tools):
     for group, programs in groups.items():
         observed[group] = [{'program': name, 'purpose': purpose, 'present': shutil.which(name) is not None}
                            for name, purpose in programs.items()]
-    for relative, purpose in [('extracted/usr/bin/bwrap', 'namespace, mount isolation and compiled seccomp filter')]:
-        path = tools / relative
-        observed['core'].append({'program': relative, 'purpose': purpose, 'present': path.is_file(),
-                                 'bytes': path.stat().st_size,
-                                 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+    helper = binary.with_name('bwrap')
+    observed['core'].append({'program': 'bundled bwrap',
+                             'purpose': 'namespace, mount isolation and compiled seccomp filter',
+                             'present': helper.is_file(), **binary_footprint(helper)})
     return {'runtimeExecutables': observed,
             'runtimeExecutableCount': sum(len(rows) for rows in observed.values()),
             'runtimeExecutableCountWithoutProjectQuotas': sum(len(rows) for group, rows in observed.items()
@@ -121,7 +120,7 @@ async def measure(fixture, receipt, counts, report, ledger):
         receipt['binary'] = binary_footprint(fixture.binary)
         if not receipt['binary']['static']:
             raise RuntimeError('The footprint artifact is not static')
-        receipt['dependencies'] = dependency_inventory(fixture.tools_path)
+        receipt['dependencies'] = dependency_inventory(fixture.binary, fixture.tools_path)
         receipt['daemonIdle'] = await samples(0, 0)
         receipt['idleSessions'] = []
         live = 0

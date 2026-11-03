@@ -35,7 +35,7 @@ pub struct Profile {
     pub temporary_inodes: u64,
 }
 impl Profile {
-    /// `systemd-run` for one launcher record. The tools, the launcher, the record and its
+    /// `systemd-run` for one launcher record. The tools, the launcher bundle, the record and its
     /// policy are bound read-only and `writable` read-write; the unit stops with the
     /// supervisor and, with `runtime_max_millis`, after that time.
     pub fn command(
@@ -97,12 +97,15 @@ impl Profile {
             ),
             format!(
                 "BindReadOnlyPaths={}",
-                [self.tools.as_path(), self.launcher.as_path()]
-                    .into_iter()
-                    .chain(read_only.iter().copied())
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-                    .join(" ")
+                [
+                    self.tools.as_path(),
+                    self.launcher.parent().expect("absolute launcher path")
+                ]
+                .into_iter()
+                .chain(read_only.iter().copied())
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
             ),
             format!(
                 "BindPaths={}",
