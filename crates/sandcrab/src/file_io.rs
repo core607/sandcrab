@@ -383,6 +383,14 @@ fn stable(before: &fs::Metadata, after: &fs::Metadata) -> bool {
 struct ArchiveLimits {
     bytes: u64,
     entries: usize,
+    difference: bool,
+}
+fn archive_entry(count: &mut usize, limits: &ArchiveLimits) -> io::Result<()> {
+    *count += 1;
+    if *count > limits.entries {
+        return Err(invalid("FILE_ENTRY_LIMIT"));
+    }
+    Ok(())
 }
 fn pack<W: Write>(
     dir: &File,
@@ -396,6 +404,22 @@ fn pack<W: Write>(
     if depth > 64 {
         return Err(invalid("FILE_ENTRY_LIMIT"));
     }
+    let before = dir.metadata()?;
+    if limits.difference {
+        let attributes = crate::diff::metadata(dir)?;
+        if attributes.whiteout {
+            return Err(invalid("UNSUPPORTED_OVERLAY_METADATA"));
+        }
+        if attributes.opaque {
+            archive_entry(count, limits)?;
+            let marker = if prefix.is_empty() {
+                ".wh..wh..opq".into()
+            } else {
+                format!("{prefix}/.wh..wh..opq")
+            };
+            crate::diff::marker(tar, &marker)?;
+        }
+    }
     let mut names = Vec::new();
     for entry in rustix::fs::Dir::read_from(dir)? {
         let entry = entry?;
@@ -406,10 +430,10 @@ fn pack<W: Write>(
         if matches!(name, "." | "..") {
             continue;
         }
-        *count += 1;
-        if *count > limits.entries {
-            return Err(invalid("FILE_ENTRY_LIMIT"));
+        if limits.difference && name.starts_with(".wh.") {
+            return Err(invalid("DIFF_NAME_CONFLICT"));
         }
+        archive_entry(count, limits)?;
         names.push(name.to_owned());
     }
     names.sort();
@@ -424,10 +448,25 @@ fn pack<W: Write>(
         }
         let info = statat(dir, &name, AtFlags::SYMLINK_NOFOLLOW)?;
         let mut header = tar::Header::new_gnu();
-        header.set_uid(0);
-        header.set_gid(0);
+        header.set_uid(if limits.difference {
+            info.st_uid.into()
+        } else {
+            0
+        });
+        header.set_gid(if limits.difference {
+            info.st_gid.into()
+        } else {
+            0
+        });
         header.set_mtime(info.st_mtime.max(0) as u64);
-        header.set_mode(info.st_mode & 0o777);
+        header.set_mode(info.st_mode & if limits.difference { 0o7777 } else { 0o777 });
+        let whiteout = || {
+            if prefix.is_empty() {
+                format!(".wh.{name}")
+            } else {
+                format!("{prefix}/.wh.{name}")
+            }
+        };
         match rustix::fs::FileType::from_raw_mode(info.st_mode) {
             rustix::fs::FileType::Directory => {
                 let child = child_dir(dir, &name)?;
@@ -440,6 +479,16 @@ fn pack<W: Write>(
             rustix::fs::FileType::RegularFile => {
                 let mut file = regular(dir, &name)?;
                 let before = file.metadata()?;
+                if limits.difference {
+                    let attributes = crate::diff::metadata(&file)?;
+                    if attributes.opaque || (attributes.whiteout && before.len() != 0) {
+                        return Err(invalid("UNSUPPORTED_OVERLAY_METADATA"));
+                    }
+                    if attributes.whiteout {
+                        crate::diff::marker(tar, &whiteout())?;
+                        continue;
+                    }
+                }
                 if before.len() > limits.bytes {
                     return Err(invalid("FILE_LIMIT"));
                 }
@@ -468,8 +517,14 @@ fn pack<W: Write>(
                 header.set_cksum();
                 tar.append_link(&mut header, &path, target)?;
             }
+            rustix::fs::FileType::CharacterDevice if limits.difference && info.st_rdev == 0 => {
+                crate::diff::marker(tar, &whiteout())?;
+            }
             _ => return Err(invalid("UNSUPPORTED_FILE_TYPE")),
         }
+    }
+    if limits.difference && !stable(&before, &dir.metadata()?) {
+        return Err(invalid("FILE_CHANGED"));
     }
     Ok(())
 }
@@ -479,24 +534,51 @@ pub(crate) fn pack_tree<W: Write>(
     byte_limit: u64,
     entry_limit: usize,
 ) -> io::Result<W> {
+    pack_archive(Some(root), output, byte_limit, entry_limit, false)
+}
+
+fn pack_archive<W: Write>(
+    root: Option<&File>,
+    output: W,
+    byte_limit: u64,
+    entry_limit: usize,
+    difference: bool,
+) -> io::Result<W> {
     let mut tar = tar::Builder::new(output);
-    pack(
-        root,
-        "",
-        &mut tar,
-        &mut BTreeMap::new(),
-        &mut 0,
-        &ArchiveLimits {
-            bytes: byte_limit,
-            entries: entry_limit,
-        },
-        0,
-    )?;
+    let mut count = 0;
+    let limits = ArchiveLimits {
+        bytes: byte_limit,
+        entries: entry_limit,
+        difference,
+    };
+    if let Some(root) = root {
+        if difference {
+            archive_entry(&mut count, &limits)?;
+            let info = root.metadata()?;
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_uid(info.uid().into());
+            header.set_gid(info.gid().into());
+            header.set_mode(info.mode() & 0o7777);
+            header.set_mtime(info.mtime().max(0) as u64);
+            header.set_size(0);
+            header.set_cksum();
+            tar.append_data(&mut header, ".", io::empty())?;
+        }
+        pack(
+            root,
+            "",
+            &mut tar,
+            &mut BTreeMap::new(),
+            &mut count,
+            &limits,
+            0,
+        )?;
+    }
     tar.finish()?;
     tar.into_inner()
 }
 fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
-    let workspace = directory(&job.workspace)?;
     let stage = directory(&job.stage)?;
     let content = new_file(&stage, "content")?;
     let mut output = Bounded {
@@ -506,7 +588,16 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
         hash: Sha256::new(),
     };
     let mut source_bytes = None;
-    if job.format == Format::Raw {
+    if job.action == "difference" {
+        let upper = directory(&crate::diff::upper(&job.stage)?)?;
+        let root = match child_dir(&upper, "data") {
+            Ok(root) => Some(root),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        output = pack_archive(root.as_ref(), output, job.byte_limit, job.entry_limit, true)?;
+    } else if job.format == Format::Raw {
+        let workspace = directory(&job.workspace)?;
         let (dir, name) = parent(&workspace, &job.path, false)?;
         let mut file = regular(&dir, &name)?;
         let before = file.metadata()?;
@@ -520,6 +611,7 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
             return Err(invalid("FILE_CHANGED"));
         }
     } else {
+        let workspace = directory(&job.workspace)?;
         let root = if job.path == "." {
             workspace
         } else {
@@ -564,9 +656,10 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         })
             .contains(&job.entry_limit)
         || (job.action == "template-receive" && job.format != Format::Tar)
+        || (job.action == "difference" && (job.path != "." || job.format != Format::Tar))
         || !valid_path(
             &job.path,
-            job.action == "snapshot" && job.format == Format::Tar,
+            ["snapshot", "difference"].contains(&job.action.as_str()) && job.format == Format::Tar,
         )
     {
         return Err(invalid("Invalid file helper authority"));
@@ -607,7 +700,17 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     {
         return Err(invalid("File stage ownership changed"));
     }
-    if job.action == "snapshot" {
+    if job.action == "difference" {
+        if owner.volume_id.is_some()
+            || parent.file_name().and_then(|s| s.to_str()) != Some(owner.session_id.as_str())
+        {
+            return Err(invalid("Invalid diff ownership"));
+        }
+        let upper = crate::diff::upper(&job.stage)?;
+        sandcrab_core::fs::protected_directory(&upper)?;
+        crate::storage::no_mounts_below(&upper, true)?;
+    }
+    if ["snapshot", "difference"].contains(&job.action.as_str()) {
         return snapshot(&job);
     }
     if job.action == "template-receive" {
@@ -666,6 +769,8 @@ pub fn error_code(error: &io::Error) -> &'static str {
         "FILE_CHANGED" => "FILE_CHANGED",
         "UNSUPPORTED_ARCHIVE_ENTRY" => "UNSUPPORTED_ARCHIVE_ENTRY",
         "UNSUPPORTED_FILE_TYPE" => "UNSUPPORTED_FILE_TYPE",
+        "UNSUPPORTED_OVERLAY_METADATA" => "UNSUPPORTED_OVERLAY_METADATA",
+        "DIFF_NAME_CONFLICT" => "DIFF_NAME_CONFLICT",
         "INVALID_MULTIPART" => "INVALID_MULTIPART",
         "CONTENT_INCOMPLETE" => "CONTENT_INCOMPLETE",
         "INVALID_FILE_METADATA" => "INVALID_FILE_METADATA",
@@ -692,6 +797,64 @@ pub fn error_code(error: &io::Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn difference_converts_regular_whiteouts_and_distinguishes_opaque_markers() {
+        use rustix::fs::{XattrFlags, fsetxattr};
+        let path = std::env::temp_dir().join(format!(
+            "sandcrab-diff-{}",
+            sandcrab_core::new_uuid().unwrap()
+        ));
+        fs::create_dir(&path).unwrap();
+        let root = directory(&path).unwrap();
+        let deleted = new_file(&root, "deleted").unwrap();
+        fsetxattr(&deleted, "user.overlay.whiteout", b"y", XattrFlags::empty()).unwrap();
+        fs::create_dir(path.join("merged")).unwrap();
+        let merged = directory(&path.join("merged")).unwrap();
+        fsetxattr(&merged, "user.overlay.opaque", b"x", XattrFlags::empty()).unwrap();
+        fs::write(path.join("merged/keep"), b"retained").unwrap();
+        fsetxattr(&root, "user.overlay.opaque", b"y", XattrFlags::empty()).unwrap();
+        let bytes = pack_archive(Some(&root), Vec::new(), 65536, 100, true).unwrap();
+        let mut archive = tar::Archive::new(bytes.as_slice());
+        let entries = archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.path().unwrap().to_string_lossy().into_owned(),
+                    entry.size(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            entries,
+            vec![
+                (".".into(), 0),
+                (".wh..wh..opq".into(), 0),
+                (".wh.deleted".into(), 0),
+                ("merged".into(), 0),
+                ("merged/keep".into(), 8)
+            ]
+        );
+        assert_eq!(
+            pack_archive(Some(&root), Vec::new(), 65536, 4, true)
+                .unwrap_err()
+                .to_string(),
+            "FILE_ENTRY_LIMIT"
+        );
+        for name in ["user.overlay.redirect", "user.overlay.metacopy"] {
+            fsetxattr(&root, name, b"/elsewhere", XattrFlags::empty()).unwrap();
+            assert_eq!(
+                pack_archive(Some(&root), Vec::new(), 65536, 100, true)
+                    .unwrap_err()
+                    .to_string(),
+                "UNSUPPORTED_OVERLAY_METADATA"
+            );
+            rustix::fs::fremovexattr(&root, name).unwrap();
+        }
+        fs::remove_dir_all(path).unwrap();
+    }
     #[test]
     fn paths_preserve_case_and_unicode_but_not_escape_components() {
         for p in ["README.md", "Readme.md", "项目/main.py", "a/b"] {

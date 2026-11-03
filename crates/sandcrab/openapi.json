@@ -1876,6 +1876,80 @@
           }
         }
       }
+    },
+    "/v1/sessions/{id}/diff": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "operationId": "exportSessionDiff",
+        "description": "Export the template overlay upper as a tar changeset. Paths are relative to the workspace, or to / for rootfs sessions. Deletions use .wh.NAME and opaque directories use .wh..wh..opq. Apply whiteouts to the base before extracting entries. Coordinate writers for consistency. Numeric UID/GID, mode, mtime, contents, symlinks and upper hardlinks are preserved; xattrs and ACLs are omitted. Redirect/metacopy metadata, special nodes other than whiteouts, and literal .wh.* names are refused. Uses file transfer admission, limits, deadlines and request-scoped cleanup. Sessions without a template return TEMPLATE_REQUIRED.",
+        "responses": {
+          "200": {
+            "description": "Immutable tar bytes; validate Content-Length, SHA-256 ETag and the session serverId before installation. Complete delivery confirms cleanup. This response closes the connection.",
+            "headers": {
+              "X-Sandcrab-Server-Id": {
+                "required": true,
+                "description": "The serving daemon epoch, matching serverId in native session records.",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "pattern": "^\"[0-9a-f]{64}\"$"
+                }
+              }
+            },
+            "content": {
+              "application/x-tar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "417": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
     }
   },
   "components": {

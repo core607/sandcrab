@@ -226,17 +226,50 @@ pub fn get(
     if !valid_path(path, options.format == Format::Tar) {
         return Err(invalid("Source must be a relative workspace path"));
     }
+    download(
+        socket,
+        "POST",
+        &format!("/v1/sessions/{session}/snapshot"),
+        &serde_json::to_vec(&json!({"path":path,"format":options.format}))?,
+        destination,
+        options.replace,
+    )
+}
+
+pub fn difference(
+    socket: &Endpoint,
+    session: &str,
+    destination: &Path,
+    replace: bool,
+) -> io::Result<i32> {
+    download(
+        socket,
+        "GET",
+        &format!("/v1/sessions/{session}/diff"),
+        &[],
+        destination,
+        replace,
+    )
+}
+
+fn download(
+    socket: &Endpoint,
+    method: &str,
+    route: &str,
+    body: &[u8],
+    destination: &Path,
+    replace: bool,
+) -> io::Result<i32> {
     let mut stream = client::connect(socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(75)))?;
-    let body = serde_json::to_vec(&json!({"path":path,"format":options.format}))?;
     write!(
         stream,
-        "POST /v1/sessions/{session}/snapshot HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+        "{method} {route} HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     )?;
     socket.headers(&mut stream)?;
     stream.write_all(b"\r\n")?;
-    stream.write_all(&body)?;
+    stream.write_all(body)?;
     let (head, mut response) = sandcrab_core::http::response(&mut stream)
         .map_err(|_| invalid("Invalid snapshot response"))?;
     if head.status != 200 {
@@ -286,7 +319,7 @@ pub fn get(
     };
     receive(&mut response, &mut partial.file, head.length, expected)?;
     partial.file.sync_all()?;
-    if options.replace {
+    if replace {
         match fs::symlink_metadata(destination) {
             Ok(info) if !info.is_file() => {
                 return Err(invalid("Local destination is not a regular file"));
@@ -300,7 +333,7 @@ pub fn get(
         &partial.path,
         CWD,
         destination,
-        if options.replace {
+        if replace {
             RenameFlags::empty()
         } else {
             RenameFlags::NOREPLACE

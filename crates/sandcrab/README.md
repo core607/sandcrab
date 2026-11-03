@@ -124,8 +124,32 @@ authenticated API. Sandcrab stores each normalized tree once beneath
 `runtime_root/templates`; published objects survive daemon restart and remain
 until explicitly deleted. Sessions attach a template as a shared read-only base
 with their own disposable writable layer at `/workspace`, or use it as the root
-filesystem. Difference export remains under the
-[lightweight service proposal](../../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md).
+filesystem. Export a parent's writable layer before closing it:
+
+```sh
+sandcrab session diff --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID changes.tar
+```
+
+`GET /v1/sessions/{id}/diff` captures a tar changeset from the upper layer.
+Paths are relative to `/workspace`, or to `/` for rootfs sessions; all contexts'
+changes are included through their parent. Deletions become empty `.wh.NAME`
+files; `.wh..wh..opq` hides a directory's base children. Apply these markers to
+the matching template before installing additions. Ordinary tar extraction does
+not apply deletion semantics. An unchanged workspace produces an empty archive.
+
+The changeset preserves contents, numeric UID/GID, modes, second-resolution
+mtime, symlinks and hard links among upper files. It omits xattrs and ACLs;
+overlay redirects and metadata-only copies return `UNSUPPORTED_OVERLAY_METADATA`.
+Literal upper names starting with `.wh.` return `DIFF_NAME_CONFLICT`; other
+special nodes return `UNSUPPORTED_FILE_TYPE`. Rootfs exports include runtime
+anchor metadata but exclude mounted runtime files, private `/tmp` and transfer
+staging. Sessions without a template return `TEMPLATE_REQUIRED`.
+
+Coordinate writers during capture. [File transfer](#files) admission, byte/entry
+limits, deadlines, cancellation and cleanup also apply to diff downloads.
+Validate Content-Length, SHA-256 ETag and the session's serverId; the CLI checks
+length/hash and installs local output atomically. Use `-` for stdout or
+`--replace` to replace an existing regular destination.
 
 ```sh
 sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python environment.tar
@@ -712,5 +736,7 @@ pins, CLI attachment, unsupported mount syscalls and crash recovery; it requires
 `rootfs_probe.py` additionally packages host bash and its libraries as a minimal
 fixture, then checks template execution, protected mount anchors, atomic file
 operations, context sharing and contained recovery. It also needs `ldd`.
+`diff_probe.py` applies exported whiteouts and entries to their template and
+compares the result with the live workspace/rootfs, including bounded cleanup.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

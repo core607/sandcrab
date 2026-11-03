@@ -265,9 +265,18 @@ impl Runtime {
                 .runtime_root
                 .join("file-ops")
                 .join(format!("{operation}.json"));
+            let upper = (job.action == "difference")
+                .then(|| crate::diff::upper(&job.stage))
+                .transpose()?;
+            if let Some(upper) = &upper {
+                sandcrab_core::fs::protected_directory(upper)?;
+            }
             create(&record, job, 0, 0o400)?;
             let mut readonly = vec![record.as_path()];
             let mut writable = vec![job.stage.as_path()];
+            if let Some(upper) = &upper {
+                readonly.push(upper);
+            }
             if ["snapshot", "sdk-query"].contains(&job.action.as_str()) {
                 readonly.push(&job.workspace);
             }

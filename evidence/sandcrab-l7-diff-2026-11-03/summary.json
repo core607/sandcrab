@@ -1,0 +1,36 @@
+{
+  "milestone": "L7 overlay difference export",
+  "scope": "Native API/CLI changesets applied to their template bases and compared with live workspace/rootfs trees on a local Linux kernel under Docker Desktop",
+  "baseRevision": "d7cc028d0420c829bfda27b7e4149586be83b213",
+  "binarySha256": "68ee0382b639e89cc5c67676f83019e4fabcbfd5eb827764a3e92281a7c0a483",
+  "rustTestsPassed": 148,
+  "workerTestsPassed": 176,
+  "nativeChecksPassed": {
+    "diff": 8,
+    "isolation": 48,
+    "files": 26,
+    "templates": 9,
+    "publishedSdk": 21
+  },
+  "nativeCleanup": "PASS",
+  "earlierFailures": [
+    {
+      "kind": "Probe attempted a file operation through a child-context ID",
+      "attempts": 1,
+      "resolution": "Export through the parent after a child command, matching the existing file API ownership contract",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "Fault injection changed upper-root permissions and also invalidated the merged stage ancestry",
+      "attempts": 1,
+      "observed": "FILE_CLEANUP_UNCONFIRMED correctly refused cleanup through the damaged protected path",
+      "resolution": "Inject the intended upper-authority fault through its protected parent and verify both stage and helper-record cleanup",
+      "cleanup": "PASS"
+    }
+  ],
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-diff-l7",
+  "capacityMeasured": false,
+  "remainingL7": [
+    "full L7 footprint and density checkpoint"
+  ]
+}

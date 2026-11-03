@@ -490,8 +490,43 @@ impl Service {
         if selection.is_some() && request.format != Format::Raw {
             return Err((400, "INVALID_SELECTION"));
         }
-        let id = sandcrab_core::new_uuid().map_err(|_| (503, "FILE_UNAVAILABLE"))?;
         let lease = self.file_lease(session, incarnation)?;
+        self.capture_file(lease, request, selection, frozen, false)
+    }
+
+    pub fn difference(&self, session: &str) -> Result<Snapshot> {
+        let lease = self.file_lease(session, None)?;
+        if lease.access.template.is_none() {
+            lease.finish(true);
+            return Err((409, "TEMPLATE_REQUIRED"));
+        }
+        self.capture_file(
+            lease,
+            Capture {
+                path: ".".into(),
+                format: Format::Tar,
+            },
+            None,
+            false,
+            true,
+        )
+    }
+
+    fn capture_file(
+        &self,
+        lease: Lease,
+        request: Capture,
+        selection: Option<&crate::sdk_download::Selection>,
+        frozen: bool,
+        difference: bool,
+    ) -> Result<Snapshot> {
+        let id = match sandcrab_core::new_uuid() {
+            Ok(id) => id,
+            Err(_) => {
+                lease.finish(true);
+                return Err((503, "FILE_UNAVAILABLE"));
+            }
+        };
         let stage = stage(&id, &lease.access);
         let mut contained = true;
         let result = (|| -> io::Result<(File, u64, String, Option<crate::sdk_download::Range>)> {
@@ -500,7 +535,7 @@ impl Service {
                 .files
                 .begin_stage(&stage, &self.runtime.config)?;
             let mut job = job(
-                "snapshot",
+                if difference { "difference" } else { "snapshot" },
                 &request.path,
                 request.format,
                 &lease.access,
@@ -586,6 +621,8 @@ impl Service {
                         "NOT_REGULAR_FILE" => (400, "NOT_REGULAR_FILE"),
                         "NOT_DIRECTORY" => (400, "NOT_DIRECTORY"),
                         "UNSUPPORTED_FILE_TYPE" => (422, "UNSUPPORTED_FILE_TYPE"),
+                        "UNSUPPORTED_OVERLAY_METADATA" => (422, "UNSUPPORTED_OVERLAY_METADATA"),
+                        "DIFF_NAME_CONFLICT" => (422, "DIFF_NAME_CONFLICT"),
                         "FILE_CHANGED" => (409, "FILE_CHANGED"),
                         "FILE_CANCELLED" => (409, "FILE_CANCELLED"),
                         _ => (503, "SNAPSHOT_FAILED"),

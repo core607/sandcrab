@@ -347,6 +347,24 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
         {
             return snapshot(stream, service, id, &bytes);
         }
+        if head.method == "GET"
+            && let Some(id) = head
+                .path
+                .strip_prefix("/v1/sessions/")
+                .and_then(|p| p.strip_suffix("/diff"))
+                .filter(|s| sandcrab_core::uuid(s))
+        {
+            if !bytes.is_empty() {
+                return json_reply(stream, 400, &error(400, "INVALID_REQUEST").1, true);
+            }
+            let snapshot = match service.difference(id) {
+                Ok(snapshot) => snapshot,
+                Err((status, code)) => {
+                    return json_reply(stream, status, &error(status, code).1, true);
+                }
+            };
+            return send_snapshot(stream, service, snapshot, false);
+        }
         let (status, reply) = service.route(&head.method, &head.path, &bytes);
         json_reply(stream, status, &reply, close)?;
         if close {
