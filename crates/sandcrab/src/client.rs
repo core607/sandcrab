@@ -190,6 +190,7 @@ pub fn run(
         timeout_millis: timeout,
         output_limit_bytes: None,
         resources: Some(resources),
+        keep_result,
     };
     submit_run(
         &mut client,
@@ -211,7 +212,7 @@ pub fn execute_session(
     let mut client = Client::new(socket);
     let info = client.request("GET", "/v1/info", None)?;
     let input = json!({"id":sandcrab_core::new_uuid()?,"serverId":info["serverId"],
-        "command":command,"timeoutMillis":timeout});
+        "command":command,"timeoutMillis":timeout,"keepResult":keep_result});
     submit_run(
         &mut client,
         &format!("/v1/sessions/{session}/commands"),
@@ -332,6 +333,7 @@ pub fn open_session(
     ttl: Option<u64>,
     volume: Option<&str>,
     resources: crate::config::Resources,
+    keep_result: bool,
 ) -> io::Result<i32> {
     let info = request(socket, "GET", "/v1/info", None)?;
     let id = sandcrab_core::new_uuid()?;
@@ -341,7 +343,7 @@ pub fn open_session(
         "POST",
         "/v1/sessions",
         Some(
-            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume,"resources":resources}),
+            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume,"resources":resources,"keepResult":keep_result}),
         ),
     )?;
     wait_session(socket, &id, true)
@@ -357,7 +359,7 @@ pub fn create_volume(socket: &Endpoint, plan: crate::storage::Plan) -> io::Resul
     wait_volume(socket, &id, true)
 }
 
-pub fn open_shell(socket: &Endpoint, parent: &str) -> io::Result<i32> {
+pub fn open_shell(socket: &Endpoint, parent: &str, keep_result: bool) -> io::Result<i32> {
     let info = request(socket, "GET", "/v1/info", None)?;
     let id = sandcrab_core::new_uuid()?;
     eprintln!("sessionId={id}");
@@ -365,7 +367,7 @@ pub fn open_shell(socket: &Endpoint, parent: &str) -> io::Result<i32> {
         socket,
         "POST",
         &format!("/v1/sessions/{parent}/shells"),
-        Some(&json!({"id":id,"serverId":info["serverId"]})),
+        Some(&json!({"id":id,"serverId":info["serverId"],"keepResult":keep_result})),
     )?;
     wait_session(socket, &id, true)
 }

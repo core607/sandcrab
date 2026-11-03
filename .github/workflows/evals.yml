@@ -76,6 +76,11 @@ jobs:
         run: |
           sudo python3 executor-service/rust/sandcrab/native_probe.py --binary build/executor-service/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/native.json
+      - name: Check native terminal result retention
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo python3 executor-service/rust/sandcrab/retention_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/retention.json
       - name: Check independent shells and shared workspace containment
         if: inputs.evidence_mode != 'model'
         run: |
@@ -120,11 +125,13 @@ jobs:
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
           fi
-          for name in contexts native delegation; do
-            if [ -f "/var/lib/sandcrab-evals/sdk/$name.json" ]; then
-              sudo install -d -m 755 /var/lib/sandcrab-evals/results
-              sudo install -m 644 "/var/lib/sandcrab-evals/sdk/$name.json" "/var/lib/sandcrab-evals/results/$name.json"
-            fi
+          for name in contexts native delegation retention; do
+            for suffix in json diagnostic.txt; do
+              if [ -f "/var/lib/sandcrab-evals/sdk/$name.$suffix" ]; then
+                sudo install -d -m 755 /var/lib/sandcrab-evals/results
+                sudo install -m 644 "/var/lib/sandcrab-evals/sdk/$name.$suffix" "/var/lib/sandcrab-evals/results/$name.$suffix"
+              fi
+            done
           done
           if [ -d /var/lib/sandcrab-evals/results ]; then
             sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-evals/results

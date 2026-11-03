@@ -25,12 +25,16 @@ pub struct Open {
     pub ttl_millis: Option<u64>,
     pub volume_id: Option<String>,
     pub resources: Option<crate::config::Resources>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_result: bool,
 }
 #[derive(Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct OpenShell {
     id: String,
     server_id: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    keep_result: bool,
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Parent {
@@ -45,6 +49,8 @@ pub struct Command {
     pub command: String,
     pub timeout_millis: Option<u64>,
     pub output_limit_bytes: Option<usize>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_result: bool,
 }
 impl Command {
     fn limits(&self, profile: &Profile) -> Result<(u64, usize), &'static str> {
@@ -80,6 +86,7 @@ struct Work {
     cancelled: Arc<AtomicBool>,
 }
 pub(crate) struct Session {
+    pub(crate) completed_at: Option<Instant>,
     pub incarnation: String,
     request: Open,
     pub state: String,
@@ -108,12 +115,19 @@ fn ttl(value: Option<u64>, profile: &Profile) -> Result<u64, &'static str> {
     Ok(value)
 }
 impl Session {
+    pub(crate) fn result_expired(&self, ttl: Duration, now: Instant) -> bool {
+        self.terminal()
+            && !self.request.keep_result
+            && self
+                .completed_at
+                .is_some_and(|at| now.saturating_duration_since(at) >= ttl)
+    }
     pub fn terminal(&self) -> bool {
         ["closed", "expired", "failed"].contains(&self.state.as_str())
     }
     fn value(&self) -> Value {
         json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
-            "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,
+            "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,"keepResult":self.request.keep_result,
             "volumeId":self.request.volume_id,"code":self.code,
             "storageUsage":self.files.as_ref().and_then(|files|files.usage.as_ref().map(|usage|usage.value())),
             "storagePoolUsage":self.files.as_ref().and_then(|files|files.pool_usage.as_ref().map(|usage|usage.value())),
@@ -362,6 +376,7 @@ impl Service {
             Err(_) => return error(503, "SESSION_UNAVAILABLE"),
         };
         let session = Session {
+            completed_at: None,
             incarnation,
             request,
             state: "starting".into(),
@@ -416,7 +431,9 @@ impl Service {
             incarnation: parent.incarnation.clone(),
         };
         if let Some(session) = registry.sessions.get(&request.id) {
-            return if session.parent.as_ref() == Some(&owner) {
+            return if session.parent.as_ref() == Some(&owner)
+                && session.request.keep_result == request.keep_result
+            {
                 (200, session.value())
             } else {
                 error(409, "ID_CONFLICT")
@@ -456,7 +473,9 @@ impl Service {
         };
         let mut input = parent.request.clone();
         input.id = request.id.clone();
+        input.keep_result = request.keep_result;
         let session = Session {
+            completed_at: None,
             incarnation,
             request: input,
             state: "starting".into(),
@@ -718,6 +737,9 @@ impl Service {
         };
         if contained && session.parent.is_none() {
             registry.active -= 1;
+        }
+        if contained {
+            registry.sessions.get_mut(id).unwrap().completed_at = Some(Instant::now());
         }
     }
 }

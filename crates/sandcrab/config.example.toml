@@ -10,6 +10,7 @@ daemon_memory_bytes = 134217728
 daemon_tasks_max = 128
 max_sandboxes = 2
 max_records = 128
+result_ttl_millis = 300000
 max_output_bytes = 8388608
 max_file_records = 256
 max_file_transfers = 2

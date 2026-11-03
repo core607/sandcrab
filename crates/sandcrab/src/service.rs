@@ -1,5 +1,5 @@
 //! Native run admission and outcomes. A server epoch prevents uncertain requests from being
-//! silently executed again after restart; explicit forgetting ends a run's replay lifetime.
+//! silently executed again after restart; forgetting or result expiry ends its replay lifetime.
 use crate::{
     config::{Profile, invalid},
     runtime::Runtime,
@@ -15,6 +15,7 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
+    time::{Duration, Instant},
 };
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub struct Request {
     pub timeout_millis: Option<u64>,
     pub output_limit_bytes: Option<usize>,
     pub resources: Option<crate::config::Resources>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_result: bool,
 }
 impl Request {
     fn limits(&self, profile: &Profile) -> Result<(u64, usize), &'static str> {
@@ -66,6 +69,7 @@ pub(crate) struct Run {
     pub output: [Vec<u8>; 2],
     pub stream_id: String,
     pub calls: Option<Arc<crate::host_calls::Calls>>,
+    pub completed_at: Option<Instant>,
 }
 impl Run {
     pub(crate) fn new(
@@ -85,6 +89,7 @@ impl Run {
             reservation: limit,
             output: [Vec::new(), Vec::new()],
             stream_id: sandcrab_core::new_uuid()?,
+            completed_at: None,
         })
     }
     pub(crate) fn terminal(&self) -> bool {
@@ -102,7 +107,7 @@ impl Run {
     }
     pub(crate) fn summary(&self) -> Value {
         let mut value = json!({"id":self.request["id"],"serverId":self.request["serverId"],"profile":self.profile,
-            "state":self.state,"result":self.result});
+            "state":self.state,"result":self.result,"keepResult":self.request["keepResult"] == true});
         if let Some(id) = self.request.get("sessionId") {
             value["sessionId"] = id.clone();
         }
@@ -116,6 +121,23 @@ pub(crate) struct Registry {
     pub reserved: usize,
 }
 impl Registry {
+    pub(crate) fn expire_results(&mut self, ttl: Duration, now: Instant) {
+        let mut released = 0;
+        self.runs.retain(|_, run| {
+            let expired = run.terminal()
+                && run.request["keepResult"] != true
+                && run
+                    .completed_at
+                    .is_some_and(|at| now.saturating_duration_since(at) >= ttl);
+            if expired {
+                released += run.reservation;
+            }
+            !expired
+        });
+        self.reserved -= released;
+        self.sessions
+            .retain(|_, session| !session.result_expired(ttl, now));
+    }
     fn new() -> Self {
         Self {
             runs: BTreeMap::new(),
@@ -196,6 +218,7 @@ impl Service {
                 200,
                 json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
                     "limits":{"maxSandboxes":self.runtime.config.service.max_sandboxes,"maxRecords":self.runtime.config.service.max_records,
+                        "resultTtlMillis":self.runtime.config.service.result_ttl_millis,
                         "maxOutputBytes":self.runtime.config.service.max_output_bytes,"maxConnections":self.runtime.config.service.max_connections,
                         "maxEventStreams":self.runtime.config.service.max_event_streams},
                     "events":{"blockBytes":crate::events::BLOCK,"streamTimeoutMillis":crate::events::TIMEOUT.as_millis(),
@@ -411,6 +434,7 @@ impl Service {
             run.state = "failed".into();
             run.result = Some(json!({"code":code}));
         }
+        run.completed_at = Some(Instant::now());
         if release_admission {
             registry.active -= 1;
         } else if let Some(session_id) = run.request["sessionId"].as_str().map(str::to_owned)
@@ -540,6 +564,7 @@ mod tests {
                 reservation: 123,
                 output: [Vec::new(), Vec::new()],
                 stream_id: sandcrab_core::new_uuid().unwrap(),
+                completed_at: None,
             },
         );
         assert_eq!(registry.forget(&id), Err("RUN_ACTIVE"));
@@ -549,5 +574,47 @@ mod tests {
         registry.forget(&id).unwrap();
         assert_eq!(registry.reserved, 0);
         assert!(registry.runs.is_empty());
+    }
+
+    #[test]
+    fn expiry_releases_only_old_unpinned_terminal_output() {
+        let now = Instant::now();
+        let ttl = Duration::from_secs(2);
+        let mut registry = Registry::new();
+        for (index, (state, kept, age)) in [
+            ("succeeded", false, 3),
+            ("failed", false, 3),
+            ("cancelled", false, 3),
+            ("succeeded", true, 3),
+            ("running", false, 3),
+            ("closing", false, 3),
+            ("succeeded", false, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = format!("00000000-0000-4000-8000-{index:012}");
+            let mut run = Run::new(
+                json!({"id":id,"keepResult":kept}),
+                "python".into(),
+                Arc::new(AtomicBool::new(false)),
+                64,
+                false,
+            )
+            .unwrap();
+            run.state = state.into();
+            run.completed_at = Some(now - Duration::from_secs(age));
+            registry.runs.insert(id, run);
+            registry.reserved += 64;
+        }
+        registry.active = 2;
+        registry.expire_results(ttl, now);
+        assert_eq!(registry.runs.len(), 4);
+        assert_eq!(registry.reserved, 4 * 64);
+        assert_eq!(registry.active, 2);
+        registry.expire_results(ttl, now + Duration::from_secs(2));
+        assert_eq!(registry.runs.len(), 3);
+        assert_eq!(registry.reserved, 3 * 64);
+        assert_eq!(registry.active, 2);
     }
 }

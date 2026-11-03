@@ -65,6 +65,10 @@ asyncio.run(main())
 
 ## Lifecycle
 
+The adapter owns and pins its native session, shell and command records until its
+existing lifecycle releases them. The native [result TTL](README.md#result-retention)
+does not shorten SDK session lifetimes or command observation.
+
 `image.uri` selects an operator profile. The SDK default entrypoint
 `["tail", "-f", "/dev/null"]` selects an idle managed shell; it does not launch
 that executable. Other entrypoints and image authentication are refused.

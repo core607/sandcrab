@@ -19,12 +19,14 @@ use std::{
     os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     sync::Mutex,
+    time::{Duration, SystemTime},
 };
 
 pub type Result<T> = std::result::Result<T, (u16, &'static str)>;
 fn freeze() -> bool {
     true
 }
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Upload {
@@ -40,6 +42,8 @@ pub struct Upload {
     #[serde(default = "freeze")]
     pub freeze: bool,
     pub mode: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_result: bool,
 }
 impl Upload {
     pub fn valid(&self) -> bool {
@@ -67,6 +71,8 @@ impl Upload {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Record {
+    #[serde(skip)]
+    pub completed_at: Option<SystemTime>,
     pub request: Upload,
     pub plan_digest: String,
     pub state: String,
@@ -80,7 +86,7 @@ impl Record {
     pub fn value(&self) -> Value {
         json!({"id":self.request.id,"serverId":self.request.server_id,"sessionId":self.request.session_id,
             "path":self.request.path,"format":self.request.format,"bytes":self.request.bytes,"sha256":self.request.sha256,
-            "planDigest":self.plan_digest,"state":self.state,"code":self.code,"volumeId":self.volume_id,"profile":self.profile,
+            "planDigest":self.plan_digest,"state":self.state,"code":self.code,"volumeId":self.volume_id,"profile":self.profile,"keepResult":self.request.keep_result,
             "publication":if self.publication_confirmed {"committed"} else if self.publication_started {"unknown"} else {"none"}})
     }
     pub fn terminal(&self) -> bool {
@@ -222,9 +228,12 @@ impl Store {
         }
         let mut records = BTreeMap::new();
         for (id, path) in files(&root.join("records"), config.service.max_file_records)? {
-            let record: Record = read(&path)?;
+            let mut record: Record = read(&path)?;
             if !record.valid() || record.request.id != id {
                 return Err(invalid("Invalid upload record"));
+            }
+            if record.terminal() {
+                record.completed_at = Some(fs::metadata(&path)?.modified()?);
             }
             records.insert(id, record);
         }
@@ -265,7 +274,10 @@ impl Store {
     fn record_path(&self, id: &str) -> PathBuf {
         self.root.join("records").join(format!("{id}.json"))
     }
-    fn save(&self, state: &mut State, record: Record) -> Result<Record> {
+    fn save(&self, state: &mut State, mut record: Record) -> Result<Record> {
+        if record.terminal() && record.completed_at.is_none() {
+            record.completed_at = Some(SystemTime::now());
+        }
         if storage::write(&self.record_path(&record.request.id), &record).is_err() {
             state.fenced = true;
             return Err((503, "FILE_STATE_UNCERTAIN"));
@@ -303,6 +315,7 @@ impl Store {
             return Err((429, "FILE_RECORD_CAPACITY"));
         }
         let record = Record {
+            completed_at: None,
             plan_digest: request.digest(),
             request,
             state: "waiting".into(),
@@ -373,6 +386,9 @@ impl Store {
     }
     pub fn forget(&self, id: &str) -> Result<()> {
         let mut state = self.state.lock().unwrap();
+        self.forget_locked(&mut state, id)
+    }
+    fn forget_locked(&self, state: &mut State, id: &str) -> Result<()> {
         if state.fenced {
             return Err((503, "FILE_STATE_UNCERTAIN"));
         }
@@ -389,6 +405,33 @@ impl Store {
         }
         state.records.remove(id);
         Ok(())
+    }
+    pub fn expire_results(&self, ttl: Duration) {
+        let mut state = self.state.lock().unwrap();
+        if state.fenced {
+            return;
+        }
+        let now = SystemTime::now();
+        // Bounded durable work per maintenance pass; active staging always keeps its identity.
+        let expired: Vec<_> = state
+            .records
+            .iter()
+            .filter(|(id, record)| {
+                record.terminal()
+                    && !record.request.keep_result
+                    && !state.stages.contains_key(*id)
+                    && record
+                        .completed_at
+                        .is_some_and(|at| now.duration_since(at).is_ok_and(|age| age >= ttl))
+            })
+            .take(16)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in expired {
+            if self.forget_locked(&mut state, &id).is_err() {
+                break;
+            }
+        }
     }
     pub fn begin_stage(&self, stage: &Stage, config: &Config) -> io::Result<PathBuf> {
         let mut state = self.state.lock().unwrap();
@@ -484,5 +527,94 @@ impl Store {
                 .map_err(|_| invalid("Upload recovery could not commit"))?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod retention_tests {
+    use super::*;
+
+    #[test]
+    fn garbage_collection_preserves_stage_pins_and_fenced_state() {
+        let root = std::env::temp_dir().join(format!(
+            "sandcrab-retention-{}",
+            sandcrab_core::new_uuid().unwrap()
+        ));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("records")).unwrap();
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                fs::remove_dir_all(&self.0).unwrap();
+            }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let mut state = State {
+            records: BTreeMap::new(),
+            stages: BTreeMap::new(),
+            fenced: true,
+        };
+        let mut ids = Vec::new();
+        for (index, (status, kept, staged)) in [
+            ("succeeded", false, false),
+            ("unknown", false, true),
+            ("failed", true, false),
+            ("waiting", false, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = format!("00000000-0000-4000-8000-{index:012}");
+            let request: Upload = serde_json::from_value(json!({"id":id,"serverId":id,
+                "sessionId":id,"path":"file","format":"raw","bytes":1,"sha256":"0".repeat(64),
+                "keepResult":kept}))
+            .unwrap();
+            let record = Record {
+                plan_digest: request.digest(),
+                request,
+                state: status.into(),
+                code: None,
+                publication_started: status == "unknown",
+                publication_confirmed: status == "succeeded",
+                volume_id: None,
+                profile: "python".into(),
+                completed_at: Some(SystemTime::UNIX_EPOCH),
+            };
+            fs::write(
+                root.join("records").join(format!("{id}.json")),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            if staged {
+                state.stages.insert(
+                    id.clone(),
+                    Stage {
+                        id: id.clone(),
+                        session_id: id.clone(),
+                        volume_id: None,
+                        profile: "python".into(),
+                        uid: 1000,
+                        gid: 1000,
+                    },
+                );
+            }
+            state.records.insert(id.clone(), record);
+            ids.push(id);
+        }
+        let store = Store {
+            root,
+            state: Mutex::new(state),
+            limit: 8,
+        };
+        store.expire_results(Duration::from_secs(1));
+        assert_eq!(store.state.lock().unwrap().records.len(), 4);
+        store.state.lock().unwrap().fenced = false;
+        store.expire_results(Duration::from_secs(1));
+        assert!(matches!(store.get(&ids[0]), Err((404, "UPLOAD_NOT_FOUND"))));
+        assert!(!store.record_path(&ids[0]).exists());
+        for id in &ids[1..] {
+            assert!(store.get(id).is_ok());
+            assert!(store.record_path(id).is_file());
+        }
     }
 }

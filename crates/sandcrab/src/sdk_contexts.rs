@@ -177,7 +177,7 @@ impl Service {
         self.sdk_native(
             sandbox,
             "shells",
-            Some(&json!({"id":id,"serverId":self.id})),
+            Some(&json!({"id":id,"serverId":self.id,"keepResult":true})),
         )?;
         let incarnation = self
             .registry

@@ -43,6 +43,8 @@ pub struct Service {
     pub daemon_tasks_max: u64,
     pub max_sandboxes: usize,
     pub max_records: usize,
+    #[serde(default = "result_ttl")]
+    pub result_ttl_millis: u64,
     pub max_output_bytes: usize,
     #[serde(default = "file_records")]
     pub max_file_records: usize,
@@ -124,6 +126,9 @@ impl Profile {
 }
 fn file_records() -> usize {
     256
+}
+fn result_ttl() -> u64 {
+    300_000
 }
 fn daemon_memory() -> u64 {
     128 * 1024 * 1024
@@ -289,6 +294,9 @@ impl Config {
         }
         if service.opensandbox && self.tcp.is_none() {
             return Err(invalid("OpenSandbox requires authenticated loopback TCP"));
+        }
+        if !(1_000..=86_400_000).contains(&service.result_ttl_millis) {
+            return Err(invalid("Use 1000..86400000 result_ttl_millis"));
         }
         if !(1..=512).contains(&service.max_sandboxes)
             || !(service.max_sandboxes..=1024).contains(&service.max_records)

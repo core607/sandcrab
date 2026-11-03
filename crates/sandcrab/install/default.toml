@@ -6,6 +6,7 @@ client_gid = 0
 cgroup_root = "@CGROUP@"
 max_sandboxes = 8
 max_records = 128
+result_ttl_millis = 300000
 max_output_bytes = 8388608
 
 [tcp]

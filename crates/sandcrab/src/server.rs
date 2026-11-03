@@ -521,7 +521,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     let active = Arc::new(AtomicUsize::new(0));
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut tcp_first = false;
-    let mut sdk_reap = Instant::now();
+    let mut maintenance = Instant::now();
     let accounting = {
         let service = service.clone();
         thread::Builder::new()
@@ -570,9 +570,18 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
             service.registry.lock().unwrap().expire_sessions();
-            if service.runtime.config.service.opensandbox && Instant::now() >= sdk_reap {
-                service.sdk_reap();
-                sdk_reap = Instant::now() + Duration::from_secs(1);
+            if Instant::now() >= maintenance {
+                let ttl = Duration::from_millis(service.runtime.config.service.result_ttl_millis);
+                service
+                    .registry
+                    .lock()
+                    .unwrap()
+                    .expire_results(ttl, Instant::now());
+                service.runtime.files.expire_results(ttl);
+                if service.runtime.config.service.opensandbox {
+                    service.sdk_reap();
+                }
+                maintenance = Instant::now() + Duration::from_secs(1);
             }
             workers.retain(|worker| !worker.is_finished());
             let mut stream = match accept(&listener, tcp.as_ref(), tcp_first) {

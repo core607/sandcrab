@@ -178,7 +178,7 @@ impl Service {
         self.sdk_reap();
         let id = sandcrab_core::new_uuid().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
         let token = Token::random().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
-        let input = json!({"id":id,"serverId":self.id,"profile":request.image.uri,"ttlMillis":ttl,"resources":resources});
+        let input = json!({"id":id,"serverId":self.id,"profile":request.image.uri,"ttlMillis":ttl,"resources":resources,"keepResult":true});
         let accepted = sdk_types::native(self.session_route(
             "POST",
             "/v1/sessions",

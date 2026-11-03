@@ -3,16 +3,16 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Unix transport requires the configured peer UID; the empty HTTP security alternative only describes authenticated Unix transport. Loopback TCP requires a bearer token on every request and offers neither TLS nor listener attestation. Sequential HTTP/1.1 honors Connection: close; consume complete chunked events before reuse. Server epochs govern new operations; volume and upload IDs have independent lifetimes."
+    "description": "Unix: configured peer UID (the empty security alternative). Every loopback TCP request requires a bearer token; no TLS or listener attestation. HTTP/1.1 honors Connection: close; consume complete chunked events before reuse. Epochs scope new operations; volumes/uploads have independent lifetimes."
   },
   "servers": [
     {
       "url": "http://127.0.0.1:9011",
-      "description": "Replace with the configured literal loopback address and port; bearer authentication is required."
+      "description": "Use the configured literal loopback address and port."
     },
     {
       "url": "http://localhost",
-      "description": "Host placeholder for Unix socket transport; authentication is the configured operating-system peer UID."
+      "description": "Unix-socket Host placeholder."
     }
   ],
   "paths": {
@@ -64,7 +64,7 @@
           {
             "name": "capability",
             "in": "query",
-            "description": "Return only this capability and its referenced schemas. Prefer this bounded view for model tools.",
+            "description": "Capability and referenced schemas only; bounded for model tools.",
             "schema": {
               "enum": [
                 "runs",
@@ -82,7 +82,7 @@
     "/v1/runs": {
       "post": {
         "operationId": "createRun",
-        "description": "An identical request ID and body reuses a run within this server epoch. Changed arguments conflict. Forgetting ends replay protection; never reuse a forgotten ID. Unknown outcomes after restart must not be silently rerun.",
+        "description": "An identical request ID and body reuses a run within this server epoch. Changed arguments conflict. Forgetting or expiry ends replay protection; never reuse a forgotten ID. Unknown outcomes after restart must not be silently rerun.",
         "requestBody": {
           "required": true,
           "content": {
@@ -161,13 +161,7 @@
         "operationId": "getRun",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "responses": {
@@ -192,25 +186,11 @@
         "description": "Requests cancellation without claiming containment. Poll for the terminal state.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         },
         "responses": {
           "200": {
@@ -240,25 +220,11 @@
         "description": "Releases a terminal result and its replay identity. Running and closing records cannot be forgotten.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         },
         "responses": {
           "200": {
@@ -301,7 +267,7 @@
     "/v1/sessions": {
       "post": {
         "operationId": "createSession",
-        "description": "Create an isolated bash session. Same ID and request return its retained state, even terminal; changed arguments conflict. Await ready before commands.",
+        "description": "Create an isolated bash session; wait for ready before commands. Repeated ID/body returns retained state, even terminal. Changed arguments conflict.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -344,7 +310,7 @@
       },
       "get": {
         "operationId": "listSessions",
-        "description": "List up to 64 active or terminal IDs in UUID order, without output. Continue with nextAfter even after its record is deleted. Pages are not snapshots: rescan for new IDs before the cursor or a changed serverId. Listing never renews or forgets.",
+        "description": "List up to 64 active/terminal UUIDs in order, without output. Continue with nextAfter even if deleted. Pages are not snapshots: rescan for new IDs before the cursor or changed serverId. No renew/forget.",
         "parameters": [
           {
             "name": "after",
@@ -386,7 +352,7 @@
       ],
       "get": {
         "operationId": "getSession",
-        "description": "Read state; transport connections do not own session lifetime.",
+        "description": "Read state; connections own no session lifetime.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -423,7 +389,7 @@
       ],
       "post": {
         "operationId": "executeSessionCommand",
-        "description": "Admit one command while ready; reject concurrent commands. Shell state and files persist. Read/cancel/forget via /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit ends the session without resetting it.",
+        "description": "Run one command in a ready session; reject concurrent commands. State/files persist. Read/cancel/forget at /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit closes the session without reset.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Run200"
@@ -473,7 +439,7 @@
       ],
       "post": {
         "operationId": "renewSession",
-        "description": "Extend a live session from now within its profile TTL; expired sessions cannot revive.",
+        "description": "Renew from now within the profile TTL; expired sessions cannot revive.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -531,7 +497,7 @@
       ],
       "post": {
         "operationId": "closeSession",
-        "description": "Stop the session and descendants; poll for closed, expired or failed. closing retains admission until restart because containment or cleanup is unconfirmed.",
+        "description": "Stop session and descendants; poll for closed/expired/failed. Unconfirmed containment/cleanup leaves closing with admission held until restart.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -559,15 +525,7 @@
           }
         },
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         }
       }
     },
@@ -579,17 +537,9 @@
       ],
       "post": {
         "operationId": "forgetSession",
-        "description": "Forget only a closed, expired or failed session. Forget command records separately. Never reuse this session ID.",
+        "description": "Forget a closed/expired/failed session; command records need separate forget. Never reuse its ID.",
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         },
         "responses": {
           "200": {
@@ -711,13 +661,7 @@
         "operationId": "getVolume",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "responses": {
@@ -754,25 +698,11 @@
         "description": "Explicitly delete an unattached ready volume. Deletion intent is durable before data removal; deleted tombstones remain replayable. closing requires restart and reconciliation.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         },
         "responses": {
           "200": {
@@ -811,25 +741,11 @@
         "description": "Forget only a deleted or failed record after its data is absent. Ends durable replay protection. Never reuse this client ID.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
         "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
+          "$ref": "#/components/requestBodies/Empty"
         },
         "responses": {
           "400": {
@@ -913,7 +829,7 @@
       },
       "post": {
         "operationId": "createUpload",
-        "description": "Register an upload plan. The ID binds its digest excluding serverId; changed plans conflict. Existing IDs replay across daemon restarts when metadata is retained. Unknown IDs require the current serverId and a live session. Waiting records hold no workspace. Never reuse a forgotten ID.",
+        "description": "Register an upload plan. The ID binds its digest excluding serverId; changed plans conflict. Existing IDs replay across daemon restarts when metadata is retained. Unknown IDs require the current serverId and a live session. Waiting records hold no workspace. Never reuse a forgotten or expired ID.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1248,13 +1164,7 @@
         "description": "Observe a finite run or session command without starting, cancelling or forgetting it. A state event precedes stdout/stderr blocks and one result event. Output order is preserved within each stream; cross-stream order is unspecified. Every complete event carries an id cursor. Reconnect explicitly with Last-Event-ID to continue after its bytes. A finite run emits result after its process tree stops; a normal session command may retain background processes until session closure. EOF, heartbeat or an error does not imply completion. Retain the run until observation finishes. Slow readers lose only their subscription. Maximum observation time is 350 seconds; an unfinished run remains inspectable. Requests and non-stream responses still require fixed HTTP lengths.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           },
           {
             "name": "Last-Event-ID",
@@ -1335,16 +1245,10 @@
         "operationId": "listHostCalls",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           }
         ],
-        "description": "Read per-command call metadata bound to runId, serverId and incarnation. Only the request stream carries payloads. Replied records confirm file publication, not guest consumption or an outside business commit. Pending calls become abandoned when their command ends; records last until the run is forgotten or the daemon restarts. HOST_CALLS_DISABLED means the profile did not enable this facility.",
+        "description": "Read per-command call metadata bound to runId, serverId and incarnation. Only the request stream carries payloads. Replied records confirm file publication, not guest consumption or an outside business commit. Pending calls become abandoned when their command ends; records last until its run record is removed or the daemon restarts. HOST_CALLS_DISABLED means the profile did not enable this facility.",
         "responses": {
           "200": {
             "description": "Current retained state.",
@@ -1385,13 +1289,7 @@
         "operationId": "replyHostCall",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           },
           {
             "name": "callId",
@@ -1455,13 +1353,7 @@
         "description": "Observe unresolved calls with state, call, result and error events. The daemon interprets neither request nor reply bytes and runs no host handler. Observations do not claim work: callers authorize requests and reconcile duplicate IDs before repeating outside effects. Reconnect explicitly without a cursor to re-offer pending calls, or with Last-Event-ID to continue after delivered requests. Replies already recorded before selection are skipped; in-flight observations may be stale. Host-call and output streams share observer capacity and the 350-second observation deadline. Each complete frame is at most 131072 bytes and may span HTTP chunks. Result confirms command completion and mailbox closure, not the exit of normal session background processes; an error or EOF does not prove completion.",
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "$ref": "#/components/parameters/Id"
           },
           {
             "name": "Last-Event-ID",
@@ -1537,7 +1429,7 @@
     "/v1/sessions/{id}/shells": {
       "post": {
         "operationId": "createShellContext",
-        "description": "Open an independent shell in a live root session; share workspace, profile, aggregate budget and expiry. Child IDs allow commands/get/close/forget; renewal/files use the parent. No grandchildren. Child closure preserves data and other shells.",
+        "description": "Open a child shell in a live root session, sharing workspace, profile, aggregate budget and expiry. Child IDs support commands/get/close/forget; renewal/files use the parent. No grandchildren. Child closure preserves data and other shells.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -1759,7 +1651,7 @@
                 },
                 "hostCalls": {
                   "type": "boolean",
-                  "description": "Operator-enabled opaque host calls; false by default."
+                  "description": "Operator opt-in for opaque host calls; default false."
                 },
                 "memoryBytes": {
                   "type": "integer",
@@ -1814,7 +1706,7 @@
               },
               "available": {
                 "type": "boolean",
-                "description": "False requires operator reconciliation and daemon restart before mutations."
+                "description": "False: operator reconciliation and restart required before mutations."
               },
               "quotaEnforced": {
                 "type": "boolean"
@@ -1841,7 +1733,7 @@
             "properties": {
               "available": {
                 "type": "boolean",
-                "description": "False requires reconciliation and daemon restart before file mutations."
+                "description": "False: reconcile and restart before file mutations."
               },
               "maxRecords": {
                 "type": "integer",
@@ -1869,13 +1761,14 @@
               "maxRecords",
               "maxOutputBytes",
               "maxConnections",
-              "maxEventStreams"
+              "maxEventStreams",
+              "resultTtlMillis"
             ],
             "properties": {
               "maxSandboxes": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 64
+                "maximum": 512
               },
               "maxRecords": {
                 "type": "integer",
@@ -1896,6 +1789,12 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 128
+              },
+              "resultTtlMillis": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 86400000,
+                "description": "Terminal retention; maintenance preserves active or uncontained work."
               }
             }
           },
@@ -2006,6 +1905,9 @@
                 "$ref": "#/components/schemas/Resources"
               }
             ]
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
           }
         }
       },
@@ -2017,7 +1919,8 @@
           "serverId",
           "profile",
           "state",
-          "result"
+          "result",
+          "keepResult"
         ],
         "properties": {
           "id": {
@@ -2060,7 +1963,10 @@
           "sessionId": {
             "type": "string",
             "format": "uuid",
-            "description": "Present for commands executed in a persistent session."
+            "description": "Present for session commands."
+          },
+          "keepResult": {
+            "type": "boolean"
           }
         }
       },
@@ -2140,7 +2046,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Ready volume, exclusively mounted at /workspace until confirmed cleanup. Omit for a disposable runtime_root directory with periodic accounting."
+            "description": "Ready volume exclusively mounted at /workspace until cleanup is confirmed. Omit for a disposable runtime_root directory with periodic accounting."
           },
           "resources": {
             "oneOf": [
@@ -2151,6 +2057,9 @@
                 "$ref": "#/components/schemas/Resources"
               }
             ]
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
           }
         }
       },
@@ -2174,7 +2083,7 @@
           "command": {
             "type": "string",
             "minLength": 1,
-            "description": "Bash source, at most 16384 UTF-8 bytes, without NUL."
+            "description": "Bash source; at most 16384 UTF-8 bytes, no NUL."
           },
           "timeoutMillis": {
             "type": [
@@ -2191,6 +2100,9 @@
             ],
             "minimum": 1,
             "maximum": 1048576
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
           }
         }
       },
@@ -2208,7 +2120,8 @@
           "code",
           "parentSessionId",
           "storageUsage",
-          "storagePoolUsage"
+          "storagePoolUsage",
+          "keepResult"
         ],
         "properties": {
           "id": {
@@ -2236,7 +2149,7 @@
           },
           "expiresAtMillis": {
             "type": "integer",
-            "description": "Wall-clock estimate of expiry; enforcement uses a monotonic deadline."
+            "description": "Estimated wall-clock expiry; enforced by a monotonic deadline."
           },
           "activeRunId": {
             "type": [
@@ -2257,7 +2170,7 @@
               "string",
               "null"
             ],
-            "description": "Opening or cleanup failure, including VOLUME_IN_USE, VOLUME_NOT_READY, VOLUME_PROFILE_MISMATCH or CONTAINMENT_UNCONFIRMED."
+            "description": "Opening or cleanup failure."
           },
           "parentSessionId": {
             "type": [
@@ -2265,13 +2178,16 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Workspace-owning session, or null for a root session."
+            "description": "Workspace owner; null for a root session."
           },
           "storageUsage": {
             "$ref": "#/components/schemas/StorageUsage"
           },
           "storagePoolUsage": {
             "$ref": "#/components/schemas/StorageUsage"
+          },
+          "keepResult": {
+            "type": "boolean"
           }
         }
       },
@@ -2482,6 +2398,9 @@
             "minimum": 0,
             "maximum": 511,
             "description": "Ordinary permission bits; default 0644 for raw files or 0755 for the target tar directory. Archive member permissions lose special bits and ownership comes from the profile."
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
           }
         }
       },
@@ -2501,7 +2420,8 @@
           "planDigest",
           "state",
           "code",
-          "publication"
+          "publication",
+          "keepResult"
         ],
         "properties": {
           "id": {
@@ -2576,6 +2496,9 @@
               "committed"
             ],
             "description": "committed confirms synchronized publication; unknown never authorizes another write."
+          },
+          "keepResult": {
+            "type": "boolean"
           }
         }
       },
@@ -2724,7 +2647,7 @@
           "sessionId": {
             "type": "string",
             "format": "uuid",
-            "description": "Present for commands executed in a persistent session."
+            "description": "Present for session commands."
           }
         }
       },
@@ -2776,7 +2699,7 @@
           "sessionId": {
             "type": "string",
             "format": "uuid",
-            "description": "Present for commands executed in a persistent session."
+            "description": "Present for session commands."
           },
           "stdoutBytes": {
             "type": "integer",
@@ -3130,6 +3053,9 @@
           "serverId": {
             "type": "string",
             "format": "uuid"
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
           }
         }
       },
@@ -3225,6 +3151,11 @@
             "minimum": 0
           }
         }
+      },
+      "KeepResult": {
+        "type": "boolean",
+        "default": false,
+        "description": "Retain the terminal result until explicit forget; active lifetime unchanged."
       }
     },
     "responses": {
@@ -3249,7 +3180,7 @@
         }
       },
       "Session200": {
-        "description": "Current state or retained outcome.",
+        "description": "Current or retained state.",
         "content": {
           "application/json": {
             "schema": {
@@ -3309,7 +3240,7 @@
         }
       },
       "Error401": {
-        "description": "TCP credentials are missing or incorrect. AUTH_REQUIRED closes the connection before body admission or 100 Continue.",
+        "description": "Missing/incorrect TCP credentials: AUTH_REQUIRED closes before body admission or 100 Continue.",
         "headers": {
           "WWW-Authenticate": {
             "schema": {
@@ -3353,6 +3284,19 @@
         "schema": {
           "type": "string",
           "format": "uuid"
+        }
+      }
+    },
+    "requestBodies": {
+      "Empty": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
         }
       }
     }

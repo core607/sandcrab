@@ -92,7 +92,7 @@ reply route accepts a JSON body up to that bound. Other request limits remain in
 
 Calls are `pending`, `replied`, `uncertain` or `abandoned`. Listing returns metadata;
 only request events include payloads. Payloads are released when a reply is attempted
-or the command ends. Metadata lasts until the run is forgotten or the daemon restarts.
+or the command ends. Metadata lasts until its run record is removed or the daemon restarts.
 
 `replied` confirms publication of the reply file. It does not prove guest consumption
 or commit an outside business transaction. An identical reply returns its retained

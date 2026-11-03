@@ -110,8 +110,8 @@ workspace cleanup was not confirmed; its admission remains held until restart.
 For Unix transport, the CLI authenticates the root-owned socket and root peer before sending commands.
 If forgetting a terminal record fails, the CLI warns on stderr and preserves the
 command's exit result. Inspect or forget the printed ID instead of rerunning it.
-`--keep-result` on `run` or `session exec` retains the record for independent
-observers and explicit forgetting; it also works with `--stream`.
+`--keep-result` on `run`, `session exec`, `session open`, `session shell` or
+`files put` retains the result until explicit forgetting; it also works with streaming commands.
 
 ## Host calls
 
@@ -194,7 +194,7 @@ CPU. The CLI exposes `--memory-bytes N` and `--cpu-percent N` on `run` and
 `session open`. Unknown fields are errors. Within one epoch, repeating the same ID and
 request returns the existing run; changed arguments give `ID_CONFLICT`. A stale
 epoch gives `SERVER_CHANGED`. After restart old outcomes are unknown, not proof of
-nonexecution. Forgetting explicitly ends replay protection; never reuse that ID.
+nonexecution. Forgetting or result expiry ends replay protection; never reuse that ID.
 
 States are `running`, `succeeded`, `failed`, `cancelled`, `timed_out`, `output_limit`,
 `resource_limit` and `closing`. Terminal results include exit code, stdout, stderr
@@ -217,6 +217,22 @@ Pages are not a snapshot: an ID inserted before the cursor appears on a fresh
 scan; deleting the cursor record does not invalidate its cursor. Discard an
 inventory if its server epoch changes. Consumers must establish ownership before
 closing or forgetting listed records; discovery alone grants no ownership.
+
+## Result retention
+
+`service.result_ttl_millis` defaults to 300000 (five minutes), accepts 1000 through
+86400000, and appears as `limits.resultTtlMillis` in info. Once a run, session or
+upload is terminal and cleanup is confirmed, maintenance removes its result
+after this interval. Output reservations are released with run results.
+Active sessions, unfinished uploads, cleanup failures and owned staging never expire
+through this policy. Session lifetime and result retention are separate.
+
+Creation requests accept `keepResult: true` to preserve the terminal identity.
+Explicit forget still works. Upload result age survives restart using the protected
+record's modification time; collection never deletes the uploaded workspace data.
+An expired result is missing, not evidence that execution did not happen.
+Observers needing longer retention must request it before submission. No expiry
+replays a command or write.
 
 ## Command events
 
@@ -498,14 +514,14 @@ operations; each session allows only one file operation. `max_file_records` boun
 retained upload identities independently of run and session records. Info exposes
 the configured limits and whether file metadata is writable.
 
-Records survive daemon restart while their configured storage survives. Reusing
+Retained records survive daemon restart while their configured storage survives. Reusing
 an ID with the same plan returns its record, excluding `serverId` from the digest;
 a different plan conflicts. Unknown IDs require the current epoch and a live session.
 States are `waiting`, `receiving`, `publishing`, `published`, `succeeded`, `failed`,
 `unknown` and `closing`. `publication` is `none`, `unknown` or `committed`.
 Cancellation does not undo a committed write. After an ambiguous publication,
 inspect the destination and receipt before choosing another write; replay never
-reexecutes it. Forgetting ends replay protection, so never reuse that ID.
+reexecutes it. Forgetting or result expiry ends replay protection, so never reuse that ID.
 
 The CLI prints the upload ID before submission. It forgets successful or failed
 uploads unless `--keep-result` is set, and retains uncertain outcomes. `--id UUID`

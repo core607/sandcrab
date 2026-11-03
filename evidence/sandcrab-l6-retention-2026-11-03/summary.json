@@ -1,0 +1,23 @@
+{
+  "milestone": "L6 terminal result retention",
+  "scope": "Functional checks on a local Linux kernel under Docker Desktop",
+  "baseRevision": "559b55c42556641dc433d21536046b0429367435",
+  "rustTestsPassed": 141,
+  "executorServiceTestsPassed": 176,
+  "applicationImageIdentity": "PASS",
+  "nativeRetention": {
+    "checksPassed": 6,
+    "binarySha256": "5230f6eab3d5ada27d63955fa2be8e242cb02a5cf8e052e08b1f3efbefbbdffa",
+    "cleanup": "PASS"
+  },
+  "publishedSdk": {
+    "pythonVersion": "1.1.0",
+    "kotlinVersion": "1.1.0",
+    "checksPassed": 21,
+    "binarySha256": "69e97d68a98fadb2f308d91a7730322b47f9638123f1fe7a5ad10483154899c8",
+    "scope": "Same runtime changes, before final OpenAPI wording and additional unit test",
+    "cleanup": "PASS"
+  },
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-terminal-ttl-l6",
+  "capacityMeasured": false
+}

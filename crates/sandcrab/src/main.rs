@@ -52,7 +52,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--keep-result] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -328,23 +328,26 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
             let (mut ttl, mut volume) = (None, None);
+            let mut keep_result = false;
             let mut resources = config::Resources::default();
-            for pair in rest.chunks(2) {
-                match pair {
-                    [key, _] if key == "--ttl-ms" && ttl.is_none() => {
-                        ttl = numeric_option(pair, "--ttl-ms")?
+            let mut options = rest.iter();
+            while let Some(key) = options.next() {
+                if key == "--keep-result" && !keep_result {
+                    keep_result = true;
+                    continue;
+                }
+                let value = options
+                    .next()
+                    .ok_or_else(|| config::invalid("Missing session option value"))?;
+                match key.as_str() {
+                    "--ttl-ms" if ttl.is_none() => {
+                        ttl = Some(value.parse().map_err(|_| config::invalid("Invalid TTL"))?);
                     }
-                    [key, value]
-                        if key == "--volume" && volume.is_none() && sandcrab_core::uuid(value) =>
-                    {
-                        volume = Some(value.as_str())
+                    "--volume" if volume.is_none() && sandcrab_core::uuid(value) => {
+                        volume = Some(value.as_str());
                     }
-                    [key, value] if resource_option(&mut resources, key, value)? => (),
-                    _ => {
-                        return Err(config::invalid(
-                            "Expected unique --ttl-ms N, --volume UUID, --memory-bytes N or --cpu-percent N options",
-                        ));
-                    }
+                    _ if resource_option(&mut resources, key, value)? => (),
+                    _ => return Err(config::invalid("Expected unique session options")),
                 }
             }
             client::open_session(
@@ -353,6 +356,7 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                 ttl,
                 volume,
                 resources,
+                keep_result,
             )
         }
         [mode, flag, socket, id, rest @ ..] if connection_flag(flag) && sandcrab_core::uuid(id) => {
@@ -360,7 +364,9 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             let socket = &endpoint;
             let path = format!("/v1/sessions/{id}");
             match mode.as_str() {
-                "shell" if rest.is_empty() => client::open_shell(socket, id),
+                "shell" if rest.is_empty() || matches!(rest, [flag] if flag == "--keep-result") => {
+                    client::open_shell(socket, id, !rest.is_empty())
+                }
                 "exec" => {
                     let split = rest.iter().position(|v| v == "--").ok_or_else(|| {
                         config::invalid("session exec requires -- before one shell source argument")

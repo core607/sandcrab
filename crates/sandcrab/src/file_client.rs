@@ -89,7 +89,7 @@ pub fn put(
     };
     eprintln!("uploadId={id}");
     let plan = json!({"id":id,"serverId":info["serverId"],"sessionId":session,"path":destination,"format":options.format,
-        "bytes":bytes,"sha256":sha256,"replace":options.replace,"freeze":options.freeze,"mode":options.mode});
+        "bytes":bytes,"sha256":sha256,"replace":options.replace,"freeze":options.freeze,"mode":options.mode,"keepResult":options.keep_result});
     let registered = client::request(socket, "POST", "/v1/uploads", Some(&plan))?;
     if registered["state"] != "waiting" {
         return outcome(socket, registered, options.keep_result);

@@ -150,7 +150,7 @@ impl Service {
             context,
             "commands",
             Some(&json!({"id":command.id,"serverId":self.id,
-            "command":source,"timeoutMillis":timeout})),
+            "command":source,"timeoutMillis":timeout,"keepResult":true})),
         );
         if let Err(error) = accepted {
             self.sdk
