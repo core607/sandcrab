@@ -353,14 +353,32 @@ network = "none"
         assert status == 202, result
         return request, self.wait(request) if wait else result
 
+    def session_workspace(self, session):
+        status, value = http(self.socket, 'GET', '/v1/sessions/' + session['id'])
+        assert status == 200, value
+        parent = value.get('parentSessionId')
+        if parent is not None:
+            assert str(uuid.UUID(parent)) == parent
+            status, value = http(self.socket, 'GET', '/v1/sessions/' + parent)
+            assert status == 200 and value['parentSessionId'] is None, value
+        identity = value['id']
+        assert str(uuid.UUID(identity)) == identity
+        volume = value.get('volumeId')
+        if volume is not None:
+            assert str(uuid.UUID(volume)) == volume
+            return self.data / 'volumes' / volume / 'data'
+        return self.socket.parent / 'workspaces' / identity / 'data'
+
     def session_forget(self, session):
         assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/forget', {}) == (200, {'forgotten': True})
+        assert not (self.socket.parent / 'workspaces' / session['id']).exists()
 
     def session_close(self, session):
         assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/close', {})[0] == 200
         result = self.session_wait(session, terminal=True)
         assert result['state'] == 'closed', result
         assert not (self.socket.parent / 'jobs' / session['id']).exists()
+        assert not (self.socket.parent / 'workspaces' / session['id']).exists()
         assert not (self.workloads_group / ('session-' + session['id'])).exists()
         assert not list(self.workloads_group.glob('session-*/run-' + session['id']))
         return result
@@ -449,7 +467,7 @@ network = "none"
         request, result = self.session_exec(session, "test \"$CHECK\" = retained; sed -i 's/a-b/a+b/' calc.py; python3 -B -m unittest")
         assert result['state'] == 'succeeded' and 'OK' in result['result']['stderr'], result
         self.forget(request)
-        assert (self.socket.parent / 'jobs' / session['id'] / 'work/project/calc.py').read_text() == 'def add(a,b): return a+b\n'
+        assert (self.session_workspace(session) / 'project/calc.py').read_text() == 'def add(a,b): return a+b\n'
         request, result = self.session_exec(session, f'test ! -e {self.secret}; printf "$CHECK"')
         assert result['state'] == 'succeeded' and result['result']['stdout'] == 'retained', result
         self.forget(request)
@@ -494,7 +512,7 @@ network = "none"
         assert http(self.socket, 'POST', '/v1/sessions/' + two['id'] + '/commands', request)[1]['error']['code'] == 'ID_CONFLICT'
         result = self.wait(request)
         assert result['result']['stdout'] == 'x'
-        assert (self.socket.parent / 'jobs' / one['id'] / 'work/replay-count').read_bytes() == b'x'
+        assert (self.session_workspace(one) / 'replay-count').read_bytes() == b'x'
         self.session_close(one)
         self.session_forget(one)
         assert http(self.socket, 'POST', command_route, request) == (200, result)

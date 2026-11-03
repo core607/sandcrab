@@ -126,7 +126,7 @@ class Contexts(Contract):
         for _ in range(2):
             status, value = self.request('DELETE', path, headers=headers)
             assert status == 503 and value['code'] == 'CONTAINMENT_UNCONFIRMED', (status, value)
-        workspace = self.probe.socket.parent / 'jobs' / identity / 'work'
+        workspace = self.probe.session_workspace({'id': identity})
         assert workspace.joinpath('artifact').read_text() == 'protected'
         assert http(self.probe.socket, 'GET', '/v1/sessions/' + child)[1]['state'] == 'closing'
         status, value = self.request('DELETE', '/v1/sandboxes/' + identity)
@@ -147,6 +147,7 @@ class Contexts(Contract):
             self.probe.wait_ready()
         assert self.probe.info['serverId'] != previous_epoch
         assert not list((self.probe.socket.parent / 'jobs').iterdir())
+        assert not workspace.exists()
         assert self.request('GET', '/v1/sandboxes/' + identity)[0] == 404
         assert self.request('GET', '/opensandbox/' + identity + '/ping', headers=headers)[0] == 401
         fresh, _ = self.create()

@@ -17,7 +17,7 @@ use std::{
     },
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -27,6 +27,13 @@ struct Connection(Arc<AtomicUsize>);
 impl Drop for Connection {
     fn drop(&mut self) {
         self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+struct Accounting(Arc<AtomicBool>);
+impl Drop for Accounting {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -215,7 +222,7 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             drop(body);
             return json_reply(stream, 417, &error(417, "EXPECTATION_UNSUPPORTED").1, true);
         }
-        if !["GET", "POST"].contains(&head.method.as_str())
+        if !["GET", "POST", "DELETE"].contains(&head.method.as_str())
             || head.length
                 > if crate::host_calls::reply_path(&head.path) {
                     crate::host_calls::FRAME as u64
@@ -515,6 +522,50 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut tcp_first = false;
     let mut sdk_reap = Instant::now();
+    let accounting = {
+        let service = service.clone();
+        thread::Builder::new()
+            .name("sandcrab-usage".into())
+            .spawn(move || {
+                let _stop_on_exit = Accounting(service.stopped.clone());
+                while !service.stopped.load(Ordering::SeqCst) {
+                    let mut seen = std::collections::BTreeSet::new();
+                    let accesses: Vec<_> = service
+                        .registry
+                        .lock()
+                        .unwrap()
+                        .sessions
+                        .values()
+                        .filter_map(|session| session.files.clone())
+                        .filter(|access| seen.insert(access.session.clone()))
+                        .collect();
+                    for access in &accesses {
+                        if service.stopped.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        if let Some(account) = &access.usage {
+                            account.refresh(false, &service.stopped);
+                        }
+                    }
+                    if let Some(storage) = &service.runtime.storage {
+                        for account in storage.background_usage() {
+                            if service.stopped.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            account.refresh(false, &service.stopped);
+                        }
+                        storage.refresh_pool();
+                    }
+                    for access in accesses {
+                        if service.stopped.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        access.observe_storage();
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+            })?
+    };
     println!("{{\"ready\":true,\"apiVersion\":1}}");
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
@@ -581,6 +632,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
         Ok(())
     })();
     service.stopped.store(true, Ordering::SeqCst);
+    let _ = accounting.join();
     drop(listener);
     drop(tcp);
     let shutdown = service.shutdown();

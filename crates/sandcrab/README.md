@@ -25,6 +25,8 @@ account. Profiles choose readable paths, tools, finite resource limits and
 `network = "none"`; calls can lower timeout and output limits but cannot select
 accounts, mounts or isolation policy. Sessions need `/bin/bash` and its libraries
 in the profile's read mounts. Read mounts cannot expose runtime storage.
+Before starting, create the root-owned parent of `runtime_root` with mode 0755
+(`/var/lib/sandcrab-demo` for the example).
 
 Each session has a child cgroup under the configured delegation. Its
 aggregate memory, CPU and task limits apply to every process in the session.
@@ -52,19 +54,21 @@ pre-delegation runtime/storage directories require a fresh location.
 `sandcrab check --config FILE` checks configuration, accounts and tools; it does
 not prove that delegation or a sandbox works.
 
-Each run executes as the profile's account in a fresh bounded tmpfs at
-`/workspace`, with a private `/tmp`, isolated network and PID namespaces and
-seccomp. It shares the host kernel; this is not a microVM boundary. Workspace bytes
-are disposable unless a session attaches a durable volume. Read mounts are the operator's responsibility.
+Finite runs use a fresh bounded tmpfs at `/workspace`; sessions use ordinary
+directories beneath `runtime_root`, or an attached volume. Choose a disk-backed
+runtime location to keep session data off tmpfs. Every run uses the profile's
+account, a private bounded `/tmp`, isolated network and PID namespaces, and seccomp.
+It shares the host kernel; this is not a microVM boundary. Workspace data is
+disposable unless supplied by a durable volume. Read mounts are the operator's responsibility.
 
 ## CLI
 
 ```sh
-sandcrab info --socket /run/sandcrab-demo/control.sock
-sandcrab run --socket /run/sandcrab-demo/control.sock --profile python -- python3 -c 'print(6 * 7)'
-sandcrab get --socket /run/sandcrab-demo/control.sock RUN_ID
-sandcrab cancel --socket /run/sandcrab-demo/control.sock RUN_ID
-sandcrab forget --socket /run/sandcrab-demo/control.sock RUN_ID
+sandcrab info --socket /var/lib/sandcrab-demo/runtime/control.sock
+sandcrab run --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python -- python3 -c 'print(6 * 7)'
+sandcrab get --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
+sandcrab cancel --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
+sandcrab forget --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
 ```
 
 `run` prints its recovery ID to stderr before submission, polls to a terminal
@@ -191,8 +195,8 @@ The command's terminal outcome still controls the CLI exit status and forgetting
 To observe a retained run without cancelling or forgetting it, use:
 
 ```sh
-sandcrab events --socket /run/sandcrab-demo/control.sock RUN_ID
-sandcrab events --socket /run/sandcrab-demo/control.sock RUN_ID --after CURSOR
+sandcrab events --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
+sandcrab events --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID --after CURSOR
 ```
 
 This observer prints newline-delimited JSON containing `event`, `id` and `data`.
@@ -225,12 +229,12 @@ while executing, capture and progress buffers can each hold the reserved bytes.
 ## Persistent sessions
 
 ```sh
-sandcrab session open --socket /run/sandcrab-demo/control.sock --profile python --ttl-ms 60000
-sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'mkdir project; cd project; export VALUE=42'
-sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'printf "%s\n" "$VALUE"; pwd'
-sandcrab session renew --socket /run/sandcrab-demo/control.sock SESSION_ID --ttl-ms 60000
-sandcrab session close --socket /run/sandcrab-demo/control.sock SESSION_ID
-sandcrab session forget --socket /run/sandcrab-demo/control.sock SESSION_ID
+sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --ttl-ms 60000
+sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'mkdir project; cd project; export VALUE=42'
+sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'printf "%s\n" "$VALUE"; pwd'
+sandcrab session renew --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID --ttl-ms 60000
+sandcrab session close --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID
+sandcrab session forget --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID
 ```
 
 `open` prints its recovery ID before submission and waits for `ready`. `exec`
@@ -249,6 +253,11 @@ the shell catches a child's failure. Exit code 137 alone is not OOM evidence.
 The daemon never silently resets its state. Closing or expiry also stops background
 processes before releasing storage and admission. Without a volume, copying data
 into a session is not a durable save.
+
+Session directories use the profile's `temporary_bytes` and `temporary_inodes`
+as [periodic storage limits](#storage-accounting). Private `/tmp` and finite-run
+workspaces retain their separate bounded tmpfs mounts. Child shells share the
+parent's directory and accounting; only confirmed parent cleanup removes it.
 
 `session_ttl_millis` is the profile's default and maximum lifetime per open or
 renewal, from 100 ms through one day. Expiry uses a monotonic clock and includes
@@ -300,24 +309,31 @@ that the command never ran.
 
 ## Durable volumes
 
-Enable the optional `[storage]` section in the example configuration. Provision a
-dedicated XFS mount at `storage.root/data` with reflinks, enforced project quotas
-(`prjquota` or `pquota`), `nosuid` and `nodev`. Its filesystem size must not exceed
-`pool_bytes`. Install `xfsprogs` under `/usr/sbin`. The root and its ancestors must
-be root-owned, non-writable by other accounts and searchable by execution accounts.
-The daemon creates private control metadata at `root/state` on a different filesystem.
+Enable optional `[storage]` in the example configuration. Ordinary directories
+work without a dedicated filesystem or quota tools. The root and its ancestors
+must be root-owned, non-writable by other accounts and searchable by execution
+accounts. The daemon creates data at `root/data` and private metadata at `root/state`.
+For a new store, prepare `root/data` as an empty protected directory.
 It never formats a disk, remounts a filesystem or adopts a nonempty unowned store.
 Profiles cannot expose this storage through their read mounts.
 
+For enforced quotas, provision a dedicated XFS mount at `root/data` with reflinks,
+`prjquota` or `pquota`, `nosuid` and `nodev`, and a filesystem size no larger than
+`pool_bytes`. Install `xfsprogs` under `/usr/sbin` and keep `root/state` on another
+filesystem. `require_quota = true` refuses startup without verified enforcement;
+its default is false. `/v1/info` reports the actual `storage.quotaEnforced` mode.
+Existing plain volumes retain periodic accounting; enabling host quotas does not
+silently assign projects to their data.
+
 ```sh
-sandcrab volume create --socket /run/sandcrab-demo/control.sock --profile python --bytes 8388608 --inodes 256
-sandcrab session open --socket /run/sandcrab-demo/control.sock --profile python --volume VOLUME_ID
+sandcrab volume create --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --bytes 8388608 --inodes 256
+sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --volume VOLUME_ID
 # Execute commands, then close the session before cloning or deleting its volume.
-sandcrab volume create --socket /run/sandcrab-demo/control.sock --profile python --clone-from VOLUME_ID
-sandcrab volume list --socket /run/sandcrab-demo/control.sock
-sandcrab volume get --socket /run/sandcrab-demo/control.sock VOLUME_ID
-sandcrab volume delete --socket /run/sandcrab-demo/control.sock VOLUME_ID
-sandcrab volume forget --socket /run/sandcrab-demo/control.sock VOLUME_ID
+sandcrab volume create --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --clone-from VOLUME_ID
+sandcrab volume list --socket /var/lib/sandcrab-demo/runtime/control.sock
+sandcrab volume get --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
+sandcrab volume delete --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
+sandcrab volume forget --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
 ```
 
 A volume is an ordinary directory mounted at `/workspace`. Session closure,
@@ -326,17 +342,19 @@ ephemeral. Application writes follow normal filesystem synchronization semantics
 closing a session is not an atomic snapshot or a power-loss commit for those writes.
 The selected profile must use the volume's execution UID/GID. One session owns a
 volume exclusively until confirmed cleanup; a failed cleanup retains that ownership.
-Cloning requires an unattached source and holds it for the operation. Reflinks
-preserve hard links and symlinks without following them, and subsequent writes
-are independent. Clone work uses the selected profile's bounded cgroup and timeout.
+Cloning requires an unattached source and holds it for the operation. It uses
+reflinks where supported and ordinary copying otherwise, preserving hard links
+and opaque symlinks; subsequent writes are independent. Clone work uses the
+selected profile's bounded cgroup and timeout.
 
-Byte quotas count allocated XFS blocks, including managed metadata, rather than
-sparse logical lengths. Inode quotas also count managed metadata. Requests may
-only lower the configured maxima; byte limits are multiples of 1024. Quota failure
-can report `ENOSPC` or `EDQUOT` inside a session. `max_volumes` bounds live volumes;
+Limits count allocated blocks and inodes, including managed metadata, rather than
+sparse logical lengths. Requests may only lower configured maxima; byte limits
+are multiples of 1024. Enforced quota failure can report `ENOSPC` or `EDQUOT`
+inside a session. `max_volumes` bounds live volumes;
 storage `max_records` separately bounds durable records. `STORAGE_CAPACITY`
-allows one mutation at a time. A full data pool still permits recording deletion
-on the separate control filesystem.
+allows one mutation at a time. A full quota data pool still permits recording deletion
+on its separate control filesystem. Plain storage can exhaust data and metadata
+together; uncertain publication fences mutations rather than inventing a successful record.
 
 | Request | Result |
 |---|---|
@@ -361,18 +379,46 @@ reconciliation; it never exposes uncommitted data as ready. Unexpected data,
 mounts or a changed cleanup namespace require operator reconciliation and are
 preserved. Keep the store and its matching runtime configuration together.
 
+## Storage accounting
+
+Without enforced quotas, `Volume.usage`, `Session.storageUsage` and
+`storage.poolUsage` in `/v1/info` report periodic allocated-byte/inode observations.
+An attached session also exposes `storagePoolUsage`; it is null for an ephemeral
+directory. The pool sums owned volume observations and its directory overhead,
+not unrelated files on the host filesystem. Its timestamp is the oldest constituent
+observation, so it is not an atomic snapshot. These fields are null where accounting
+does not apply or the session has no live workspace.
+
+One background worker refreshes active directories and new volumes at most once per second
+per directory, then enforces the measured limits. `exceeded` refuses new commands,
+child shells, uploads and other growth with `STORAGE_LIMIT`, cancels active growth
+helpers and freezes existing workspace processes. `pending` or `unavailable` also
+refuses growth, with `STORAGE_USAGE_UNAVAILABLE`. Reads and deletion remain available;
+after a complete below-limit observation, processes and admission resume. Command
+timeouts and session expiry keep running while frozen.
+
+Each scan limits depth to 64, directory entries to 1,000,001, retained hard-link
+identities to 16,384 and time between syscalls to five seconds. Incomplete scans
+never report zero or successful usage. Kernel I/O can exceed that deadline;
+many active directories lengthen the refresh cycle. Concurrent writes, reflinks,
+in-flight copying and open unlinked files prevent a hard physical disk bound.
+Keep filesystem headroom or enable enforced quotas when a hard bound is required.
+End background writers before deleting their files: unlinking an open file does
+not reclaim its blocks. Closing an ephemeral session removes its data; a volume
+retains data and can be reattached for recovery.
+
 ## Files
 
 ```sh
-sandcrab files put --socket /run/sandcrab-demo/control.sock SESSION_ID ./input.bin input.bin
+sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./input.bin input.bin
 tar -cf project.tar -C ./project .
-sandcrab files put --socket /run/sandcrab-demo/control.sock SESSION_ID ./project.tar project --tar
-sandcrab session exec --socket /run/sandcrab-demo/control.sock SESSION_ID -- 'cd project; python3 main.py'
-sandcrab files get --socket /run/sandcrab-demo/control.sock SESSION_ID project ./result.tar --tar
-sandcrab files status --socket /run/sandcrab-demo/control.sock UPLOAD_ID
-sandcrab files cancel --socket /run/sandcrab-demo/control.sock UPLOAD_ID
-sandcrab files forget --socket /run/sandcrab-demo/control.sock UPLOAD_ID
-sandcrab files list --socket /run/sandcrab-demo/control.sock
+sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./project.tar project --tar
+sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'cd project; python3 main.py'
+sandcrab files get --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID project ./result.tar --tar
+sandcrab files status --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
+sandcrab files cancel --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
+sandcrab files forget --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
+sandcrab files list --socket /var/lib/sandcrab-demo/runtime/control.sock
 ```
 
 Paths are relative to `/workspace`, preserving case and Unicode. Upload parents
@@ -392,7 +438,10 @@ then observe different files at different times. The session is thawed before se
 Command timeouts and session expiry continue while frozen. A transfer pins its
 session and volume until helper containment and staging cleanup finish; cancellation,
 expiry and shutdown cannot detach storage underneath it. Unconfirmed cleanup holds
-admission until restart. Temporary staging counts against workspace or volume quotas.
+admission until restart. Temporary staging counts against workspace or volume limits.
+`DELETE /v1/sessions/ID/files?path=PATH` removes a file without executing shell
+source; add `recursive=true` for a directory tree. Paths follow the same workspace
+boundary and opaque-symlink rules. Deletion remains available during storage overage.
 
 | Request | Result |
 |---|---|
@@ -460,6 +509,9 @@ release installer/container workstream.
 requires `xfsprogs`. It owns a disposable 512 MiB XFS image, verifies file readback,
 reflinks, quotas, durable replay and failure recovery, and unmounts it only after
 its fixture's processes stop.
+`plain_storage_probe.py` uses those arguments with `mkfs.ext4` and disposable
+512 MiB volume/64 MiB runtime images. It checks ordinary-copy fallback, periodic
+overage/recovery, session directory sharing and ownership-checked restart cleanup.
 `file_probe.py` uses the same arguments and an independent XFS fixture for raw/tar
 readback, safe local CLI installation, quotas, cancellation and publication recovery.
 `events_probe.py` uses those arguments for live command output, binary resume,

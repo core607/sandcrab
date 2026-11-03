@@ -114,6 +114,34 @@ pub(crate) fn job(
 }
 
 impl Service {
+    pub(crate) fn remove_file(&self, id: &str, query: &str) -> Result<Value> {
+        let (mut path, mut recursive) = (None, None);
+        for (key, value) in crate::sdk_types::query(query)? {
+            match key.as_str() {
+                "path" if path.is_none() => path = Some(value),
+                "recursive"
+                    if recursive.is_none() && ["true", "false"].contains(&value.as_str()) =>
+                {
+                    recursive = Some(value == "true")
+                }
+                _ => return Err((400, "INVALID_QUERY")),
+            }
+        }
+        let path = path.ok_or((400, "INVALID_PATH"))?;
+        let request = crate::sdk_fs::Request::parse(
+            "DELETE",
+            if recursive.unwrap_or(false) {
+                "directories"
+            } else {
+                "files"
+            },
+            &[("path".into(), path)],
+            &[],
+        )?;
+        self.filesystem(self.file_lease(id, None)?, &request)?;
+        Ok(json!({"deleted":true}))
+    }
+
     fn file_access(&self, id: &str, incarnation: Option<&str>) -> Result<Arc<Access>> {
         if self.stopped.load(Ordering::SeqCst) {
             return Err((503, "STOPPING"));
@@ -166,6 +194,9 @@ impl Service {
             };
             if input.bytes > access.profile.transfer_bytes {
                 return error(413, "FILE_LIMIT");
+            }
+            if let Err(code) = access.allow_growth() {
+                return error(409, code);
             }
             return match self.runtime.files.create(
                 input,
@@ -257,6 +288,10 @@ impl Service {
             Ok(l) => l,
             Err((status, code)) => return error(status, code),
         };
+        if let Err(code) = lease.allow_growth() {
+            lease.finish(true);
+            return error(409, code);
+        }
         if length > lease.access.profile.transfer_bytes {
             lease.finish(true);
             return error(413, "FILE_LIMIT");

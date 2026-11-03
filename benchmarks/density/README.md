@@ -65,6 +65,13 @@ host memory outside its bounded slice. It creates a disposable XFS image and use
 the public API to create the corpus, clone volumes and run commands. It never
 adopts existing storage. Keep the repository layout for the shared native cleanup.
 
+`density.py --storage plain` selects a bounded ext4 image with periodic accounting
+and ordinary-copy clones. It requires `mkfs.ext4`, initializes the image before
+measurement and provisions one inode per 4 KiB. The corpus, resource budgets,
+command mix, scoring and first-failure rule are unchanged. Receipts identify the
+backend and actual enforcement, and retain public usage observations before and
+after each command window. These extra reads are outside the timed workload.
+
 ```sh
 sudo python3 experiments/sandcrab-density/density.py --smoke \
   --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
@@ -81,6 +88,8 @@ comparisons. Each budget needs a new receipt path. The
 relevant pull requests; manual dispatch with `canonical=true` runs all three budgets
 on separate hosts after smoke. Select `budgets=5` for an intermediate change;
 W0 and final comparisons use `budgets=all`. Its binary build uses a separate runner.
+Select `storage=plain` for the periodic-accounting variant. Footprint, cache and
+startup-trace collectors keep their XFS fixture; only density selects that backend.
 
 `cold_start.py --volume` traces attachment of a prepared empty XFS volume, including
 its validation helpers. The default traces an ephemeral workspace. Both include

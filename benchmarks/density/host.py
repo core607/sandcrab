@@ -1,4 +1,4 @@
-"""Own one disposable native service, bounded resource slice and XFS image."""
+"""Own one disposable native service, bounded resource slice and storage image."""
 import fcntl
 import hashlib
 import json
@@ -47,7 +47,10 @@ def other_loads():
 
 
 class Fixture(Probe):
-    def __init__(self, binary, tools, report, budget, smoke=False):
+    def __init__(self, binary, tools, report, budget, smoke=False, storage_mode='xfs'):
+        if storage_mode not in ('xfs', 'plain'):
+            raise ValueError('Unsupported benchmark storage mode')
+        self.storage_mode = storage_mode
         if os.geteuid() != 0 or Path('/proc/1/comm').read_text().strip() != 'systemd':
             raise RuntimeError('The native benchmark requires a root systemd/cgroup-v2 host')
         if not Path('/sys/fs/cgroup/cgroup.controllers').is_file():
@@ -63,7 +66,8 @@ class Fixture(Probe):
             raise RuntimeError('Another native fixture directory is present; reconcile it before measuring')
         if call('systemctl', 'list-units', '--all', '--plain', '--no-legend', 'sandcrab-probe-*.service').stdout.strip():
             raise RuntimeError('Another native fixture is present; reconcile it before measuring')
-        for program in ('systemd-run', 'mkfs.xfs', 'findmnt', 'git', 'rg', 'bash', 'python3'):
+        formatter = 'mkfs.xfs' if storage_mode == 'xfs' else 'mkfs.ext4'
+        for program in ('systemd-run', formatter, 'findmnt', 'git', 'rg', 'bash', 'python3'):
             if shutil.which(program) is None:
                 raise RuntimeError('Missing benchmark dependency: ' + program)
         self.host_lock = os.open('/var/lib/sandcrab-density.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
@@ -90,10 +94,11 @@ class Fixture(Probe):
         native_probe.CLIENT = (0, 0)
         self.storage = self.root / 'storage'
         self.data = self.storage / 'data'
+        self.storage_mount = self.data if self.storage_mode == 'xfs' else self.storage
         self.data.mkdir(parents=True)
         self.storage.chmod(0o755)
         self.data.chmod(0o755)
-        self.image = self.root / 'data.xfs'
+        self.image = self.root / ('data.xfs' if self.storage_mode == 'xfs' else 'data.ext4')
         self.config.write_text(f'''[service]
 runtime_root = {json.dumps(str(self.socket.parent))}
 socket = {json.dumps(str(self.socket))}
@@ -111,6 +116,7 @@ max_file_records = 1024
 max_file_transfers = 2
 [storage]
 root = {json.dumps(str(self.storage))}
+require_quota = {str(self.storage_mode == 'xfs').lower()}
 pool_bytes = {self.pool_bytes}
 max_volume_bytes = 268435456
 max_volume_inodes = 65536
@@ -135,7 +141,7 @@ network = "none"
                             preflight={'memory': memory, 'freeDiskBytes': free, 'otherLoadControllers': 0,
                                        'logicalCpuCount': os.cpu_count(), 'controllerCpuAffinityCount': len(os.sched_getaffinity(0))},
                             requestedMemoryBytes=self.budget, configuredSandboxCeiling=512,
-                            storagePoolBytes=self.pool_bytes,
+                            storagePoolBytes=self.pool_bytes, storageMode=self.storage_mode,
                             configSha256=hashlib.sha256(self.config.read_bytes()).hexdigest(),
                             kernel=os.uname().release,
                             operatingSystem=Path('/etc/os-release').read_text(),
@@ -146,8 +152,20 @@ network = "none"
             os.fchmod(image.fileno(), 0o600)
             os.posix_fallocate(image.fileno(), 0, self.pool_bytes)
             os.fsync(image.fileno())
-        call('mkfs.xfs', '-m', 'reflink=1', str(self.image))
-        call('mount', '-o', 'loop,prjquota,nosuid,nodev', str(self.image), str(self.data))
+        if self.storage_mode == 'xfs':
+            call('mkfs.xfs', '-m', 'reflink=1', str(self.image))
+            options = 'loop,prjquota,nosuid,nodev'
+        else:
+            # One inode per data block avoids an artificial low-inode fixture cap.
+            # Finish initialization before observing accounting or workload CPU.
+            call('mkfs.ext4', '-F', '-q', '-m', '0', '-i', '4096',
+                 '-E', 'lazy_itable_init=0,lazy_journal_init=0', str(self.image))
+            options = 'loop,nosuid,nodev'
+        call('mount', '-o', options, str(self.image), str(self.storage_mount))
+        if self.storage_mode == 'plain':
+            # Keep ext4's lost+found outside the daemon-owned data directory.
+            self.storage.chmod(0o755)
+            self.data.mkdir(mode=0o755)
         self.slice_file.write_text('[Unit]\nDescription=Disposable Sandcrab density benchmark\n[Slice]\n'
                                    f'MemoryMax={self.budget}\nMemorySwapMax=0\nTasksMax=8192\nCPUQuota=200%\n')
         call('systemctl', 'daemon-reload')
@@ -177,6 +195,10 @@ network = "none"
             if cpu[0] != 'max' and int(cpu[0]) < 2 * int(cpu[1]):
                 raise RuntimeError('An ancestor supplies less than two CPUs of quota')
         self.start()
+        actual_quotas = self.info['storage']['quotaEnforced']
+        if actual_quotas != (self.storage_mode == 'xfs'):
+            raise RuntimeError('Actual quota enforcement differs from the benchmark storage mode')
+        self.receipt['quotaEnforced'] = actual_quotas
         self.daemon_pid = int(call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout)
         membership = Path(f'/proc/{self.daemon_pid}/cgroup').read_text().strip().split(':', 2)
         if membership[:2] != ['0', ''] or not membership[2].startswith('/'):
@@ -203,7 +225,7 @@ network = "none"
         self.wait_ready()
 
     def unmount_fixture(self, mount):
-        if mount == self.data:
+        if mount == self.storage_mount:
             call('umount', str(mount))
         elif mount.name == 'work' and mount.parent.parent == self.socket.parent / 'jobs':
             import uuid

@@ -227,7 +227,7 @@ class Contract:
 
     def interrupted_upload(self, identity, headers):
         changed = self.multipart([({'path': '/workspace/guard'}, b'changed')])
-        stage_root = self.probe.socket.parent / 'jobs' / identity
+        stage_root = self.probe.session_workspace({'id': identity}).parent
         wire = ('POST /opensandbox/' + identity + '/files/upload HTTP/1.1\r\n'
                 'Host: sandbox\r\nContent-Length: 65536\r\n'
                 'Content-Type: multipart/form-data; boundary=sdk-probe\r\n' +

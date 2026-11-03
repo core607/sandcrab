@@ -190,7 +190,7 @@ class FileProbe(VolumeProbe):
         request, result = self.upload(session, 'project', data, format='tar')
         assert result['state'] == 'succeeded', result
         self.forget_upload(request)
-        workspace = self.root / 'runtime/jobs' / session['id'] / 'work'
+        workspace = self.session_workspace(session)
         assert (workspace / 'project/pkg/你好.txt').read_bytes() == 'hello 世界'.encode()
         assert (workspace / 'project/pkg').stat().st_mode & 0o777 == 0o750
         assert (workspace / 'project/pkg/你好.txt').stat().st_ino == (workspace / 'project/pkg/alias.txt').stat().st_ino

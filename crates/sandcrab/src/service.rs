@@ -188,7 +188,9 @@ impl Service {
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
-                    "maxVolumes":s.config.max_volumes,"maxRecords":s.config.max_records,"available":s.available()})
+                    "maxVolumes":s.config.max_volumes,"maxRecords":s.config.max_records,"available":s.available(),
+                    "quotaEnforced":s.quota_enforced(),"poolBytes":s.config.pool_bytes,
+                    "poolUsage":s.pool_usage().map(|account|account.value())})
             });
             return (
                 200,
@@ -216,6 +218,17 @@ impl Service {
             || path.starts_with("/v1/uploads?")
         {
             return self.file_route(method, path, body);
+        }
+        if method == "DELETE"
+            && let Some((id, query)) = path
+                .strip_prefix("/v1/sessions/")
+                .and_then(|value| value.split_once("/files?"))
+                .filter(|(id, _)| sandcrab_core::uuid(id))
+        {
+            return match self.remove_file(id, query) {
+                Ok(value) => (200, value),
+                Err((status, code)) => error(status, code),
+            };
         }
         if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
             return self.session_route(method, path, body);

@@ -15,7 +15,7 @@ key, and verifies the sandbox's returned signature:
 
 ```sh
 python3 examples/sandcrab-host-calls.py --binary /usr/local/bin/sandcrab \
-  --socket /run/sandcrab-demo/control.sock --profile python
+  --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python
 ```
 
 The example generates an ephemeral key unless `--key-file FILE` supplies exactly 32
@@ -36,9 +36,9 @@ correlation with the caller's records.
 The caller observes and replies through separate commands:
 
 ```sh
-sandcrab calls events --socket /run/sandcrab-demo/control.sock RUN_ID
-sandcrab calls reply --socket /run/sandcrab-demo/control.sock RUN_ID CALL_ID ./reply.bin
-sandcrab calls list --socket /run/sandcrab-demo/control.sock RUN_ID
+sandcrab calls events --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
+sandcrab calls reply --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID CALL_ID ./reply.bin
+sandcrab calls list --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
 ```
 
 `CALL_ID` is the daemon-generated `id` in a call event, distinct from the guest's

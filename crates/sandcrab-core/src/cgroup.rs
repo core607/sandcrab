@@ -335,6 +335,25 @@ impl Cgroup {
         }
     }
 
+    /// Pause or resume the owned subtree and confirm the kernel transition.
+    /// Callers serialize temporary freezes with longer-lived admission pauses.
+    pub fn set_frozen(&self, frozen: bool, timeout: Duration) -> io::Result<()> {
+        self.write("cgroup.freeze", if frozen { "1" } else { "0" })?;
+        let deadline = Instant::now() + timeout;
+        loop {
+            if field(&self.read("cgroup.events")?, "frozen")? == u64::from(frozen) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Cgroup freeze transition remains unconfirmed",
+                ));
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
     /// Fence and reap any launcher that could still join before invoking this.
     /// A successful kill write alone is not proof that descendants have exited.
     pub fn kill_and_wait(&self, timeout: Duration) -> io::Result<()> {

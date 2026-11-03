@@ -58,6 +58,8 @@ pub struct Service {
 #[serde(deny_unknown_fields)]
 pub struct Storage {
     pub root: PathBuf,
+    #[serde(default)]
+    pub require_quota: bool,
     pub pool_bytes: u64,
     pub max_volume_bytes: u64,
     pub max_volume_inodes: u64,
@@ -449,7 +451,7 @@ mod tests {
             EXAMPLE.replace("max_connections = 32", "max_connections = 7"),
             EXAMPLE.replace("max_event_streams = 16", "max_event_streams = 29"),
             EXAMPLE.replace("max_event_streams = 16", "max_event_streams = 0"),
-            EXAMPLE.replace("\"/usr\"", "\"/run\""),
+            EXAMPLE.replace("\"/usr\"", "\"/var/lib\""),
             EXAMPLE.replace("\"/usr\"", "\"/tmp/data\""),
             EXAMPLE.replace("\"/usr\"", "\"/usr/../etc\""),
             EXAMPLE.replace("network = \"none\"", "network = \"none\"\nuid = 0"),
@@ -467,7 +469,10 @@ mod tests {
         for input in [
             enabled.replace("127.0.0.1:9011", "0.0.0.0:9011"),
             enabled.replace("127.0.0.1:9011", "localhost:9011"),
-            enabled.replace("/etc/sandcrab-demo/token", "/run/sandcrab-demo/token"),
+            enabled.replace(
+                "/etc/sandcrab-demo/token",
+                "/var/lib/sandcrab-demo/runtime/token",
+            ),
             enabled.replace("/etc/sandcrab-demo/token", "/usr/token"),
             enabled.replace("/etc/sandcrab-demo/token", "/opt/sandcrab/tools/token"),
             enabled.replace("/etc/sandcrab-demo/token", "token"),

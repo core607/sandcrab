@@ -18,6 +18,11 @@ on:
         type: choice
         options: [all, '5']
         default: all
+      storage:
+        description: Volume backend for density; other collectors retain their XFS fixture
+        type: choice
+        options: [xfs, plain]
+        default: xfs
 
 permissions:
   contents: read
@@ -64,7 +69,7 @@ jobs:
       - name: Prepare a disposable native host
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends xfsprogs ripgrep bpftrace
+          sudo apt-get install --yes --no-install-recommends xfsprogs e2fsprogs ripgrep bpftrace
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           sudo install -d -m 755 /var/lib/sandcrab-density
           sudo bash executor-service/prepare-tools.sh /var/lib/sandcrab-density/tools
@@ -74,8 +79,10 @@ jobs:
       - name: Check workload, scoring and uncertain outcomes
         run: python3 -m unittest discover -s experiments/sandcrab-density -p 'test_*.py' -v
       - name: Run a small native smoke before measurement
+        env:
+          STORAGE_MODE: ${{ inputs.storage || 'xfs' }}
         run: |
-          sudo python3 experiments/sandcrab-density/density.py --smoke \
+          sudo python3 experiments/sandcrab-density/density.py --smoke --storage "$STORAGE_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/smoke.json
       - name: Check the native footprint entry path
@@ -97,8 +104,9 @@ jobs:
         if: inputs.canonical
         env:
           MEMORY_GB: ${{ matrix.budget }}
+          STORAGE_MODE: ${{ inputs.storage || 'xfs' }}
         run: |
-          sudo python3 experiments/sandcrab-density/density.py --budget "$MEMORY_GB" \
+          sudo python3 experiments/sandcrab-density/density.py --budget "$MEMORY_GB" --storage "$STORAGE_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/density.json
       - name: Measure fixed costs at 1, 10 and 50

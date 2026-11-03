@@ -73,6 +73,7 @@ fn create(path: &Path, value: &impl Serialize, gid: u32, mode: u32) -> io::Resul
 pub struct Runtime {
     pub files: crate::file_records::Store,
     pub storage: Option<Arc<Store>>,
+    workspaces: Arc<crate::workspaces::Store>,
     pub config: Config,
     resources: crate::delegation::Delegation,
     executable: PathBuf,
@@ -150,6 +151,11 @@ impl Runtime {
             .transpose()?;
         let runtime = Self {
             files: crate::file_records::Store::open(&config)?,
+            workspaces: crate::workspaces::Store::open(
+                root,
+                json!({"version":1,
+                "runtimeRoot":config.service.runtime_root,"cgroupRoot":config.service.cgroup_root}),
+            )?,
             storage,
             config,
             resources,
@@ -188,6 +194,7 @@ impl Runtime {
             }
             release(&entry.path(), &[])?;
         }
+        self.workspaces.recover()?;
         for entry in fs::read_dir(root.join("records"))? {
             let entry = entry?;
             let name = entry.file_name();
@@ -481,7 +488,7 @@ impl Runtime {
                 .join("records")
                 .join(format!("{id}.{kind}.json"))
         });
-        let cleanup = || {
+        let cleanup_root = || {
             if shared.is_none() {
                 resources.stop()?;
             }
@@ -490,13 +497,32 @@ impl Runtime {
         if shared.is_none() && resources.start(profile).is_err() {
             return Err(OpenError {
                 code: "SESSION_UNAVAILABLE",
-                contained: cleanup().is_ok(),
+                contained: cleanup_root().is_ok(),
             });
         }
+        let disk = if shared.is_none() && attachment.is_none() {
+            match self.workspaces.create(id, profile, &cancelled) {
+                Ok(disk) => Some(disk),
+                Err(error) => {
+                    return Err(OpenError {
+                        code: "SESSION_UNAVAILABLE",
+                        contained: error.contained && cleanup_root().is_ok(),
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        let cleanup = || {
+            cleanup_root()?;
+            disk.as_ref()
+                .map_or(Ok(()), crate::workspaces::Workspace::remove)
+        };
         let workspace = shared
             .map(|s| s.access.workspace.clone())
             .or_else(|| attachment.as_ref().map(Attachment::path))
-            .unwrap_or_else(|| root.join("work"));
+            .or_else(|| disk.as_ref().map(crate::workspaces::Workspace::path))
+            .expect("Parent session has a volume or disk workspace");
         let (mut launch, mailbox) = match self.prepare(
             &root,
             &records,
@@ -539,6 +565,15 @@ impl Runtime {
                     workspace,
                     resources.clone(),
                     cancelled,
+                    request
+                        .volume_id
+                        .as_deref()
+                        .and_then(|id| self.storage.as_ref().and_then(|store| store.usage(id)))
+                        .or_else(|| disk.as_ref().map(|disk| disk.usage.clone())),
+                    request
+                        .volume_id
+                        .as_ref()
+                        .and_then(|_| self.storage.as_ref().and_then(|store| store.pool_usage())),
                 )
             }),
             channel,
@@ -549,6 +584,7 @@ impl Runtime {
             mailbox,
             resources,
             shared: None,
+            disk,
         })
     }
 
@@ -885,6 +921,7 @@ pub struct Shell {
     mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
     resources: crate::session_resources::Group,
     shared: Option<crate::file_access::ShellLease>,
+    disk: Option<crate::workspaces::Workspace>,
 }
 impl Shell {
     pub fn ready(&mut self, cancelled: &AtomicBool) -> bool {
@@ -922,6 +959,9 @@ impl Shell {
             self.resources.stop()?;
         }
         release(&self.root, &self.records)?;
+        if let Some(disk) = self.disk.take() {
+            disk.remove()?;
+        }
         if let Some(attachment) = self.attachment.take() {
             attachment.release();
         }

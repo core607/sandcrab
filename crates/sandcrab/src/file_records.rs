@@ -140,9 +140,9 @@ impl Stage {
             None => Ok(config
                 .service
                 .runtime_root
-                .join("jobs")
+                .join("workspaces")
                 .join(&self.session_id)
-                .join("work")),
+                .join("data")),
         }
     }
     pub fn path(&self, config: &Config) -> io::Result<PathBuf> {

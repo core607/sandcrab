@@ -1,5 +1,6 @@
-//! Durable volume metadata is outside the bounded XFS data filesystem. Data exhaustion
-//! must not prevent recording deletion or recovery. Published data is never startup garbage.
+//! Protected volume records and optional XFS project quotas. Plain filesystems can
+//! exhaust data and metadata together; uncertain publication fences further operations.
+//! Published data is never startup garbage.
 use crate::config::{Profile, Storage, invalid, name};
 use rustix::fs::{Gid, OFlags, Uid, chown};
 use sandcrab_core::install;
@@ -25,6 +26,7 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, Fault>;
+#[derive(Debug)]
 pub struct Fault {
     pub status: u16,
     pub code: &'static str,
@@ -96,7 +98,6 @@ impl Record {
                 "creating", "ready", "deleting", "deleted", "failed", "closing",
             ]
             .contains(&self.state.as_str())
-            && (self.state != "ready" || self.project.is_some())
     }
     fn occupies_volume(&self) -> bool {
         !["deleted", "failed"].contains(&self.state.as_str())
@@ -116,6 +117,7 @@ enum Binding {
 }
 struct State {
     records: BTreeMap<String, Record>,
+    usage: BTreeMap<String, Arc<crate::usage::Account>>,
     bindings: BTreeMap<String, Binding>,
     active: Option<String>,
     working: bool,
@@ -124,6 +126,10 @@ struct State {
 impl State {
     fn value(&self, record: &Record) -> Value {
         let mut value = record.value(self.bindings.get(&record.plan.id));
+        value["usage"] = self
+            .usage
+            .get(&record.plan.id)
+            .map_or(Value::Null, |a| a.value());
         if self.fenced && self.active.as_ref() == Some(&record.plan.id) {
             value["state"] = "closing".into();
             value["code"] = "STORAGE_UNCERTAIN".into();
@@ -133,6 +139,8 @@ impl State {
 }
 pub struct Store {
     pub config: Storage,
+    quota_enforced: bool,
+    pool_usage: Option<Arc<crate::usage::Pool>>,
     state: Mutex<State>,
     _lock: File,
 }
@@ -168,7 +176,9 @@ pub(crate) fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
     sync(parent)
 }
 
-pub fn verify_pool(config: &Storage) -> io::Result<()> {
+/// Ownership is mandatory on every filesystem. Quota support is optional unless
+/// explicitly required; absence never means that an integrity check was waived.
+pub fn verify_pool(config: &Storage) -> io::Result<bool> {
     protected_directory(&config.root)?;
     let data = config.root.join("data");
     protected_directory(&data)?;
@@ -178,6 +188,21 @@ pub fn verify_pool(config: &Storage) -> io::Result<()> {
                 "Volume mount ancestors must be searchable by execution accounts",
             ));
         }
+    }
+    let quotas = verify_project_pool(config);
+    match quotas {
+        Ok(()) => Ok(true),
+        Err(error) if config.require_quota => Err(error),
+        Err(_) => Ok(false),
+    }
+}
+
+fn verify_project_pool(config: &Storage) -> io::Result<()> {
+    let data = config.root.join("data");
+    if rustix::fs::statfs(&data)?.f_type as u64 != 0x5846_5342 {
+        return Err(invalid(
+            "require_quota needs an enforced XFS project-quota pool",
+        ));
     }
     let output = call(&[
         "findmnt".into(),
@@ -217,24 +242,17 @@ pub fn verify_pool(config: &Storage) -> io::Result<()> {
             "Volume data must be bounded and separate from its control metadata filesystem",
         ));
     }
-    let features = call(&[
-        "/usr/sbin/xfs_spaceman".into(),
-        "-c".into(),
-        "info".into(),
-        data.to_string_lossy().into(),
-    ])?;
-    if !String::from_utf8_lossy(&features.stdout).contains("reflink=1") {
-        return Err(invalid("The volume filesystem must support reflinks"));
-    }
     Ok(())
 }
 
 impl Store {
     pub fn open(config: Storage, owner: Value) -> io::Result<Arc<Self>> {
-        verify_pool(&config)?;
+        let mut quota_enforced = verify_pool(&config)?;
         let state_dir = config.root.join("state");
         directory(&state_dir, 0o700)?;
-        if fs::metadata(&state_dir)?.dev() == fs::metadata(config.root.join("data"))?.dev() {
+        if quota_enforced
+            && fs::metadata(&state_dir)?.dev() == fs::metadata(config.root.join("data"))?.dev()
+        {
             return Err(invalid("Volume metadata cannot be on the data filesystem"));
         }
         let lock = install::runtime_lock(&state_dir)?;
@@ -286,17 +304,117 @@ impl Store {
             }
             records.insert(id.to_owned(), record);
         }
-        Ok(Arc::new(Self {
+        if records
+            .values()
+            .any(|record| record.state == "ready" && record.project.is_none())
+        {
+            if config.require_quota {
+                return Err(invalid(
+                    "Existing volumes lack project quotas; use a fresh quota pool",
+                ));
+            }
+            // Enabling quotas on existing content would be an implicit migration.
+            // Retain the store's honest weaker mode until its plain volumes are gone.
+            quota_enforced = false;
+        }
+        let usage = records
+            .values()
+            .filter(|record| !quota_enforced && record.occupies_volume())
+            .map(|record| {
+                (
+                    record.plan.id.clone(),
+                    Arc::new(crate::usage::Account::new(
+                        config.root.join("data/volumes").join(&record.plan.id),
+                        crate::usage::Usage {
+                            bytes: record.bytes,
+                            inodes: record.inodes,
+                        },
+                    )),
+                )
+            })
+            .collect();
+        let pool_usage =
+            (!quota_enforced).then(|| Arc::new(crate::usage::Pool::new(config.pool_bytes)));
+        let store = Arc::new(Self {
             config,
+            quota_enforced,
+            pool_usage,
             state: Mutex::new(State {
                 records,
+                usage,
                 bindings: BTreeMap::new(),
                 active: None,
                 working: false,
                 fenced: false,
             }),
             _lock: lock,
-        }))
+        });
+        store.refresh_pool();
+        Ok(store)
+    }
+
+    pub fn quota_enforced(&self) -> bool {
+        self.quota_enforced
+    }
+
+    pub fn pool_usage(&self) -> Option<Arc<crate::usage::Pool>> {
+        self.pool_usage.clone()
+    }
+
+    pub fn refresh_pool(&self) {
+        let Some(pool) = &self.pool_usage else { return };
+        let overhead = [
+            self.config.root.join("data"),
+            self.config.root.join("data/volumes"),
+        ]
+        .into_iter()
+        .try_fold(crate::usage::Usage::default(), |mut total, path| {
+            let metadata = fs::symlink_metadata(path)?;
+            if !metadata.is_dir() {
+                return Err(invalid("Pool directory changed"));
+            }
+            total.bytes = metadata
+                .blocks()
+                .checked_mul(512)
+                .and_then(|bytes| total.bytes.checked_add(bytes))
+                .ok_or_else(|| invalid("Pool directory usage overflow"))?;
+            total.inodes += 1;
+            Ok(total)
+        });
+        // Publication cannot change the inventory between sampling its members
+        // and publishing this derived summary. No tree walk runs under this lock.
+        let state = self.state.lock().unwrap();
+        pool.refresh(overhead, state.usage.values().map(Arc::as_ref));
+    }
+
+    pub fn allow_growth(&self) -> std::result::Result<(), &'static str> {
+        self.pool_usage
+            .as_ref()
+            .map_or(Ok(()), |account| account.allow_growth())
+    }
+
+    pub fn usage(&self, id: &str) -> Option<Arc<crate::usage::Account>> {
+        self.state.lock().unwrap().usage.get(id).cloned()
+    }
+
+    pub fn background_usage(&self) -> Vec<Arc<crate::usage::Account>> {
+        let state = self.state.lock().unwrap();
+        state
+            .usage
+            .iter()
+            .filter(|(id, account)| {
+                state.records[*id].state == "creating"
+                    || (state.records[*id].state == "ready" && account.pending())
+            })
+            .map(|(_, account)| account.clone())
+            .collect()
+    }
+
+    fn verify_backend(&self) -> io::Result<()> {
+        if !verify_pool(&self.config)? && self.quota_enforced {
+            return Err(invalid("Previously enforced volume quotas are unavailable"));
+        }
+        Ok(())
     }
     fn metadata(&self, id: &str) -> PathBuf {
         self.config
@@ -314,6 +432,22 @@ impl Store {
         if write(&self.metadata(&record.plan.id), &record).is_err() {
             state.fenced = true;
             return Err(fault(503, "STORAGE_UNCERTAIN"));
+        }
+        if record.occupies_volume() && !self.quota_enforced {
+            state
+                .usage
+                .entry(record.plan.id.clone())
+                .or_insert_with(|| {
+                    Arc::new(crate::usage::Account::new(
+                        self.directory(&record.plan.id),
+                        crate::usage::Usage {
+                            bytes: record.bytes,
+                            inodes: record.inodes,
+                        },
+                    ))
+                });
+        } else {
+            state.usage.remove(&record.plan.id);
         }
         state.records.insert(record.plan.id.clone(), record);
         Ok(())
@@ -366,7 +500,7 @@ impl Store {
         Self::usable(&state)?;
         if let Some(record) = state.records.get(&plan.id) {
             return if record.plan == plan {
-                Ok((record.value(state.bindings.get(&plan.id)), false))
+                Ok((state.value(record), false))
             } else {
                 Err(fault(409, "ID_CONFLICT"))
             };
@@ -374,6 +508,7 @@ impl Store {
         if !current_epoch {
             return Err(fault(409, "SERVER_CHANGED"));
         }
+        self.allow_growth().map_err(|code| fault(409, code))?;
         let profile = profile
             .filter(|p| p.uid != 0)
             .ok_or_else(|| fault(400, "PROFILE_NOT_FOUND"))?;
@@ -441,7 +576,7 @@ impl Store {
         }
         state.active = Some(record.plan.id.clone());
         state.working = true;
-        Ok((record.value(None), true))
+        Ok((state.value(&record), true))
     }
     pub fn begin_delete(&self, id: &str, stopped: &AtomicBool) -> Result<(Value, bool)> {
         let mut state = self.state.lock().unwrap();
@@ -455,7 +590,7 @@ impl Store {
             .cloned()
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
         if ["deleted", "deleting"].contains(&record.state.as_str()) {
-            return Ok((record.value(None), false));
+            return Ok((state.value(&record), false));
         }
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
@@ -471,7 +606,7 @@ impl Store {
         self.publish(&mut state, record.clone())?;
         state.active = Some(id.into());
         state.working = true;
-        Ok((record.value(None), true))
+        Ok((state.value(&record), true))
     }
     pub fn forget(&self, id: &str) -> Result<()> {
         let mut state = self.state.lock().unwrap();
@@ -496,6 +631,7 @@ impl Store {
             return Err(fault(503, "STORAGE_UNCERTAIN"));
         }
         state.records.remove(id);
+        state.usage.remove(id);
         Ok(())
     }
     pub fn record(&self, id: &str) -> Record {
@@ -574,7 +710,7 @@ impl Store {
         Ok(attachment)
     }
     pub fn verify_record(&self, record: &Record) -> io::Result<()> {
-        verify_pool(&self.config)?;
+        self.verify_backend()?;
         let path = self.directory(&record.plan.id);
         protected_directory(&path)?;
         self.verify_owner(record)?;
@@ -587,6 +723,9 @@ impl Store {
             || data.dev() != fs::metadata(self.config.root.join("data"))?.dev()
         {
             return Err(invalid("Volume data ownership or filesystem changed"));
+        }
+        if !self.quota_enforced {
+            return Ok(());
         }
         for path in [&path, &data_path] {
             let attributes = call(&[
@@ -650,17 +789,19 @@ impl Store {
         Ok(())
     }
     pub fn prepare(&self, id: &str) -> io::Result<Record> {
-        verify_pool(&self.config)?;
+        self.verify_backend()?;
         let mut state = self.state.lock().unwrap();
         // Retained records reserve quota identities even after deletion. Forgetting is
         // allowed only after their data is absent, so the bounded slots can then be reused.
-        let project = (1..=4096)
-            .find(|p| !state.records.values().any(|r| r.project == Some(*p)))
-            .ok_or_else(|| invalid("No volume quota identity available"))?;
         let mut record = state.records[id].clone();
-        record.project = Some(project);
-        self.publish(&mut state, record.clone())
-            .map_err(|_| invalid("Volume metadata unavailable"))?;
+        if self.quota_enforced {
+            let project = (1..=4096)
+                .find(|p| !state.records.values().any(|r| r.project == Some(*p)))
+                .ok_or_else(|| invalid("No volume quota identity available"))?;
+            record.project = Some(project);
+            self.publish(&mut state, record.clone())
+                .map_err(|_| invalid("Volume metadata unavailable"))?;
+        }
         drop(state);
         let path = self.directory(id);
         DirBuilder::new().mode(0o750).create(&path)?;
@@ -668,26 +809,28 @@ impl Store {
             &path.join("owner.json"),
             &json!({"operation":record.operation,"planDigest":record.plan_digest}),
         )?;
-        call(&[
-            "/usr/sbin/xfs_quota".into(),
-            "-x".into(),
-            "-c".into(),
-            format!("project -s -p {} {project}", path.display()),
-            self.config.root.join("data").to_string_lossy().into(),
-        ])?;
-        call(&[
-            "/usr/sbin/xfs_quota".into(),
-            "-x".into(),
-            "-c".into(),
-            format!(
-                "limit -p bsoft={}k bhard={}k isoft={} ihard={} {project}",
-                record.bytes / 1024,
-                record.bytes / 1024,
-                record.inodes,
-                record.inodes
-            ),
-            self.config.root.join("data").to_string_lossy().into(),
-        ])?;
+        if let Some(project) = record.project {
+            call(&[
+                "/usr/sbin/xfs_quota".into(),
+                "-x".into(),
+                "-c".into(),
+                format!("project -s -p {} {project}", path.display()),
+                self.config.root.join("data").to_string_lossy().into(),
+            ])?;
+            call(&[
+                "/usr/sbin/xfs_quota".into(),
+                "-x".into(),
+                "-c".into(),
+                format!(
+                    "limit -p bsoft={}k bhard={}k isoft={} ihard={} {project}",
+                    record.bytes / 1024,
+                    record.bytes / 1024,
+                    record.inodes,
+                    record.inodes
+                ),
+                self.config.root.join("data").to_string_lossy().into(),
+            ])?;
+        }
         chown(&path, Some(Uid::ROOT), Some(Gid::from_raw(record.gid)))?;
         fs::set_permissions(&path, fs::Permissions::from_mode(0o750))?;
         let data = self.data(id);
@@ -838,12 +981,12 @@ pub fn copy_tree(source: &Path, destination: &Path, pool: &Path) -> io::Result<(
         return Err(invalid("Clone destination is not empty"));
     }
     let status = std::process::Command::new("/usr/bin/cp")
-        .args(["--archive", "--reflink=always", "--"])
+        .args(["--archive", "--reflink=auto", "--"])
         .arg(format!("{}/.", source.display()))
         .arg(destination)
         .status()?;
     if !status.success() {
-        return Err(invalid("Volume reflink failed"));
+        return Err(invalid("Volume copy failed"));
     }
     let fd = rustix::fs::open(
         pool,
@@ -891,5 +1034,87 @@ impl Drop for Attachment {
                 state.bindings.remove(&self.id);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_store_preserves_owned_data_and_explicit_quota_requirement_fails() {
+        let root = Path::new("/source").join(format!(
+            "sandcrab-storage-test-{}",
+            sandcrab_core::new_uuid().unwrap()
+        ));
+        directory(&root, 0o755).unwrap();
+        directory(&root.join("data"), 0o755).unwrap();
+        let config = Storage {
+            root: root.clone(),
+            require_quota: false,
+            pool_bytes: 128 * 1024 * 1024,
+            max_volume_bytes: 8 * 1024 * 1024,
+            max_volume_inodes: 128,
+            max_volumes: 4,
+            max_records: 8,
+        };
+        let owner = json!({"test":sandcrab_core::new_uuid().unwrap()});
+        let store = Store::open(config.clone(), owner.clone()).unwrap();
+        assert!(!store.quota_enforced());
+        let mut parsed =
+            crate::config::Config::parse(include_str!("../config.example.toml")).unwrap();
+        let profile = parsed.profiles.get_mut("python").unwrap();
+        profile.uid = 65534;
+        profile.gid = 65534;
+        let id = sandcrab_core::new_uuid().unwrap();
+        store
+            .begin_create(
+                Plan {
+                    id: id.clone(),
+                    profile: "python".into(),
+                    clone_from: None,
+                    byte_limit: None,
+                    inode_limit: None,
+                },
+                Some(profile),
+                true,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+        let record = store.prepare(&id).unwrap();
+        assert!(record.project.is_none());
+        let sentinel = store.data(&id).join("retained.txt");
+        fs::write(&sentinel, b"retained").unwrap();
+        store.finish(&id, "ready", None, true);
+        assert_eq!(store.get(&id).unwrap()["state"], "ready");
+        drop(store);
+
+        let store = Store::open(config.clone(), owner.clone()).unwrap();
+        store.recover().unwrap();
+        assert_eq!(fs::read(&sentinel).unwrap(), b"retained");
+        assert_eq!(store.get(&id).unwrap()["state"], "ready");
+        drop(store);
+        let required = Storage {
+            require_quota: true,
+            ..config.clone()
+        };
+        assert!(
+            Store::open(required, owner)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("require_quota")
+        );
+        assert!(Store::open(config, json!({"wrongOwner":true})).is_err());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"retained");
+        assert_eq!(root.parent(), Some(Path::new("/source")));
+        assert!(
+            root.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("sandcrab-storage-test-")
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }

@@ -71,9 +71,9 @@ def dependency_inventory(tools):
                  'mount': 'bounded workspace and private temporary storage',
                  'umount': 'workspace cleanup'},
         'sessions': {'bash': 'persistent shell'},
-        'durableVolumes': {'findmnt': 'verify the volume mount', '/usr/sbin/xfs_spaceman': 'reflink verification',
-                           '/usr/sbin/xfs_io': 'project identity', '/usr/sbin/xfs_quota': 'project quotas',
-                           '/usr/bin/cp': 'clone volume data'},
+        'durableVolumes': {'/usr/bin/cp': 'clone volume data with reflink or ordinary copy'},
+        'projectQuotas': {'findmnt': 'verify the optional XFS mount',
+                          '/usr/sbin/xfs_io': 'project identity', '/usr/sbin/xfs_quota': 'project quotas'},
     }
     import shutil
     observed = {}
@@ -87,11 +87,14 @@ def dependency_inventory(tools):
                                  'sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
     return {'runtimeExecutables': observed,
             'runtimeExecutableCount': sum(len(rows) for rows in observed.values()),
+            'runtimeExecutableCountWithoutProjectQuotas': sum(len(rows) for group, rows in observed.items()
+                                                               if group != 'projectQuotas'),
             'countScope': 'Distinct command executables used by the current native implementation; '
                           'includes optional sessions and durable volumes; excludes shared-library closure and workload tools',
             'preparationOnly': [{'name': 'apt/dpkg-deb', 'purpose': 'extract distribution sandbox tools'}],
             'preparedTreeBytes': sum(path.stat().st_size for path in tools.rglob('*') if path.is_file() and not path.is_symlink()),
-            'platform': ['Linux cgroup v2 delegation', 'user namespaces', 'XFS with project quotas for durable volumes']}
+            'platform': ['Linux cgroup v2 delegation', 'user namespaces', 'ordinary directories for durable volumes'],
+            'optionalPlatform': ['Dedicated XFS mount with project quotas for enforced storage limits']}
 
 
 async def measure(fixture, receipt, counts, report, ledger):

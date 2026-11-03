@@ -183,7 +183,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         child = self.child(parent)
         self.execute(parent, 'printf preserved > artifact')
         active, _ = self.session_exec(parent, 'printf running > active; sleep 30; printf escaped > after-fence', wait=False)
-        workspace = self.socket.parent / 'jobs' / parent['id'] / 'work'
+        workspace = self.session_workspace(parent)
         deadline = time.monotonic() + 5
         while not (workspace / 'active').exists():
             assert time.monotonic() < deadline, 'parent command did not start'
@@ -215,6 +215,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         else:
             self.wait_ready()
         assert not list((self.socket.parent / 'jobs').iterdir())
+        assert not workspace.exists()
         parents = [self.session_open(), self.session_open()]
         for parent in parents:
             self.session_close(parent)

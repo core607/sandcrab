@@ -42,9 +42,11 @@ pub fn document(capability: Option<&str>) -> Value {
                     path == "/v1/uploads"
                         || path.starts_with("/v1/uploads/")
                         || path == "/v1/sessions/{id}/snapshot"
+                        || path == "/v1/sessions/{id}/files"
                 } else {
                     (path == &prefix || path.starts_with(&format!("{prefix}/")))
                         && !path.ends_with("/snapshot")
+                        && !path.ends_with("/files")
                         && !path.ends_with("/events")
                         && !path.contains("/calls")
                 }
@@ -93,6 +95,10 @@ mod tests {
                 format!("/v1/{capability}")
             };
             assert!(document["paths"].get(path).is_some());
+            assert_eq!(
+                document["paths"].get("/v1/sessions/{id}/files").is_some(),
+                capability == "files"
+            );
             assert!(serde_json::to_vec(&document).unwrap().len() < 18000);
             for requirement in document["security"].as_array().unwrap() {
                 for name in requirement.as_object().unwrap().keys() {

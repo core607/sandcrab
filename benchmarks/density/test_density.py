@@ -21,6 +21,13 @@ class StageTests(unittest.IsolatedAsyncioTestCase):
         events = []
         engine.emit = lambda phase, row: events.append((phase, row))
 
+        async def storage_read(method, route):
+            events.append(('storage-read', route))
+            return 200, ({'storage': {'poolUsage': {'state': 'complete'}}}
+                         if route == '/v1/info' else {'storageUsage': {'state': 'complete'}})
+
+        engine.call.side_effect = storage_read
+
         async def execute(session, command, *, kind, on_start, timeout_ms):
             row = {'id': str(len(events)), 'session': session, 'kind': kind,
                    'startedAbsoluteNs': time.monotonic_ns(), 'outcome': 'PENDING', 'elapsedNs': None}
@@ -43,9 +50,15 @@ class StageTests(unittest.IsolatedAsyncioTestCase):
 
         settings = {**load(), 'durationSeconds': .08, 'warmupSeconds': 0,
                     'sampleIntervalSeconds': .01, 'thinkSeconds': [.001, .002]}
-        result = await stage(engine, Metrics(), 'base', 1, 0, settings, 400, publish)
+        result = await stage(engine, Metrics(), 'base', 1, 0, settings, 400, publish, 'plain')
         self.assertEqual(result['score']['verdict'], 'PASS')
         self.assertTrue(any(phase == 'kernel-sample' for phase, _ in events))
+        observed = [index for index, (phase, _) in enumerate(events) if phase == 'storage-read']
+        samples = [index for index, (phase, _) in enumerate(events) if phase == 'kernel-sample']
+        self.assertEqual(len(observed), 4)
+        self.assertLess(observed[1], samples[0])
+        self.assertGreater(observed[2], samples[-1])
+        self.assertEqual(result['storageAfterCommands']['sessions'][0]['usage']['state'], 'complete')
 
     async def test_partial_admission_cannot_become_a_smaller_successful_stage(self):
         engine = AsyncMock()

@@ -84,6 +84,11 @@ delete the remote sandbox and close the SDK client's local resources separately.
 Deletion waits for containment; an uncertain cleanup returns an error and keeps
 ownership reserved.
 
+SDK sandboxes use the native session directory and its
+[storage accounting](README.md#storage-accounting). Measured overage refuses
+commands, new contexts and file mutations, while reads and file/directory deletion
+remain available. This periodic limit is not a write-time quota.
+
 Resource limits must include CPU and memory. CPU accepts whole cores, at most two
 decimal places or millicores divisible by ten. Memory accepts integer bytes or
 `Ki`, `Mi`, `Gi`, `Ti`, `k`, `M`, `G`, `T` suffixes. Requests may lower the profile's

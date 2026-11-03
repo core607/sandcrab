@@ -3,7 +3,7 @@
   "info": {
     "title": "Sandcrab native service",
     "version": "0.1.0",
-    "description": "Isolated commands, persistent sessions, durable volumes, files and command events. Unix sockets require the configured peer UID; optional loopback TCP requires a bearer token on every request. The empty HTTP security alternative applies only to authenticated Unix transport. Sequential HTTP/1.1 exchanges follow Connection: close; consume a complete chunked event response before reuse. Server epochs guard new operations; retained volume and upload identities have separate lifetimes. TCP provides no TLS or listener identity attestation."
+    "description": "Unix transport requires the configured peer UID; the empty HTTP security alternative only describes authenticated Unix transport. Loopback TCP requires a bearer token on every request and offers neither TLS nor listener attestation. Sequential HTTP/1.1 honors Connection: close; consume complete chunked events before reuse. Server epochs govern new operations; volume and upload IDs have independent lifetimes."
   },
   "servers": [
     {
@@ -31,7 +31,7 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -54,7 +54,7 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -101,19 +101,19 @@
             "$ref": "#/components/responses/Run202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -145,13 +145,13 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -175,10 +175,10 @@
             "$ref": "#/components/responses/Run200"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -217,16 +217,16 @@
             "$ref": "#/components/responses/Run200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -281,16 +281,16 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -310,22 +310,22 @@
             "$ref": "#/components/responses/Session202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -367,13 +367,13 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -392,22 +392,22 @@
             "$ref": "#/components/responses/Session200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -432,22 +432,22 @@
             "$ref": "#/components/responses/Run202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -479,22 +479,22 @@
             "$ref": "#/components/responses/Session200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -537,22 +537,22 @@
             "$ref": "#/components/responses/Session200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -612,16 +612,16 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -655,7 +655,7 @@
             }
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -664,7 +664,7 @@
       },
       "post": {
         "operationId": "createVolume",
-        "description": "Create empty persistent storage or a reflink clone of an unattached ready volume. Same ID and normalized plan replay across daemon restarts, including failure or deletion. An unknown ID requires the current serverId. Different plans conflict. Limits may only be lowered. A clone must use the same execution UID/GID as its source. Only one storage mutation runs at a time.",
+        "description": "Create empty persistent storage or a reflink-or-copy clone of an unattached ready volume. Same ID and normalized plan replay across daemon restarts, including failure or deletion. An unknown ID requires the current serverId. Different plans conflict. Limits may only be lowered. A clone must use the same execution UID/GID as its source. Only one storage mutation runs at a time.",
         "requestBody": {
           "required": true,
           "content": {
@@ -683,22 +683,22 @@
             "$ref": "#/components/responses/Volume202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -725,22 +725,22 @@
             "$ref": "#/components/responses/Volume200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -782,22 +782,22 @@
             "$ref": "#/components/responses/Volume202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -833,22 +833,22 @@
         },
         "responses": {
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "200": {
             "description": "Record forgotten",
@@ -901,10 +901,10 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -932,25 +932,25 @@
             "$ref": "#/components/responses/Upload201"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "413": {
-            "$ref": "#/components/responses/Error413"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -971,10 +971,10 @@
             "$ref": "#/components/responses/Upload200"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1013,28 +1013,28 @@
             "$ref": "#/components/responses/Upload200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "413": {
-            "$ref": "#/components/responses/Error413"
+            "$ref": "#/components/responses/Error"
           },
           "417": {
-            "$ref": "#/components/responses/Error417"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1069,19 +1069,19 @@
             "$ref": "#/components/responses/Upload200"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1132,19 +1132,19 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1207,34 +1207,34 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "413": {
-            "$ref": "#/components/responses/Error413"
+            "$ref": "#/components/responses/Error"
           },
           "417": {
-            "$ref": "#/components/responses/Error417"
+            "$ref": "#/components/responses/Error"
           },
           "422": {
-            "$ref": "#/components/responses/Error422"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "507": {
-            "$ref": "#/components/responses/Error507"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1307,22 +1307,22 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1357,25 +1357,25 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1426,25 +1426,25 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1511,22 +1511,22 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1537,7 +1537,7 @@
     "/v1/sessions/{id}/shells": {
       "post": {
         "operationId": "createShellContext",
-        "description": "Create an independent shell in a live root session, sharing workspace, profile, aggregate budget and expiry. Child IDs support commands, get, close and forget; renewal and files use the parent. No nested contexts. Closing a child preserves the workspace and other shells.",
+        "description": "Open an independent shell in a live root session; share workspace, profile, aggregate budget and expiry. Child IDs allow commands/get/close/forget; renewal/files use the parent. No grandchildren. Child closure preserves data and other shells.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -1546,22 +1546,22 @@
             "$ref": "#/components/responses/Session202"
           },
           "400": {
-            "$ref": "#/components/responses/Error400"
+            "$ref": "#/components/responses/Error"
           },
           "403": {
-            "$ref": "#/components/responses/Error403"
+            "$ref": "#/components/responses/Error"
           },
           "404": {
-            "$ref": "#/components/responses/Error404"
+            "$ref": "#/components/responses/Error"
           },
           "409": {
-            "$ref": "#/components/responses/Error409"
+            "$ref": "#/components/responses/Error"
           },
           "429": {
-            "$ref": "#/components/responses/Error429"
+            "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error503"
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -1583,6 +1583,81 @@
           "$ref": "#/components/parameters/Id"
         }
       ]
+    },
+    "/v1/sessions/{id}/files": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "delete": {
+        "operationId": "deleteFile",
+        "description": "Remove a workspace file, or a directory tree with recursive=true. Uses the workspace owner session, never follows symlinks, and remains available during periodic storage overage.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Workspace-relative path."
+          },
+          {
+            "name": "recursive",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed and helper containment confirmed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "deleted"
+                  ],
+                  "properties": {
+                    "deleted": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1715,7 +1790,10 @@
               "maxVolumeInodes",
               "maxVolumes",
               "maxRecords",
-              "available"
+              "available",
+              "quotaEnforced",
+              "poolBytes",
+              "poolUsage"
             ],
             "properties": {
               "maxVolumeBytes": {
@@ -1737,6 +1815,16 @@
               "available": {
                 "type": "boolean",
                 "description": "False requires operator reconciliation and daemon restart before mutations."
+              },
+              "quotaEnforced": {
+                "type": "boolean"
+              },
+              "poolBytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "poolUsage": {
+                "$ref": "#/components/schemas/StorageUsage"
               }
             }
           },
@@ -2052,7 +2140,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Optional ready volume mounted at /workspace exclusively until confirmed session cleanup. Omit for an ephemeral workspace."
+            "description": "Ready volume, exclusively mounted at /workspace until confirmed cleanup. Omit for a disposable runtime_root directory with periodic accounting."
           },
           "resources": {
             "oneOf": [
@@ -2118,7 +2206,9 @@
           "activeRunId",
           "volumeId",
           "code",
-          "parentSessionId"
+          "parentSessionId",
+          "storageUsage",
+          "storagePoolUsage"
         ],
         "properties": {
           "id": {
@@ -2176,6 +2266,12 @@
             ],
             "format": "uuid",
             "description": "Workspace-owning session, or null for a root session."
+          },
+          "storageUsage": {
+            "$ref": "#/components/schemas/StorageUsage"
+          },
+          "storagePoolUsage": {
+            "$ref": "#/components/schemas/StorageUsage"
           }
         }
       },
@@ -2214,7 +2310,7 @@
             ],
             "minimum": 1048576,
             "multipleOf": 1024,
-            "description": "XFS charged-byte quota, at most the advertised storage maximum; sparse logical lengths are not charged blocks."
+            "description": "Allocated-byte limit, including managed metadata, at most the advertised maximum. Enforced by XFS quotas or periodic accounting according to storage.quotaEnforced."
           },
           "inodeLimit": {
             "type": [
@@ -2222,7 +2318,7 @@
               "null"
             ],
             "minimum": 32,
-            "description": "Inode quota including the managed parent and data directories, at most the advertised maximum."
+            "description": "Inode limit including managed metadata, at most the advertised maximum. Periodic accounting is a soft limit when quotas are unavailable."
           }
         }
       },
@@ -2239,7 +2335,8 @@
           "cloneFrom",
           "planDigest",
           "busy",
-          "attachedTo"
+          "attachedTo",
+          "usage"
         ],
         "properties": {
           "id": {
@@ -2293,6 +2390,9 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/StorageUsage"
           }
         }
       },
@@ -3063,19 +3163,71 @@
             "format": "uuid"
           }
         }
+      },
+      "StorageUsage": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "Periodic allocated blocks; no hard quota. Null when inapplicable. Incomplete scans refuse growth; pool time is the oldest constituent's.",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "state",
+          "observedAtMillis",
+          "allocatedBytes",
+          "inodes",
+          "byteLimit",
+          "inodeLimit"
+        ],
+        "properties": {
+          "mode": {
+            "const": "periodic"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "complete",
+              "exceeded",
+              "unavailable"
+            ]
+          },
+          "observedAtMillis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "allocatedBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "inodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "byteLimit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "inodeLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
       }
     },
     "responses": {
-      "Error403": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
       "Run200": {
         "description": "Current run state.",
         "content": {
@@ -3092,56 +3244,6 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/Run"
-            }
-          }
-        }
-      },
-      "Error400": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error409": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error429": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error503": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error404": {
-        "description": "Request refused or run unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
             }
           }
         }
@@ -3186,46 +3288,6 @@
           }
         }
       },
-      "Error413": {
-        "description": "File operation refused or unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error417": {
-        "description": "File operation refused or unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error422": {
-        "description": "File operation refused or unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
-      "Error507": {
-        "description": "File operation refused or unavailable.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        }
-      },
       "Upload200": {
         "description": "Retained identity or current outcome. A failed or unknown outcome is not a successful write.",
         "content": {
@@ -3263,6 +3325,16 @@
             }
           }
         }
+      },
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Request refused or operation unavailable."
       }
     },
     "securitySchemes": {

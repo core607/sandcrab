@@ -115,6 +115,8 @@ impl Session {
         json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
             "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,
             "volumeId":self.request.volume_id,"code":self.code,
+            "storageUsage":self.files.as_ref().and_then(|files|files.usage.as_ref().map(|usage|usage.value())),
+            "storagePoolUsage":self.files.as_ref().and_then(|files|files.pool_usage.as_ref().map(|usage|usage.value())),
             "parentSessionId":self.parent.as_ref().map(|p| &p.id)})
     }
 }
@@ -439,6 +441,9 @@ impl Service {
         let Some(files) = &parent.files else {
             return error(409, "SESSION_NOT_READY");
         };
+        if let Err(code) = files.allow_growth() {
+            return error(409, code);
+        }
         let profile = files.profile.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let incarnation = match sandcrab_core::new_uuid() {
@@ -531,6 +536,11 @@ impl Service {
         };
         if session.state != "ready" {
             return error(409, "SESSION_NOT_READY");
+        }
+        if let Some(files) = &session.files
+            && let Err(code) = files.allow_growth()
+        {
+            return error(409, code);
         }
         let limits = &self.runtime.config.service;
         if registry.runs.len() + registry.sessions.len() >= limits.max_records

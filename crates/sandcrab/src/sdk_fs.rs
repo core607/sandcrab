@@ -313,6 +313,21 @@ impl Service {
             return Err((409, "SANDBOX_CLOSING"));
         }
         let lease = self.file_lease(id, Some(&sandbox.incarnation))?;
+        self.filesystem(lease, request)
+    }
+
+    pub(crate) fn filesystem(
+        &self,
+        lease: crate::file_access::Lease,
+        request: &Request,
+    ) -> Result<Value> {
+        if request.mutation()
+            && !matches!(request, Request::Remove { .. })
+            && let Err(code) = lease.allow_growth()
+        {
+            lease.finish(true);
+            return Err((409, code));
+        }
         let id = match sandcrab_core::new_uuid() {
             Ok(id) => id,
             Err(_) => {

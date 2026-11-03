@@ -38,7 +38,9 @@ mod sessions;
 mod spec;
 mod storage;
 mod transport;
+mod usage;
 mod volumes;
+mod workspaces;
 
 use client::Endpoint;
 use std::{

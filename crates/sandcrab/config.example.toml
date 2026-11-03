@@ -1,8 +1,8 @@
 [service]
 # Optional SDK protocol adapter; requires the authenticated [tcp] listener below.
 opensandbox = false
-runtime_root = "/run/sandcrab-demo"
-socket = "/run/sandcrab-demo/control.sock"
+runtime_root = "/var/lib/sandcrab-demo/runtime"
+socket = "/var/lib/sandcrab-demo/runtime/control.sock"
 client_uid = 1000
 client_gid = 1000
 cgroup_root = "/sys/fs/cgroup/sandcrab.slice/sandcrab-demo.service"
@@ -22,10 +22,10 @@ max_event_streams = 16
 # listen = "127.0.0.1:9011"
 # token_file = "/etc/sandcrab-demo/token"
 
-# Optional: provision a separate bounded XFS mount at root/data with reflink,
-# enforced project quotas, nosuid and nodev. root/state stays on another filesystem.
+# Optional ordinary-directory volumes; see README.md for enforced XFS quotas.
 # [storage]
 # root = "/var/lib/sandcrab-demo/storage"
+# require_quota = false
 # pool_bytes = 1073741824
 # max_volume_bytes = 67108864
 # max_volume_inodes = 4096

@@ -67,6 +67,10 @@ impl Service {
             return Err((409, "SANDBOX_CLOSING"));
         }
         let lease = self.file_lease(id, Some(&sandbox.incarnation))?;
+        if let Err(code) = lease.allow_growth() {
+            lease.finish(true);
+            return Err((409, code));
+        }
         if length.is_some_and(|n| n > lease.access.profile.transfer_bytes + 128 * 16384) {
             lease.finish(true);
             return Err((413, "FILE_LIMIT"));

@@ -183,6 +183,20 @@ impl Service {
             Self::fail_volume(store, id, "STORAGE_UNAVAILABLE", true);
             return;
         }
+        if let Some(account) = store.usage(id) {
+            account.refresh(true, &self.stopped);
+            if let Err(code) = account.allow_growth() {
+                Self::fail_volume(store, id, code, true);
+                return;
+            }
+        }
+        if let Some(pool) = store.pool_usage() {
+            store.refresh_pool();
+            if let Err(code) = pool.allow_growth() {
+                Self::fail_volume(store, id, code, true);
+                return;
+            }
+        }
         store.finish(id, "ready", None, true);
     }
     fn fail_volume(store: &Store, id: &str, code: &str, contained: bool) {
