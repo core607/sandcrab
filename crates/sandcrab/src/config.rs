@@ -45,6 +45,10 @@ pub struct Service {
     pub max_records: usize,
     #[serde(default = "result_ttl")]
     pub result_ttl_millis: u64,
+    #[serde(default = "template_count")]
+    pub max_templates: usize,
+    #[serde(default = "template_pool")]
+    pub template_pool_bytes: u64,
     pub max_output_bytes: usize,
     #[serde(default = "file_records")]
     pub max_file_records: usize,
@@ -129,6 +133,12 @@ fn file_records() -> usize {
 }
 fn result_ttl() -> u64 {
     300_000
+}
+fn template_count() -> usize {
+    128
+}
+fn template_pool() -> u64 {
+    4 * 1024 * 1024 * 1024
 }
 fn daemon_memory() -> u64 {
     128 * 1024 * 1024
@@ -297,6 +307,13 @@ impl Config {
         }
         if !(1_000..=86_400_000).contains(&service.result_ttl_millis) {
             return Err(invalid("Use 1000..86400000 result_ttl_millis"));
+        }
+        if !(1..=1024).contains(&service.max_templates)
+            || !(1_048_576..=1 << 50).contains(&service.template_pool_bytes)
+        {
+            return Err(invalid(
+                "Use 1..1024 max_templates and 1 MiB..1 PiB template_pool_bytes",
+            ));
         }
         if !(1..=512).contains(&service.max_sandboxes)
             || !(service.max_sandboxes..=1024).contains(&service.max_records)

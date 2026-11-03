@@ -416,6 +416,17 @@ impl Service {
         body: &mut impl Read,
         deadline: Instant,
     ) -> (io::Result<Value>, bool) {
+        self.pipe_file(job, &lease.access.profile, &lease.cancelled, body, deadline)
+    }
+
+    pub(crate) fn pipe_file(
+        &self,
+        job: &Job,
+        profile: &crate::config::Profile,
+        cancelled: &AtomicBool,
+        body: &mut impl Read,
+        deadline: Instant,
+    ) -> (io::Result<Value>, bool) {
         let pipes = pipe_with(PipeFlags::CLOEXEC)
             .map_err(io::Error::from)
             .and_then(|(input, output)| {
@@ -428,23 +439,19 @@ impl Service {
         };
         thread::scope(|scope| {
             let worker = match thread::Builder::new().spawn_scoped(scope, || {
-                self.runtime.file_helper(
-                    job,
-                    &lease.access.profile,
-                    &lease.cancelled,
-                    Input::File(input),
-                )
+                self.runtime
+                    .file_helper(job, profile, cancelled, Input::File(input))
             }) {
                 Ok(worker) => worker,
                 Err(error) => return (Err(error), true),
             };
-            let sent = pipe_body(body, &mut output, &lease.cancelled, deadline);
+            let sent = pipe_body(body, &mut output, cancelled, deadline);
             drop(output);
             if sent
                 .as_ref()
                 .is_err_and(|e| e.kind() != io::ErrorKind::BrokenPipe)
             {
-                lease.cancelled.store(true, Ordering::SeqCst);
+                cancelled.store(true, Ordering::SeqCst);
             }
             let (received, contained) = worker
                 .join()

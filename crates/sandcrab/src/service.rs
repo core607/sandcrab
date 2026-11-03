@@ -194,7 +194,14 @@ impl Service {
             } else {
                 let Some(name) = path.strip_prefix("/v1/openapi?capability=").filter(|s| {
                     [
-                        "runs", "sessions", "volumes", "files", "uploads", "events", "calls",
+                        "runs",
+                        "sessions",
+                        "volumes",
+                        "files",
+                        "uploads",
+                        "events",
+                        "calls",
+                        "templates",
                     ]
                     .contains(s)
                 }) else {
@@ -209,7 +216,15 @@ impl Service {
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network,"hostCalls":p.host_calls,
                     "memoryBytes":p.memory_bytes,"minimumMemoryBytes":p.minimum_memory(),"cpuQuotaPercent":p.cpu_quota_percent})))
                 .collect::<serde_json::Map<_,_>>();
-            let mut capabilities = vec!["runs", "sessions", "files", "uploads", "events", "calls"];
+            let mut capabilities = vec![
+                "runs",
+                "sessions",
+                "files",
+                "uploads",
+                "events",
+                "calls",
+                "templates",
+            ];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
@@ -244,6 +259,9 @@ impl Service {
             || path.starts_with("/v1/uploads?")
         {
             return self.file_route(method, path, body);
+        }
+        if crate::template_api::import_path(path) || path.starts_with("/v1/templates/") {
+            return self.template_route(method, path);
         }
         if method == "DELETE"
             && let Some((id, query)) = path

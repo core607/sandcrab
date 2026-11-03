@@ -108,10 +108,62 @@ other outcomes exit nonzero. SIGINT/SIGTERM requests cancellation. A lost respon
 does not submit a new run: inspect the printed ID. `closing` means containment or
 workspace cleanup was not confirmed; its admission remains held until restart.
 For Unix transport, the CLI authenticates the root-owned socket and root peer before sending commands.
+
 If forgetting a terminal record fails, the CLI warns on stderr and preserves the
 command's exit result. Inspect or forget the printed ID instead of rerunning it.
 `--keep-result` on `run`, `session exec`, `session open`, `session shell` or
 `files put` retains the result until explicit forgetting; it also works with streaming commands.
+
+## Templates
+
+Import a plain tar archive or an already unpacked OCI root tree through the
+authenticated API. Sandcrab stores each normalized tree once beneath
+`runtime_root/templates`; published objects survive daemon restart and remain
+until explicitly deleted. The catalog and import commands are available; session
+overlay attachment and rootfs execution remain under the
+[lightweight service proposal](../../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md).
+
+```sh
+sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python environment.tar
+sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --directory unpacked-image/rootfs
+sandcrab template list --socket /var/lib/sandcrab-demo/runtime/control.sock
+sandcrab template get --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
+sandcrab template delete --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
+```
+
+The equivalent import is `POST /v1/templates?profile=python` with a plain tar body,
+using Content-Length or chunked framing. `GET /v1/templates` returns up to 64
+objects and a `nextAfter` cursor; continue with `?after=SHA256`.
+`GET` and `DELETE /v1/templates/SHA256` inspect and remove an object.
+The CLI packs a directory locally; it neither contacts an image registry nor
+interprets OCI layer archives. Supply the merged, unpacked root tree. Coordinate
+source writers before packaging it.
+
+SHA-256 identifies normalized paths, contents, permission bits, symlink targets,
+hard-link topology and the selected profile's execution UID/GID. Archive order,
+timestamps and original owners do not affect identity. Import strips special
+permission bits and extended attributes, assigns the profile identity and uses
+a 0755 root directory. It accepts regular files, directories, symlinks and
+hard links to earlier regular entries. Devices, FIFOs, sparse archives,
+duplicate paths and traversal through symlinks are rejected. Template directories
+remain behind the root-only store; workload accounts cannot edit the shared base.
+
+One import runs at a time and shares `max_file_transfers` admission with file
+operations. It uses the profile's memory, CPU and task bounds. Both archive bytes
+and extracted regular-file bytes are bounded by `transfer_bytes`, with at most
+100,000 entries, a 30-second body deadline and bounded helper execution.
+`service.max_templates` defaults to 128; `service.template_pool_bytes` defaults
+to 4 GiB of allocated blocks in committed trees, including directories and
+counting hard links once. The list response includes pool limits and current
+logical/allocated totals. Reserve extra space for store records and one incoming
+archive/tree. These are
+application limits; they do not enforce a filesystem quota.
+
+Interrupted imports publish no partial object. Restart contains old helpers before
+removing incoming stages. Uncertain publication or cleanup reports
+`TEMPLATE_STATE_UNCERTAIN` and fences further mutations; inspect the catalog after
+restart. Identical imports return the existing object even at catalog capacity.
+Include the template store in runtime backups before rebuilding 0.x metadata.
 
 ## Host calls
 

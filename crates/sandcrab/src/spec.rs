@@ -81,7 +81,14 @@ mod tests {
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
         for capability in [
-            "runs", "sessions", "volumes", "files", "uploads", "events", "calls",
+            "runs",
+            "sessions",
+            "volumes",
+            "files",
+            "uploads",
+            "events",
+            "calls",
+            "templates",
         ] {
             let document = document(Some(capability));
             let path = if capability == "events" {

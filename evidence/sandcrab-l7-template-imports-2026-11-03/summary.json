@@ -1,0 +1,32 @@
+{
+  "milestone": "L7 template import and catalog",
+  "scope": "Authenticated native API and CLI, immutable normalized trees and contained restart recovery on a local Linux kernel under Docker Desktop; overlay attachment is a subsequent L7 change",
+  "baseRevision": "e4d0b281a1a4454863e2608643a867ae0541f154",
+  "binarySha256": "b313fab831ed59e28363641ef33d0e8bb70feb11c2c0ef07bf2d3a3dfebf1d12",
+  "rustTestsPassed": 146,
+  "nativeTemplateChecksPassed": 7,
+  "nativeFileChecksPassed": 26,
+  "publishedSdkChecksPassed": 21,
+  "publishedSdkVersion": "1.1.0",
+  "nativeCleanup": "PASS",
+  "earlierFailures": [
+    {
+      "kind": "OpenAPI capability bound",
+      "attempts": 2,
+      "resolution": "Move template pool metadata to the template page and share an identical run response; preserve the 18000-byte bound"
+    },
+    {
+      "kind": "Rust signed block-count conversion",
+      "attempts": 1,
+      "resolution": "Checked conversion before allocated-byte accounting"
+    },
+    {
+      "kind": "Directory CLI lost hard-link topology",
+      "attempts": 1,
+      "resolution": "Reuse descriptor-relative tar packing; repeat native template checks passed"
+    }
+  ],
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-templates-l7",
+  "capacityMeasured": false,
+  "capacityCheckpoint": "After L7 overlay integration"
+}

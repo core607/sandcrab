@@ -94,6 +94,7 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
         };
         let (head, mut body) = match http::streaming_start(&mut input, |method, path| {
             (method == "PUT" && crate::file_stream::endpoint(path).is_some())
+                || (method == "POST" && crate::template_api::import_path(path))
                 || (method == "POST"
                     && service.runtime.config.service.opensandbox
                     && crate::sdk_files::upload_path(path).is_some())
@@ -195,6 +196,35 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             return json_reply(stream, 417, &error(417, "EXPECTATION_UNSUPPORTED").1, true);
         }
         let file_target = crate::file_stream::endpoint(&head.path);
+        if head.method == "POST" && crate::template_api::import_path(&head.path) {
+            deadline.set(Instant::now() + Duration::from_secs(30));
+            slice.set(Duration::from_millis(200));
+            let mut continuation = if expect.is_some() {
+                Some(stream.try_clone()?)
+            } else {
+                None
+            };
+            let result = service.import_template(
+                &head.path,
+                (!head.chunked).then_some(head.length),
+                &mut body,
+                deadline.get(),
+                || {
+                    if let Some(stream) = &mut continuation {
+                        stream.set_write_timeout(Some(EXCHANGE_TIMEOUT))?;
+                        stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n")?;
+                        stream.flush()?;
+                    }
+                    Ok(())
+                },
+            );
+            drop(body);
+            let (status, value) = match result {
+                Ok(value) => (200, value),
+                Err((status, code)) => error(status, code),
+            };
+            return json_reply(stream, status, &value, true);
+        }
         if head.method == "PUT"
             && let Some(target) = file_target
         {

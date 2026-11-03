@@ -72,6 +72,7 @@ fn create(path: &Path, value: &impl Serialize, gid: u32, mode: u32) -> io::Resul
 
 pub struct Runtime {
     pub files: crate::file_records::Store,
+    pub templates: Arc<crate::templates::Store>,
     pub storage: Option<Arc<Store>>,
     workspaces: Arc<crate::workspaces::Store>,
     pub config: Config,
@@ -151,6 +152,12 @@ impl Runtime {
             .transpose()?;
         let runtime = Self {
             files: crate::file_records::Store::open(&config)?,
+            templates: crate::templates::Store::open(
+                root,
+                json!({"version":1,"runtimeRoot":root,"cgroupRoot":config.service.cgroup_root}),
+                config.service.max_templates,
+                config.service.template_pool_bytes,
+            )?,
             workspaces: crate::workspaces::Store::open(
                 root,
                 json!({"version":1,
@@ -163,6 +170,7 @@ impl Runtime {
             _lock: lock,
         };
         runtime.cleanup()?;
+        runtime.templates.recover()?;
         for stage in runtime.files.pending_stages() {
             runtime.clean_stage(&stage)?;
         }

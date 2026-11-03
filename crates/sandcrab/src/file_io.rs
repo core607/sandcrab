@@ -151,7 +151,7 @@ pub(crate) fn ownership(file: &File, job: &Job, mode: u32) -> io::Result<()> {
     file.sync_all()
 }
 
-fn unpack(job: &Job) -> io::Result<()> {
+pub(crate) fn unpack(job: &Job) -> io::Result<()> {
     let stage = directory(&job.stage)?;
     mkdirat(&stage, "tree", Mode::from_raw_mode(0o700))?;
     let tree = child_dir(&stage, "tree")?;
@@ -270,7 +270,7 @@ fn unpack(job: &Job) -> io::Result<()> {
     Ok(())
 }
 
-fn receive(job: &Job, checked: bool) -> io::Result<serde_json::Value> {
+pub(crate) fn receive(job: &Job, checked: bool) -> io::Result<serde_json::Value> {
     let stage = directory(&job.stage)?;
     let mut content = new_file(&stage, "content")?;
     let limit = if checked { job.bytes } else { job.byte_limit };
@@ -380,13 +380,17 @@ fn stable(before: &fs::Metadata, after: &fs::Metadata) -> bool {
         after.ctime_nsec(),
     )
 }
-fn pack(
+struct ArchiveLimits {
+    bytes: u64,
+    entries: usize,
+}
+fn pack<W: Write>(
     dir: &File,
     prefix: &str,
-    tar: &mut tar::Builder<Bounded<File>>,
+    tar: &mut tar::Builder<W>,
     names_seen: &mut BTreeMap<(u64, u64), String>,
     count: &mut usize,
-    job: &Job,
+    limits: &ArchiveLimits,
     depth: usize,
 ) -> io::Result<()> {
     if depth > 64 {
@@ -403,7 +407,7 @@ fn pack(
             continue;
         }
         *count += 1;
-        if *count > job.entry_limit {
+        if *count > limits.entries {
             return Err(invalid("FILE_ENTRY_LIMIT"));
         }
         names.push(name.to_owned());
@@ -431,12 +435,12 @@ fn pack(
                 header.set_size(0);
                 header.set_cksum();
                 tar.append_data(&mut header, &path, io::empty())?;
-                pack(&child, &path, tar, names_seen, count, job, depth + 1)?;
+                pack(&child, &path, tar, names_seen, count, limits, depth + 1)?;
             }
             rustix::fs::FileType::RegularFile => {
                 let mut file = regular(dir, &name)?;
                 let before = file.metadata()?;
-                if before.len() > job.byte_limit {
+                if before.len() > limits.bytes {
                     return Err(invalid("FILE_LIMIT"));
                 }
                 let key = (before.dev(), before.ino());
@@ -469,6 +473,28 @@ fn pack(
     }
     Ok(())
 }
+pub(crate) fn pack_tree<W: Write>(
+    root: &File,
+    output: W,
+    byte_limit: u64,
+    entry_limit: usize,
+) -> io::Result<W> {
+    let mut tar = tar::Builder::new(output);
+    pack(
+        root,
+        "",
+        &mut tar,
+        &mut BTreeMap::new(),
+        &mut 0,
+        &ArchiveLimits {
+            bytes: byte_limit,
+            entries: entry_limit,
+        },
+        0,
+    )?;
+    tar.finish()?;
+    tar.into_inner()
+}
 fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
     let workspace = directory(&job.workspace)?;
     let stage = directory(&job.stage)?;
@@ -500,10 +526,7 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
             let (dir, name) = parent(&workspace, &job.path, false)?;
             child_dir(&dir, &name)?
         };
-        let mut tar = tar::Builder::new(output);
-        pack(&root, "", &mut tar, &mut BTreeMap::new(), &mut 0, job, 0)?;
-        tar.finish()?;
-        output = tar.into_inner()?;
+        output = pack_tree(&root, output, job.byte_limit, job.entry_limit)?;
     }
     output.writer.sync_all()?;
     stage.sync_all()?;
@@ -535,7 +558,13 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         || job.byte_limit > 1_073_741_824
         || job.mode > 0o777
         || (job.action.starts_with("stream-") && job.format != Format::Raw)
-        || !(1..=10000).contains(&job.entry_limit)
+        || !(1..=if job.action == "template-receive" {
+            100_000
+        } else {
+            10_000
+        })
+            .contains(&job.entry_limit)
+        || (job.action == "template-receive" && job.format != Format::Tar)
         || !valid_path(
             &job.path,
             job.action == "snapshot" && job.format == Format::Tar,
@@ -571,6 +600,9 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     }
     if job.action == "snapshot" {
         return snapshot(&job);
+    }
+    if job.action == "template-receive" {
+        return crate::template_io::receive(&job);
     }
     if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
         return crate::sdk_fs_io::execute(&job);

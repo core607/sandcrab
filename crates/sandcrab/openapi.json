@@ -73,7 +73,8 @@
                 "files",
                 "uploads",
                 "events",
-                "calls"
+                "calls",
+                "templates"
               ]
             }
           }
@@ -99,7 +100,7 @@
             "$ref": "#/components/responses/Run200"
           },
           "202": {
-            "$ref": "#/components/responses/Run202"
+            "$ref": "#/components/responses/Run200"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -396,7 +397,7 @@
             "$ref": "#/components/responses/Run200"
           },
           "202": {
-            "$ref": "#/components/responses/Run202"
+            "$ref": "#/components/responses/Run200"
           },
           "400": {
             "$ref": "#/components/responses/Error"
@@ -1660,6 +1661,221 @@
           }
         }
       }
+    },
+    "/v1/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "description": "List up to 64 immutable template records by SHA-256 ID; follow nextAfter.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TemplatePage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "importTemplate",
+        "description": "Import plain tar with fixed Content-Length or chunked framing. A required profile normalizes ownership to its execution UID/GID. SHA-256 covers normalized names, contents, modes, symlinks and hard-link topology, excluding archive ordering and timestamps. Duplicate trees return the existing ID. One import runs at a time under the shared file-transfer admission, profile memory/CPU/transfer limits, 100000 entries and a 30-second body deadline. Published trees survive restart and expire only by explicit deletion. Template pool bytes count allocated blocks in committed trees, including directories and counting hard links once. Store records and the bounded incoming archive/tree need additional disk space.",
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-tar": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/templates/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getTemplate",
+        "responses": {
+          "200": {
+            "description": "Template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTemplate",
+        "description": "Remove an unused immutable template and its stored tree. Uncertain publication or cleanup fences template mutations until contained restart recovery.",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "deleted"
+                  ],
+                  "properties": {
+                    "deleted": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1717,7 +1933,8 @@
                 "files",
                 "uploads",
                 "events",
-                "calls"
+                "calls",
+                "templates"
               ]
             }
           },
@@ -3259,20 +3476,123 @@
         "type": "boolean",
         "default": false,
         "description": "Retain the terminal result until explicit forget; active lifetime unchanged."
+      },
+      "Template": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "uid",
+          "gid",
+          "bytes",
+          "entries",
+          "allocatedBytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "uid": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "gid": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "allocatedBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Allocated 512-byte blocks of the stored tree, with hard links counted once."
+          }
+        }
+      },
+      "TemplatePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "templates",
+          "nextAfter",
+          "pool"
+        ],
+        "properties": {
+          "templates": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/Template"
+            }
+          },
+          "nextAfter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/TemplatePool"
+          }
+        }
+      },
+      "TemplatePool": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "available",
+          "count",
+          "maxTemplates",
+          "logicalBytes",
+          "poolBytes",
+          "entryLimit",
+          "importBusy",
+          "allocatedBytes"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxTemplates": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "logicalBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "poolBytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "entryLimit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "importBusy": {
+            "type": "boolean"
+          },
+          "allocatedBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       }
     },
     "responses": {
       "Run200": {
-        "description": "Current run state.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Run"
-            }
-          }
-        }
-      },
-      "Run202": {
         "description": "Current run state.",
         "content": {
           "application/json": {

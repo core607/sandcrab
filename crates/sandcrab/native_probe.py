@@ -220,7 +220,7 @@ network = "none"
             self.done('bundled-helper-' + name + '-refused-at-startup-and-launch')
 
     def tests(self):
-        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'uploads', 'events', 'calls']
+        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'uploads', 'events', 'calls', 'templates']
         self.transport()
         self.inventory_tests()
         self.helper_integrity()
