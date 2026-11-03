@@ -1,9 +1,13 @@
 """Public-API resource ownership and one-shot command execution for the benchmark."""
 import base64
 import asyncio
+import hashlib
+import io
 import json
 from pathlib import Path
 import shlex
+import tarfile
+import tempfile
 import time
 import uuid
 
@@ -21,6 +25,7 @@ class Engine:
     def __init__(self, socket, server_id, emit=None):
         self.client, self.server_id = Client(socket), server_id
         self.sessions, self.volumes, self.runs = set(), set(), set()
+        self.templates, self.uses_templates = set(), False
         self.executing = {}
         self.requests = 0
         self.emit = emit or (lambda phase, row: None)
@@ -58,19 +63,70 @@ class Engine:
             raise NativeFailure(200, value)
         return identity
 
-    async def session(self, volume=None):
+    async def session(self, volume=None, *, template=None):
+        if volume is not None and template is not None:
+            raise ValueError('Select one workspace source')
         identity = str(uuid.uuid4())
         self.sessions.add(identity)
         body = {'id': identity, 'serverId': self.server_id, 'profile': 'python'}
         if volume is not None:
             body['volumeId'] = volume
+        if template is not None:
+            body['templateId'] = template
         started = time.monotonic_ns()
         await self.call('POST', '/v1/sessions', body, (202,))
         value = await self.observe('/v1/sessions/' + identity, ('starting',), timeout=60)
         elapsed = time.monotonic_ns() - started
         if value['state'] != 'ready':
             raise NativeFailure(200, value)
+        if template is not None and value.get('templateId') != template:
+            raise ProtocolError('Session did not attach the requested template')
         return identity, elapsed
+
+    async def template(self, source=None):
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode='w', format=tarfile.USTAR_FORMAT) as archive:
+            if source is not None:
+                for path in sorted(Path(source).rglob('*')):
+                    if path.is_symlink() or not (path.is_dir() or path.is_file()):
+                        raise RuntimeError('Unexpected synthetic template node')
+                    entry = archive.gettarinfo(str(path), arcname=path.relative_to(source).as_posix())
+                    entry.uid, entry.gid, entry.uname, entry.gname, entry.mtime = 0, 0, '', '', 0
+                    if entry.size + output.tell() + 10240 > 67108864:
+                        raise RuntimeError('Synthetic template exceeds the fixture transfer bound')
+                    if entry.isfile():
+                        with path.open('rb') as data:
+                            archive.addfile(entry, data)
+                    else:
+                        archive.addfile(entry)
+        data = output.getvalue()
+        self.uses_templates = True
+        self.requests += 1
+        self.emit('template-import-created', {'archiveBytes': len(data), 'archiveSha256': hashlib.sha256(data).hexdigest()})
+        status, value = await self.client.import_template(data)
+        if status != 200:
+            raise NativeFailure(status, value)
+        identity = value.get('id')
+        if not isinstance(identity, str) or len(identity) != 64 or any(c not in '0123456789abcdef' for c in identity):
+            raise ProtocolError('Invalid template identity')
+        self.templates.add(identity)
+        self.emit('template-import-completed', value)
+        return identity
+
+    async def seed_template(self, seed, files, fixture_root):
+        from workload import create
+        with tempfile.TemporaryDirectory(prefix='template-source-', dir=fixture_root) as directory:
+            source = Path(directory)
+            manifest = create(source, seed, files)
+            identity = await self.template(source)
+        session, _ = await self.session(template=identity)
+        verified = await self.execute(session, "cat .density-corpus.json; git -C small-repo rev-parse HEAD; find corpus -type f -name '*.md' | wc -l")
+        lines = verified.get('stdout', '').splitlines()
+        if (verified['outcome'] != 'OK' or verified.get('fatal') or len(lines) != 3
+                or json.loads(lines[0]) != manifest or lines[1:] != [manifest['gitCommit'], str(files)]):
+            raise RuntimeError('Imported corpus readback failed')
+        await self.close(session)
+        return identity, manifest
 
     async def close(self, identity):
         status, _ = await self.call('GET', '/v1/sessions/' + identity, allowed=(200, 404))
@@ -169,8 +225,9 @@ class Engine:
         await self.close(session)
         return base, manifest
 
-    async def cleanup(self, keep_volumes=()):
+    async def cleanup(self, keep_volumes=(), keep_templates=()):
         keep_volumes = set(keep_volumes)
+        keep_templates = set(keep_templates)
         failures = []
         for identity in list(self.runs):
             try:
@@ -194,11 +251,19 @@ class Engine:
                 await self.delete(identity)
             except Exception as error:
                 failures.append(type(error).__name__)
-        for route, key in (('/v1/runs', 'ids'), ('/v1/sessions', 'ids'), ('/v1/volumes', 'volumes')):
+        for identity in list(self.templates - keep_templates):
+            try:
+                await self.call('DELETE', '/v1/templates/' + identity, allowed=(200, 404))
+                self.templates.remove(identity)
+            except Exception as error:
+                failures.append(type(error).__name__)
+        inventories = [('/v1/runs', 'ids', set()), ('/v1/sessions', 'ids', set()), ('/v1/volumes', 'volumes', keep_volumes)]
+        if self.uses_templates:
+            inventories.append(('/v1/templates', 'templates', keep_templates))
+        for route, key, expected in inventories:
             try:
                 _, value = await self.call('GET', route)
-                remaining = {item['id'] for item in value[key]} if key == 'volumes' else set(value[key])
-                expected = keep_volumes if key == 'volumes' else set()
+                remaining = {item['id'] for item in value[key]} if key != 'ids' else set(value[key])
                 if remaining != expected or value.get('nextAfter'):
                     failures.append('INVENTORY_NOT_EMPTY')
             except Exception as error:

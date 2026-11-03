@@ -29,7 +29,8 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
                 content = next(line.split(b':', 1)[1].strip() for line in headers.split(b'\r\n')
                                if line.lower().startswith(b'content-length:'))
                 body = await reader.readexactly(int(content))
-                self.requests.append((headers.split(b'\r\n')[0], json.loads(body) if body else None))
+                value = body if b'Content-Type: application/x-tar\r\n' in headers else (json.loads(body) if body else None)
+                self.requests.append((headers.split(b'\r\n')[0], value))
                 await asyncio.sleep(self.delay)
                 writer.write(self.reply)
                 await writer.drain()
@@ -90,6 +91,17 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             await self.client.request('POST', '/v1/runs', {'id': 'wrong-peer'})
         await asyncio.sleep(.01)
         self.assertEqual(self.requests, [])
+
+    async def test_template_import_sends_binary_bytes_once_even_when_ack_is_lost(self):
+        self.reply = b''
+        body = b'fixture\0tar\xff'
+        with self.assertRaises(asyncio.IncompleteReadError):
+            await self.client.import_template(body)
+        self.assertEqual(self.requests, [(b'POST /v1/templates?profile=python HTTP/1.1', body)])
+
+    async def test_template_deletion_uses_the_public_delete_method(self):
+        await self.client.request('DELETE', '/v1/templates/' + 'a' * 64)
+        self.assertEqual(self.requests[0][0], b'DELETE /v1/templates/' + b'a' * 64 + b' HTTP/1.1')
 
 
 if __name__ == '__main__':

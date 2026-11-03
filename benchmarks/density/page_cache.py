@@ -70,12 +70,14 @@ class CacheFixture(Fixture):
         self.shared = self.root / 'shared-corpus'
         self.shared.mkdir()
         self.shared_manifest = create(self.shared, SEED, self.file_count)
-        for path in self.shared.rglob('*'):
-            if path.is_symlink():
-                raise RuntimeError('Unexpected synthetic-tree symlink')
-            path.chmod(0o555 if path.is_dir() else 0o444)
-        self.shared.chmod(0o555)
-        self.extra_reads = [str(self.shared)]
+        self.extra_reads = []
+        if self.shared_mode == 'read-mount':
+            for path in self.shared.rglob('*'):
+                if path.is_symlink():
+                    raise RuntimeError('Unexpected synthetic-tree symlink')
+                path.chmod(0o555 if path.is_dir() else 0o444)
+            self.shared.chmod(0o555)
+            self.extra_reads = [str(self.shared)]
         super().configure(tools, memory, free)
 
 
@@ -108,14 +110,15 @@ async def measure(fixture, receipt, report, ledger, files):
         if manifest != fixture.shared_manifest:
             raise RuntimeError('The reflink and shared corpora differ')
         receipt['corpus'] = manifest
-        for name in ('reflink', 'shared-read-only'):
+        template = await engine.template(fixture.shared) if fixture.shared_mode == 'template' else None
+        for name in ('reflink', 'shared-template' if template else 'shared-read-only'):
             item = {'name': name, 'readers': COPIES, 'status': 'STARTING'}
             receipt['cases'].append(item)
             save(report, receipt)
             sessions, roots = [], []
             for _ in range(COPIES):
                 volume = await engine.volume(base) if name == 'reflink' else None
-                session, _ = await engine.session(volume)
+                session, _ = await engine.session(template=template) if name == 'shared-template' else await engine.session(volume)
                 sessions.append(session)
                 if volume:
                     # This is fixture-only kernel inspection, not a content API.
@@ -131,12 +134,19 @@ async def measure(fixture, receipt, report, ledger, files):
                 if readonly['outcome'] != 'OK' or readonly.get('fatal') or readonly.get('stdout') != 'True\n':
                     raise RuntimeError('The shared tree is not mounted read-only in the sandbox')
                 item['readOnlyMountVerified'] = True
+            if name == 'shared-template':
+                root = fixture.socket.parent / 'templates/objects' / template / 'lower/data'
+                if root.is_symlink() or not root.resolve(strict=True).is_relative_to(fixture.root):
+                    raise RuntimeError('Unexpected fixture template path')
+                roots = [root]
+                item['templateId'] = template
+                item['templateAttachmentVerified'] = True
             item['coldResidency'] = residency(roots, files, evict=True)
             if item['coldResidency']['residentPages']:
                 raise RuntimeError('File-specific eviction did not produce a cold dataset')
             await asyncio.sleep(1)
             item['beforeRead'] = metrics.sample()
-            target = '/workspace' if name == 'reflink' else str(fixture.shared)
+            target = str(fixture.shared) if name == 'shared-read-only' else '/workspace'
             item['commands'] = await asyncio.gather(*(engine.execute(session, reader(target), kind='cache-read')
                                                       for session in sessions))
             for row in item['commands']:
@@ -144,11 +154,17 @@ async def measure(fixture, receipt, report, ledger, files):
                     raise RuntimeError('A page-cache reader did not verify the entire corpus')
             item['afterRead'] = metrics.sample()
             item['warmResidency'] = residency(roots, files)
+            if name == 'shared-template':
+                for session in sessions:
+                    copied = fixture.socket.parent / 'workspace-overlays' / session / 'upper/data/corpus'
+                    if copied.exists():
+                        raise RuntimeError('Read-only corpus commands unexpectedly copied up template data')
+                item['corpusCopyUpObserved'] = False
             item['fileCacheDeltaBytes'] = item['afterRead']['memoryStat']['file'] - item['beforeRead']['memoryStat']['file']
             item['oomKills'] = item['afterRead']['oomKills'] - item['beforeRead']['oomKills']
             if item['oomKills'] or item['afterRead']['hostAvailableBytes'] < 256 * 1024**2:
                 raise RuntimeError('OOM or host reserve failure during cache comparison')
-            item['apiCleanup'] = await engine.cleanup(keep_volumes=(base,))
+            item['apiCleanup'] = await engine.cleanup(keep_volumes=(base,), keep_templates=(template,) if template else ())
             if item['apiCleanup']['result'] != 'PASS':
                 raise RuntimeError('Page-cache cohort cleanup unconfirmed')
             item['status'] = 'COMPLETED'
@@ -168,6 +184,7 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--budget', type=int, choices=(4, 5, 8), default=5)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--shared', choices=('read-mount', 'template'), default='read-mount')
     args = parser.parse_args()
     report = args.report.resolve()
     ledger_path = report.with_suffix('.attempts.jsonl')
@@ -183,10 +200,10 @@ def main():
                'sourceDirty': bool(subprocess.check_output([*git, 'status', '--porcelain'], text=True).strip()),
                'sourceSha256': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in Path(__file__).parent.glob('*.py')},
-               'parameters': {'seed': SEED, 'files': files, 'readers': COPIES,
+               'parameters': {'seed': SEED, 'files': files, 'readers': COPIES, 'sharedMode': args.shared,
                               'cachePolicy': 'fsync + per-file POSIX_FADV_DONTNEED, verified with root mincore'},
                'scope': 'Synthetic fixture only. Page residency and hierarchical file-cache deltas; '
-                        'not a template API, cold-start latency or density measurement.',
+                        'Shared mode identifies a host read mount or imported template overlays. No cold-start or density claim.',
                'measurementStatus': 'STARTING', 'apiCleanup': 'NOT_RUN', 'hostCleanup': 'NOT_RUN',
                'modelTokens': 0, 'containsProductionContent': False}
     with report.open('x') as output:
@@ -197,6 +214,7 @@ def main():
     fixture = None
     try:
         CacheFixture.file_count = files
+        CacheFixture.shared_mode = args.shared
         fixture = CacheFixture(args.binary.resolve(), args.tools.resolve(), report,
                                1024**3 if args.smoke else args.budget * 1_000_000_000, args.smoke)
         fixture.setup()

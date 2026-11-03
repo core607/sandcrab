@@ -240,18 +240,20 @@ class Trace:
                 'sourceSha256': getattr(self, 'source_sha256', None), 'events': self.events}
 
 
-async def measure(fixture, receipt, report, trials, with_volume=False):
+async def measure(fixture, receipt, report, trials, with_volume=False, with_template=False):
     engine = Engine(fixture.socket, fixture.info['serverId'])
     trace = Trace(fixture)
     receipt['trials'] = []
     try:
         volume = await engine.volume() if with_volume else None
+        template = await engine.template() if with_template else None
         receipt['volumeId'] = volume
+        receipt['templateId'] = template
         await trace.start()
         for _ in range(trials):
             item = {'status': 'STARTING', 'submitBootNs': time.clock_gettime_ns(time.CLOCK_BOOTTIME)}
             receipt['trials'].append(item)
-            session, elapsed = await engine.session(volume)
+            session, elapsed = await engine.session(volume, template=template)
             item.update(readyBootNs=time.clock_gettime_ns(time.CLOCK_BOOTTIME), session=session,
                         apiElapsedMonotonicNs=elapsed)
             group = fixture.workloads_group / ('session-' + session)
@@ -285,7 +287,9 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--budget', type=int, choices=(4, 5, 8), default=5)
     parser.add_argument('--smoke', action='store_true')
-    parser.add_argument('--volume', action='store_true', help='Trace attachment of a prepared empty XFS volume')
+    workspace = parser.add_mutually_exclusive_group()
+    workspace.add_argument('--volume', action='store_true', help='Trace attachment of a prepared empty XFS volume')
+    workspace.add_argument('--template', action='store_true', help='Trace attachment of an imported empty template')
     parser.add_argument('--syscalls', action='store_true', help='Record at most 256 pre-placement syscalls per launcher, without arguments')
     args = parser.parse_args()
     report = args.report.resolve()
@@ -302,7 +306,7 @@ def main():
                                 for path in Path(__file__).parent.glob('*.py')},
                'scope': 'Traced persistent-session startup, diagnostic timing with observer overhead. '
                         'Use density coldStartNs for untraced latency distributions. No model or private content.',
-               'parameters': {'trials': 3, 'workspace': 'empty-volume' if args.volume else 'ephemeral',
+               'parameters': {'trials': 3, 'workspace': 'empty-template' if args.template else ('empty-volume' if args.volume else 'ephemeral'),
                               'prePlacementSyscalls': args.syscalls},
                'measurementStatus': 'STARTING', 'apiCleanup': 'NOT_RUN', 'hostCleanup': 'NOT_RUN',
                'modelTokens': 0, 'containsProductionContent': False}
@@ -318,7 +322,7 @@ def main():
         fixture.trace_syscalls = args.syscalls
         fixture.setup()
         receipt['fixture'] = fixture.receipt
-        asyncio.run(measure(fixture, receipt, report, receipt['parameters']['trials'], args.volume))
+        asyncio.run(measure(fixture, receipt, report, receipt['parameters']['trials'], args.volume, args.template))
     except BaseException as error:
         receipt.update(measurementStatus='ERROR', errorType=type(error).__name__)
         report.with_suffix('.diagnostic.txt').write_text(traceback.format_exc())

@@ -41,10 +41,12 @@ def retain(row, start):
             'stderrPreview': row.get('stderr', '')[:256], 'stderrTail': row.get('stderr', '')[-1024:]}
 
 
-async def storage_observation(engine, sessions):
+async def storage_observation(engine, sessions, workspace_mode='volume'):
     observation = {'startedAtMillis': time.time_ns() // 1_000_000, 'sessions': []}
     _, info = await engine.call('GET', '/v1/info')
     observation['pool'] = info['storage']['poolUsage']
+    if workspace_mode == 'template':
+        _, observation['templates'] = await engine.call('GET', '/v1/templates')
     for session in sessions:
         _, value = await engine.call('GET', '/v1/sessions/' + session)
         observation['sessions'].append({'id': session, 'usage': value['storageUsage']})
@@ -52,7 +54,7 @@ async def storage_observation(engine, sessions):
     return observation
 
 
-async def stage(engine, metrics, base, agents, repetition, settings, files, publish, storage_mode='xfs'):
+async def stage(engine, metrics, base, agents, repetition, settings, files, publish, storage_mode='xfs', workspace_mode='volume'):
     result = {'agents': agents, 'repetition': repetition, 'status': 'SETTING_UP', 'attempts': [], 'samples': [],
               'coldStartNs': [], 'admissionFailure': None, 'apiCleanup': 'NOT_RUN'}
     publish(result)
@@ -60,8 +62,11 @@ async def stage(engine, metrics, base, agents, repetition, settings, files, publ
     sessions = []
     for _ in range(agents):
         try:
-            volume = await engine.volume(base)
-            session, cold = await engine.session(volume)
+            if workspace_mode == 'template':
+                session, cold = await engine.session(template=base)
+            else:
+                volume = await engine.volume(base)
+                session, cold = await engine.session(volume)
             sessions.append(session)
             result['coldStartNs'].append(cold)
             publish(None)
@@ -71,8 +76,8 @@ async def stage(engine, metrics, base, agents, repetition, settings, files, publ
             result['admissionFailure'] = {'status': error.status, 'code': error.code,
                                           'kind': 'configured admission or request refusal; not host saturation'}
             break
-    if storage_mode == 'plain':
-        result['storageBeforeCommands'] = await storage_observation(engine, sessions)
+    if storage_mode == 'plain' or workspace_mode == 'template':
+        result['storageBeforeCommands'] = await storage_observation(engine, sessions, workspace_mode)
     stop = asyncio.Event()
     started = time.monotonic_ns()
     duration_ns = settings['durationSeconds'] * 1_000_000_000
@@ -142,9 +147,9 @@ async def stage(engine, metrics, base, agents, repetition, settings, files, publ
     if monitor_errors or any(row.get('fatal') for row in result['attempts']):
         result['score']['verdict'] = 'FAIL'
         result['score']['reasons'].append('OBSERVATION_OR_CLEANUP_UNCONFIRMED')
-    if storage_mode == 'plain':
-        result['storageAfterCommands'] = await storage_observation(engine, sessions)
-    result['apiCleanup'] = await engine.cleanup(keep_volumes=(base,))
+    if storage_mode == 'plain' or workspace_mode == 'template':
+        result['storageAfterCommands'] = await storage_observation(engine, sessions, workspace_mode)
+    result['apiCleanup'] = await engine.cleanup(**{'keep_templates' if workspace_mode == 'template' else 'keep_volumes': (base,)})
     if result['apiCleanup']['result'] != 'PASS':
         raise RuntimeError('Trial API cleanup was not confirmed')
     if monitor_errors:
@@ -156,7 +161,7 @@ async def stage(engine, metrics, base, agents, repetition, settings, files, publ
     return result
 
 
-async def measure(fixture, receipt, settings, files, report, ledger):
+async def measure(fixture, receipt, settings, files, report, ledger, workspace_mode='volume'):
     def emit(phase, row):
         observation = {key: value for key, value in row.items() if key not in ('stdout', 'stderr')}
         observation.update(event=phase, stderrTail=row.get('stderr', '')[-1024:])
@@ -166,11 +171,15 @@ async def measure(fixture, receipt, settings, files, report, ledger):
     metrics = Metrics(fixture)
     receipt['daemonIdle'] = metrics.sample()
     try:
-        base, corpus = await engine.seed(settings['seed'], files)
+        if workspace_mode == 'template':
+            base, corpus = await engine.seed_template(settings['seed'], files, fixture.root)
+        else:
+            base, corpus = await engine.seed(settings['seed'], files)
         receipt['corpus'] = corpus
+        receipt['baseIdentity'] = base
         # Check the workload inside the actual sandbox before treating a command
         # failure as evidence about capacity; reset only this synthetic repository.
-        session, _ = await engine.session(base)
+        session, _ = await engine.session(template=base) if workspace_mode == 'template' else await engine.session(base)
         workload, seen = AgentWorkload(settings['seed'], 0, files), set()
         for _ in range(100):
             command = workload.next()
@@ -200,7 +209,7 @@ async def measure(fixture, receipt, settings, files, report, ledger):
                         receipt['stages'].append(value)
                     save(report, receipt)
                 result = await stage(engine, metrics, base, agents, repetition, settings, files, publish,
-                                     fixture.storage_mode)
+                                     fixture.storage_mode, workspace_mode)
                 print(json.dumps({'agents': agents, 'repetition': repetition,
                                   'verdict': result['score']['verdict'], 'reasons': result['score']['reasons']}), flush=True)
                 if result['score']['verdict'] != 'PASS':
@@ -226,6 +235,7 @@ def main():
     parser.add_argument('--budget', type=int, choices=(4, 5, 8), default=5)
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--storage', choices=('xfs', 'plain'), default='xfs')
+    parser.add_argument('--workspace', choices=('volume', 'template'), default='volume')
     args = parser.parse_args()
     report = args.report.resolve()
     ledger_path = report.with_suffix('.attempts.jsonl')
@@ -248,7 +258,7 @@ def main():
                'sourceSha256': sources, 'sourceCommit': commit, 'sourceDirty': bool(dirty),
                'protocolSha256': hashlib.sha256(Path(__file__).with_name('protocol.json').read_bytes()).hexdigest(),
                'measurementStatus': 'STARTING', 'apiCleanup': 'NOT_RUN',
-               'storageMode': args.storage,
+               'storageMode': args.storage, 'workspaceMode': args.workspace,
                'hostCleanup': 'NOT_RUN', 'modelTokens': 0, 'containsProductionContent': False}
     if args.smoke:
         receipt['scope'] = 'Small native smoke only; no canonical footprint, readiness or density result'
@@ -263,7 +273,7 @@ def main():
         fixture.setup()
         receipt['fixture'] = fixture.receipt
         with ledger_path.open('x', buffering=1) as ledger:
-            asyncio.run(measure(fixture, receipt, settings, files, report, ledger))
+            asyncio.run(measure(fixture, receipt, settings, files, report, ledger, args.workspace))
             os.fsync(ledger.fileno())
     except BaseException as error:
         receipt['measurementStatus'] = 'ERROR'

@@ -96,7 +96,7 @@ def dependency_inventory(binary, tools):
             'optionalPlatform': ['Dedicated XFS mount with project quotas for enforced storage limits']}
 
 
-async def measure(fixture, receipt, counts, report, ledger):
+async def measure(fixture, receipt, counts, report, ledger, workspace_mode='ephemeral'):
     def emit(phase, row):
         ledger.write(json.dumps({'event': phase, **row}, separators=(',', ':')) + '\n')
         ledger.flush()
@@ -122,6 +122,12 @@ async def measure(fixture, receipt, counts, report, ledger):
             raise RuntimeError('The footprint artifact is not static')
         receipt['dependencies'] = dependency_inventory(fixture.binary, fixture.tools_path)
         receipt['daemonIdle'] = await samples(0, 0)
+        template = await engine.template() if workspace_mode == 'template' else None
+        baseline = receipt['daemonIdle']
+        if template:
+            receipt['emptyTemplateId'] = template
+            receipt['templateBaseline'] = await samples(0, 0)
+            baseline = receipt['templateBaseline']
         receipt['idleSessions'] = []
         live = 0
         for count in counts:
@@ -129,12 +135,12 @@ async def measure(fixture, receipt, counts, report, ledger):
             receipt['idleSessions'].append(item)
             save(report, receipt)
             while live < count:
-                _, elapsed = await engine.session()
+                _, elapsed = await engine.session(template=template)
                 item['coldStartNs'].append(elapsed)
                 live += 1
             await asyncio.sleep(2)
             item['samples'] = await samples(count, 0)
-            item['medianDeltaPerSession'] = cost(receipt['daemonIdle'], item['samples'], count)
+            item['medianDeltaPerSession'] = cost(baseline, item['samples'], count)
             item['status'] = 'COMPLETED'
             save(report, receipt)
         receipt['idleCleanup'] = await engine.cleanup()
@@ -184,6 +190,7 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--budget', type=int, choices=(4, 5, 8), default=5)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--workspace', choices=('ephemeral', 'template'), default='ephemeral')
     args = parser.parse_args()
     report = args.report.resolve()
     ledger = report.with_suffix('.attempts.jsonl')
@@ -198,7 +205,7 @@ def main():
                'sourceDirty': bool(subprocess.check_output([*git, 'status', '--porcelain'], text=True).strip()),
                'sourceSha256': {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in Path(__file__).parent.glob('*.py')},
-               'parameters': {'counts': [1] if args.smoke else list(COUNTS), 'samples': SAMPLES,
+               'parameters': {'counts': [1] if args.smoke else list(COUNTS), 'samples': SAMPLES, 'workspace': args.workspace,
                               'sampleIntervalSeconds': 1, 'settleSeconds': 2, 'finiteHoldSeconds': 30},
                'scope': 'Idle bash sessions and minimal finite /bin/sleep workloads; includes their memory. '
                         'Volume capability enabled, with no volume data. No density or readiness claim.',
@@ -217,7 +224,7 @@ def main():
         fixture.setup()
         receipt['fixture'] = fixture.receipt
         with ledger.open('x', buffering=1) as output:
-            asyncio.run(measure(fixture, receipt, receipt['parameters']['counts'], report, output))
+            asyncio.run(measure(fixture, receipt, receipt['parameters']['counts'], report, output, args.workspace))
             os.fsync(output.fileno())
     except BaseException as error:
         receipt.update(measurementStatus='ERROR', errorType=type(error).__name__)

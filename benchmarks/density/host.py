@@ -56,13 +56,14 @@ class Fixture(Probe):
         if not Path('/sys/fs/cgroup/cgroup.controllers').is_file():
             raise RuntimeError('cgroup v2 is required')
         memory = host_memory()
+        self.fixture_parent = Path(os.environ.get('SANDCRAB_PROBE_ROOT', '/var/lib'))
         self.pool_bytes = 512 * 1024**2 if smoke else 8 * 1024**3
-        free = shutil.disk_usage('/var/lib').free
+        free = shutil.disk_usage(self.fixture_parent).free
         if budget < 512 * 1024**2 or memory['MemAvailable'] < budget + 512 * 1024**2:
             raise RuntimeError('Insufficient host memory outside the requested benchmark slice')
         if free < self.pool_bytes + 2 * 1024**3 or other_loads():
             raise RuntimeError('Insufficient free storage or another load controller is active')
-        if any(Path('/var/lib').glob('poketto-java-native-*')) or any(Path('/var/lib').glob('sandcrab-native-*')):
+        if any(self.fixture_parent.glob('poketto-java-native-*')) or any(self.fixture_parent.glob('sandcrab-native-*')):
             raise RuntimeError('Another native fixture directory is present; reconcile it before measuring')
         if call('systemctl', 'list-units', '--all', '--plain', '--no-legend', 'sandcrab-probe-*.service').stdout.strip():
             raise RuntimeError('Another native fixture is present; reconcile it before measuring')
@@ -81,7 +82,7 @@ class Fixture(Probe):
             try:
                 root = getattr(self, 'root', None)
                 if root is not None:
-                    if root.parent != Path('/var/lib') or not root.name.startswith('sandcrab-native-') or root.is_symlink():
+                    if root.parent != self.fixture_parent or not root.name.startswith('sandcrab-native-') or root.is_symlink():
                         raise RuntimeError('Refusing to remove an unexpected partial fixture')
                     shutil.rmtree(root)
             finally:

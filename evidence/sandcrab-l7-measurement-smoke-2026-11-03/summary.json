@@ -1,0 +1,45 @@
+{
+  "milestone": "L7 template measurement entrance",
+  "scope": "Local Linux smoke through actual template API and overlays; no canonical capacity result",
+  "baseRevision": "ef83c863a914b733db3576c073a7f1bf464d52e2",
+  "binarySha256": "68ee0382b639e89cc5c67676f83019e4fabcbfd5eb827764a3e92281a7c0a483",
+  "linuxComponentTestsPassed": 39,
+  "smokes": {
+    "density": {
+      "agents": 2,
+      "markdownFiles": 400,
+      "verdict": "PASS"
+    },
+    "pageCache": {
+      "readers": 10,
+      "markdownFiles": 400,
+      "cases": [
+        "reflink",
+        "shared-template"
+      ],
+      "corpusCopyUpObserved": false
+    },
+    "footprint": {
+      "idleCounts": [
+        1
+      ],
+      "finiteCounts": [
+        1
+      ]
+    },
+    "coldStart": {
+      "tracer": "PASS",
+      "trials": [
+        "COMPLETE",
+        "COMPLETE",
+        "COMPLETE"
+      ]
+    }
+  },
+  "apiCleanup": "PASS",
+  "hostCleanup": "PASS",
+  "protocolSha256": "c028f90a704556b0b95eb9b2d9d8e06065f4a3d7752496e9d3520ef4b569bc35",
+  "capacityMeasured": false,
+  "fullCheckpoint": "Pending the L7 measurement workflow on 8, 5 and 4 decimal GB hosts",
+  "ciWorkflow": "https://github.com/core607/poketto/actions/workflows/sandcrab-density.yml"
+}

@@ -72,6 +72,13 @@ command mix, scoring and first-failure rule are unchanged. Receipts identify the
 backend and actual enforcement, and retain public usage observations before and
 after each command window. These extra reads are outside the timed workload.
 
+`--workspace template` imports the same generated corpus through the public
+template API and opens an independent overlay for each agent. Preparation verifies
+the imported manifest, Git commit and file count through a session. It creates no
+volume clones; receipts identify the template and record upper usage outside the
+timed loop. The archive, corpus and request bounds apply during preparation too.
+The original `--workspace volume` path remains available for W0 comparisons.
+
 ```sh
 sudo python3 experiments/sandcrab-density/density.py --smoke \
   --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
@@ -90,12 +97,25 @@ these results to W0; there is no intermediate capacity run. Commit a
 in its artifacts. Record a performance miss in a follow-up issue.
 Select `storage=plain` for the periodic-accounting variant. Footprint, cache and
 startup-trace collectors keep their XFS fixture; only density selects that backend.
+L7 and L9 select template workspaces in density, empty template overlays in the
+idle/startup collectors, and real template bases in the cache comparison. L2 keeps
+the volume, ephemeral-session and host-read-mount paths. These choices appear in
+each receipt; compare identical corpus, workload and resource budgets across them.
+
+`SANDCRAB_PROBE_ROOT` selects an existing protected fixture parent, useful when a
+container's writable layer cannot host overlays. Preflight checks free space and
+fixture directories there, and still rejects active native units and competing
+load controllers. The selected parent must already provide a supported filesystem.
 
 `cold_start.py --volume` traces attachment of a prepared empty XFS volume, including
 its validation helpers. The default traces an ephemeral workspace. Both include
 observer overhead; neither replaces the density driver's untraced cold-start metric.
 Add `--syscalls` for at most 256 syscall numbers, durations and return values per
 launcher before placement; arguments and file contents are not collected.
+Use `cold_start.py --template` to trace a prepared empty template; it is mutually
+exclusive with `--volume`. `footprint.py --workspace template` records daemon idle
+samples before import and a separate empty-template baseline for per-session
+deltas. Finite runs retain their ordinary ephemeral workspace.
 
 The JSON receipt includes source and binary identities, effective resource limits,
 all stage attempts, kernel counters, refusal codes and cleanup results. The sibling
@@ -163,7 +183,10 @@ sessions over distinct reflink volumes with ten sessions reading one shared tree
 The corpus and Git commit must match. Public API commands read and checksum every
 Markdown file; the shared tree is mounted through the profile's read-only paths,
 with that mount property checked inside the sandbox. This measures the existing
-read-mount mechanism, not a template API.
+read-mount mechanism. `page_cache.py --shared template` instead imports the same
+corpus and reads it through ten private overlays. It observes the single physical
+lower tree with mincore and verifies that the read commands copied up no corpus
+data. The other case still uses ten distinct reflink volumes.
 
 The controller flushes and advises eviction only for the synthetic document files,
 then uses root `mincore` observations to require a cold dataset before each case.

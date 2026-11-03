@@ -1,4 +1,8 @@
 import asyncio
+import io
+from pathlib import Path
+import tarfile
+import tempfile
 import unittest
 
 from engine import Engine
@@ -119,6 +123,47 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         result = await engine.cleanup()
         self.assertEqual(result['result'], 'FAIL')
         self.assertEqual(result['failures'], ['INVENTORY_NOT_EMPTY', 'INVENTORY_NOT_EMPTY'])
+
+    async def test_template_session_requires_readback_of_the_same_base(self):
+        identity = 'a' * 64
+        engine, _, requests = self.engine([(202, {'state': 'starting'}),
+                                           (200, {'state': 'ready', 'templateId': 'b' * 64})])
+        with self.assertRaisesRegex(RuntimeError, 'requested template'):
+            await engine.session(template=identity)
+        self.assertEqual(requests[0][2]['templateId'], identity)
+        self.assertNotIn('volumeId', requests[0][2])
+        self.assertEqual(len(engine.sessions), 1)
+
+    async def test_import_uses_relative_tar_and_cleanup_deletes_only_owned_templates(self):
+        identity = 'a' * 64
+        engine, events, requests = self.engine([(200, {'deleted': True}), (200, {'ids': []}),
+                                               (200, {'ids': []}), (200, {'volumes': []}), (200, {'templates': []})])
+        async def upload(body):
+            with tarfile.open(fileobj=io.BytesIO(body)) as archive:
+                self.assertEqual(archive.getnames(), ['data.txt'])
+                self.assertEqual(archive.extractfile('data.txt').read(), b'fixture')
+            return 200, {'id': identity}
+        engine.client.import_template = upload
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / 'data.txt').write_bytes(b'fixture')
+            self.assertEqual(await engine.template(source), identity)
+        self.assertEqual(engine.templates, {identity})
+        self.assertEqual((await engine.cleanup())['result'], 'PASS')
+        self.assertEqual(requests[0][:2], ('DELETE', '/v1/templates/' + identity))
+        self.assertEqual(engine.templates, set())
+        self.assertEqual([event for event, _ in events], ['template-import-created', 'template-import-completed'])
+
+    async def test_lost_import_ack_does_not_adopt_or_delete_an_unknown_catalog_object(self):
+        engine, _, requests = self.engine([(200, {'ids': []}), (200, {'ids': []}),
+                                           (200, {'volumes': []}), (200, {'templates': [{'id': 'a' * 64}]})])
+        async def upload(body):
+            raise ConnectionResetError()
+        engine.client.import_template = upload
+        with self.assertRaises(ConnectionResetError):
+            await engine.template()
+        self.assertEqual((await engine.cleanup())['failures'], ['INVENTORY_NOT_EMPTY'])
+        self.assertTrue(all(method == 'GET' for method, _, _ in requests))
 
 
 if __name__ == '__main__':

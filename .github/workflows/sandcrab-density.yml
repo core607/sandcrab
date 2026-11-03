@@ -50,6 +50,10 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 85
+    env:
+      WORKSPACE_MODE: ${{ inputs.checkpoint == 'L2' && 'volume' || 'template' }}
+      SESSION_MODE: ${{ inputs.checkpoint == 'L2' && 'ephemeral' || 'template' }}
+      SHARED_MODE: ${{ inputs.checkpoint == 'L2' && 'read-mount' || 'template' }}
     strategy:
       fail-fast: false
       matrix:
@@ -74,22 +78,24 @@ jobs:
         env:
           STORAGE_MODE: ${{ inputs.storage || 'xfs' }}
         run: |
-          sudo python3 experiments/sandcrab-density/density.py --smoke --storage "$STORAGE_MODE" \
+          sudo python3 experiments/sandcrab-density/density.py --smoke --storage "$STORAGE_MODE" --workspace "$WORKSPACE_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/smoke.json
       - name: Check the native footprint entry path
         run: |
-          sudo python3 experiments/sandcrab-density/footprint.py --smoke \
+          sudo python3 experiments/sandcrab-density/footprint.py --smoke --workspace "$SESSION_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/footprint-smoke.json
       - name: Check the page-cache comparison entry path
         run: |
-          sudo python3 experiments/sandcrab-density/page_cache.py --smoke \
+          sudo python3 experiments/sandcrab-density/page_cache.py --smoke --shared "$SHARED_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/cache-smoke.json
       - name: Trace native session startup
         run: |
-          sudo python3 experiments/sandcrab-density/cold_start.py --smoke \
+          extra=()
+          if [ "$SESSION_MODE" = template ]; then extra+=(--template); fi
+          sudo python3 experiments/sandcrab-density/cold_start.py --smoke "${extra[@]}" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/cold-start-smoke.json
       - name: Run the canonical protocol in the bounded slice
@@ -97,28 +103,30 @@ jobs:
           MEMORY_GB: ${{ matrix.budget }}
           STORAGE_MODE: ${{ inputs.storage || 'xfs' }}
         run: |
-          sudo python3 experiments/sandcrab-density/density.py --budget "$MEMORY_GB" --storage "$STORAGE_MODE" \
+          sudo python3 experiments/sandcrab-density/density.py --budget "$MEMORY_GB" --storage "$STORAGE_MODE" --workspace "$WORKSPACE_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/density.json
       - name: Measure fixed costs at 1, 10 and 50
         env:
           MEMORY_GB: ${{ matrix.budget }}
         run: |
-          sudo python3 experiments/sandcrab-density/footprint.py --budget "$MEMORY_GB" \
+          sudo python3 experiments/sandcrab-density/footprint.py --budget "$MEMORY_GB" --workspace "$SESSION_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/footprint.json
       - name: Compare ten reflink copies with a shared read-only tree
         env:
           MEMORY_GB: ${{ matrix.budget }}
         run: |
-          sudo python3 experiments/sandcrab-density/page_cache.py --budget "$MEMORY_GB" \
+          sudo python3 experiments/sandcrab-density/page_cache.py --budget "$MEMORY_GB" --shared "$SHARED_MODE" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/cache.json
       - name: Record repeated startup timelines
         env:
           MEMORY_GB: ${{ matrix.budget }}
         run: |
-          sudo python3 experiments/sandcrab-density/cold_start.py --budget "$MEMORY_GB" \
+          extra=()
+          if [ "$SESSION_MODE" = template ]; then extra+=(--template); fi
+          sudo python3 experiments/sandcrab-density/cold_start.py --budget "$MEMORY_GB" "${extra[@]}" \
             --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-density/tools \
             --report /var/lib/sandcrab-density/results/cold-start.json
       - name: Expose receipts to the collector

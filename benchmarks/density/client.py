@@ -19,16 +19,22 @@ class Client:
         self.poll_seconds = settings['observationPollSeconds']
 
     async def request(self, method, route, value=None):
-        if method not in ('GET', 'POST') or not route.startswith('/v1/') or any(c in route for c in '\r\n '):
+        if method not in ('GET', 'POST', 'DELETE') or not route.startswith('/v1/') or any(c in route for c in '\r\n '):
             raise ValueError('Invalid native request')
         body = json.dumps(value, separators=(',', ':'), ensure_ascii=True).encode() if value is not None else b''
-        if len(body) > 65536 or (method == 'GET' and body):
+        if len(body) > 65536 or (method in ('GET', 'DELETE') and body):
             raise ValueError('Native JSON request exceeds its contract')
         # Deliberately use one connection per request. Thinking agents must not send a
         # command on a connection that may have crossed the server's idle deadline.
         return await asyncio.wait_for(self._exchange(method, route, body), self.timeout)
 
-    async def _exchange(self, method, route, body):
+    async def import_template(self, body):
+        if not isinstance(body, bytes) or not 0 < len(body) <= 67108864:
+            raise ValueError('Template tar exceeds the fixture transfer bound')
+        return await asyncio.wait_for(self._exchange('POST', '/v1/templates?profile=python', body,
+                                                    content_type='application/x-tar'), 75)
+
+    async def _exchange(self, method, route, body, content_type='application/json'):
         writer = None
         try:
             reader, writer = await asyncio.open_unix_connection(self.path, limit=8192)
@@ -36,7 +42,7 @@ class Client:
             _, uid, _ = struct.unpack('3i', transport.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if uid != self.peer_uid:
                 raise ProtocolError('Unexpected service peer')
-            headers = (f'{method} {route} HTTP/1.1\r\nHost: sandcrab\r\nContent-Type: application/json\r\n'
+            headers = (f'{method} {route} HTTP/1.1\r\nHost: sandcrab\r\nContent-Type: {content_type}\r\n'
                        f'Content-Length: {len(body)}\r\nConnection: close\r\n\r\n').encode()
             writer.write(headers + body)
             await writer.drain()

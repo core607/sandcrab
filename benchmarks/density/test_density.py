@@ -97,6 +97,28 @@ class StageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retained[0]['status'], 'SETTING_UP')
         self.assertNotIn('score', retained[0])
 
+    async def test_template_stage_attaches_one_base_without_cloning_volumes(self):
+        engine = AsyncMock()
+        engine.session.side_effect = [('one-session', 20), NativeFailure(429, {'error': {'code': 'SESSION_CAPACITY'}})]
+        engine.cleanup.return_value = {'result': 'PASS', 'failures': []}
+        engine.executing = {}
+        async def observe(method, route):
+            return 200, ({'storage': {'poolUsage': {}}} if route == '/v1/info'
+                         else {'templates': [{'id': 'base'}]} if route == '/v1/templates'
+                         else {'storageUsage': {'allocatedBytes': 4096}})
+        engine.call.side_effect = observe
+        class Metrics:
+            def sample(self, executing=0):
+                return {'oomKills': 0}
+        result = await stage(engine, Metrics(), 'base', 3, 0, load(), 400, lambda value: None,
+                             workspace_mode='template')
+        self.assertEqual(result['score']['verdict'], 'FAIL')
+        self.assertEqual(result['score']['agentsAdmitted'], 1)
+        engine.volume.assert_not_awaited()
+        engine.session.assert_any_await(template='base')
+        engine.cleanup.assert_awaited_once_with(keep_templates=('base',))
+        self.assertEqual(result['storageAfterCommands']['templates']['templates'], [{'id': 'base'}])
+
 
 if __name__ == '__main__':
     unittest.main()
