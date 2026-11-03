@@ -28,6 +28,7 @@ pub struct Request<'a> {
     pub argv: Vec<String>,
     pub read_only: Vec<PathBuf>,
     pub writable: Vec<PathBuf>,
+    pub overlay: Option<crate::overlay::Spec>,
     pub timeout: Duration,
     pub output_limit: usize,
 }
@@ -43,6 +44,7 @@ struct Record {
     argv: Vec<String>,
     read_only: Vec<PathBuf>,
     writable: Vec<PathBuf>,
+    overlay: Option<crate::overlay::Spec>,
 }
 
 pub struct Context<'a> {
@@ -78,7 +80,7 @@ impl Context<'_> {
         input: Input,
         request: Request<'_>,
     ) -> (io::Result<job::Finished>, io::Result<()>) {
-        if !["file", "copy"].contains(&request.kind) || !uuid(request.id) {
+        if !["file", "copy", "overlay"].contains(&request.kind) || !uuid(request.id) {
             return (Err(invalid("Invalid helper identity")), Ok(()));
         }
         let name = format!("{}-{}", request.kind, request.id);
@@ -102,6 +104,7 @@ impl Context<'_> {
                 argv: request.argv,
                 read_only: request.read_only,
                 writable: request.writable,
+                overlay: request.overlay,
             };
             let path = root.join("launch.json");
             OpenOptions::new()
@@ -155,6 +158,9 @@ pub fn launch(path: &Path) -> io::Result<()> {
         || record.argv.first().map(Path::new) != Some(executable.as_path())
         || !matches!(record.argv.get(1).map(String::as_str), Some("__file") if record.argv.len() == 3)
             && !matches!(record.argv.get(1).map(String::as_str), Some("__copy-tree") if record.argv.len() == 5)
+            && !matches!(record.argv.get(1).map(String::as_str),Some("__overlay-export") if record.argv.len()==2)
+        || record.overlay.is_some()
+            != (record.argv.get(1).map(String::as_str) == Some("__overlay-export"))
         || record
             .read_only
             .iter()
@@ -164,6 +170,18 @@ pub fn launch(path: &Path) -> io::Result<()> {
         return Err(invalid("Invalid trusted helper authority"));
     }
     sandcrab_core::process::enter(&Cgroup::open(&record.cgroup)?, 0, 0, record.parent_pid)?;
+    if record.overlay.is_some() {
+        let input = io::stdin();
+        if rustix::net::sockopt::socket_type(&input)? != rustix::net::SocketType::DGRAM {
+            return Err(invalid("Invalid overlay channel type"));
+        }
+        let peer = rustix::net::sockopt::socket_peercred(&input)?;
+        if !peer.uid.is_root()
+            || u32::try_from(peer.pid.as_raw_pid()).ok() != Some(record.parent_pid)
+        {
+            return Err(invalid("Invalid overlay channel owner"));
+        }
+    }
     sandcrab_launch::trusted_executable(&executable).map_err(io::Error::other)?;
     let bwrap = sandcrab_launch::verify_bundled_bwrap(&executable).map_err(io::Error::other)?;
     let seccomp = sandcrab_launch::Seccomp::new().map_err(io::Error::other)?;
@@ -179,14 +197,17 @@ pub fn launch(path: &Path) -> io::Result<()> {
         "enableWeakerNestedSandbox":false});
     let mut arguments = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &record.argv)
         .map_err(io::Error::other)?;
-    // Host UID mappings are required for chown of staged user files. Unlike a
-    // workload, this fixed root helper retains exactly the old three capabilities.
+    // Host UID mappings permit chown of staged user files. Fixed file/copy
+    // helpers retain three capabilities; fixed overlay export also needs SYS_ADMIN.
     arguments.retain(|argument| argument != "--unshare-user");
     let boundary = arguments
         .iter()
         .position(|argument| argument == "--remount-ro")
         .ok_or_else(|| invalid("Missing helper root boundary"))?;
     let mut grants = Vec::<String>::new();
+    if let Some(overlay) = &record.overlay {
+        grants.extend(overlay.arguments()?);
+    }
     for capability in ["CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"] {
         grants.extend(["--cap-add".into(), capability.into()]);
     }

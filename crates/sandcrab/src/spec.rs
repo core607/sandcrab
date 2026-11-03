@@ -27,6 +27,36 @@ pub fn document(capability: Option<&str>) -> Value {
     let Some(capability) = capability else {
         return document;
     };
+    // The response still carries every field. A capability view documents only
+    // common discovery and its own metadata; the complete schema stays above.
+    let metadata = match capability {
+        "sessions" | "volumes" => "storage",
+        "files" | "uploads" => "files",
+        "events" => "events",
+        "calls" => "hostCalls",
+        _ => "",
+    };
+    let fields = [
+        "apiVersion",
+        "serverId",
+        "capabilities",
+        "profiles",
+        "limits",
+        metadata,
+    ];
+    let info = &mut document["components"]["schemas"]["Info"];
+    info["additionalProperties"] = json!(true);
+    info["description"] = json!(
+        "Common discovery and selected capability metadata. The response includes further fields; /v1/openapi describes them all."
+    );
+    info["properties"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|name, _| fields.contains(&name.as_str()));
+    info["required"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|name| fields.contains(&name.as_str().unwrap()));
     let prefix = format!("/v1/{capability}");
     document["paths"]
         .as_object_mut()
@@ -80,6 +110,9 @@ mod tests {
     use super::*;
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
+        let complete = document(None);
+        let complete_info = &complete["components"]["schemas"]["Info"];
+        assert_eq!(complete_info["additionalProperties"], false);
         for capability in [
             "runs",
             "sessions",
@@ -106,6 +139,20 @@ mod tests {
                 capability == "files"
             );
             assert!(serde_json::to_vec(&document).unwrap().len() < 18000);
+            let info = &document["components"]["schemas"]["Info"];
+            assert_eq!(info["additionalProperties"], true);
+            for (name, schema) in info["properties"].as_object().unwrap() {
+                assert_eq!(schema, &complete_info["properties"][name]);
+            }
+            for name in [
+                "apiVersion",
+                "serverId",
+                "capabilities",
+                "profiles",
+                "limits",
+            ] {
+                assert!(info["required"].as_array().unwrap().contains(&json!(name)));
+            }
             for requirement in document["security"].as_array().unwrap() {
                 for name in requirement.as_object().unwrap().keys() {
                     assert!(

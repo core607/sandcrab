@@ -98,7 +98,7 @@ class PlainStorageProbe(VolumeProbe):
         parent = self.session_open()
         workspace = self.session_workspace(parent)
         assert workspace.stat().st_dev == self.socket.parent.stat().st_dev
-        assert workspace.stat().st_dev != (self.socket.parent / 'jobs' / parent['id']).stat().st_dev
+        assert workspace.stat().st_dev != self.daemon_path(self.socket.parent / 'jobs' / parent['id']).stat().st_dev
         request, result = self.session_exec(parent, 'printf disk-data > keep.txt')
         assert result['state'] == 'succeeded', result
         self.forget(request)

@@ -31,7 +31,7 @@ fn child_role(role: Role, name: &str) -> io::Result<Role> {
         Role::Namespace if name == "workloads" => Ok(Role::Workloads),
         Role::Workloads if name.strip_prefix("session-").is_some_and(uuid) => Ok(Role::Session),
         Role::Workloads
-            if ["run-", "file-", "copy-"]
+            if ["run-", "file-", "copy-", "overlay-"]
                 .iter()
                 .any(|prefix| name.strip_prefix(prefix).is_some_and(uuid)) =>
         {

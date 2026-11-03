@@ -45,7 +45,10 @@ reproduction instructions. The native daemon is excluded from the Poketto worker
 Startup and every launch verify the helper beside the resolved executable,
 including its protected path and pinned SHA-256. A missing, modified or mismatched
 helper refuses execution. The host needs writable delegated cgroup v2,
-unprivileged user namespaces and `mount`/`umount`.
+unprivileged user namespaces, Linux 5.11+ and `mount`/`umount`.
+Startup tests overlay mounting and copy-up on `runtime_root` storage before
+serving clients; use a supported local filesystem such as ext4 or XFS. Unsupported
+mount syscalls, helpers or backing storage refuse startup. There is no copy fallback.
 [Tool preparation](../../prepare-tools.sh) supplies optional workload utilities; the helper
 comes from the release. The seccomp filter is compiled into Sandcrab, which needs
 no Node.js, npm or SRT runtime.
@@ -119,8 +122,9 @@ command's exit result. Inspect or forget the printed ID instead of rerunning it.
 Import a plain tar archive or an already unpacked OCI root tree through the
 authenticated API. Sandcrab stores each normalized tree once beneath
 `runtime_root/templates`; published objects survive daemon restart and remain
-until explicitly deleted. The catalog and import commands are available; session
-overlay attachment and rootfs execution remain under the
+until explicitly deleted. Sessions attach a template as a shared read-only base
+with their own disposable writable layer at `/workspace`. Rootfs execution and
+difference export remain under the
 [lightweight service proposal](../../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md).
 
 ```sh
@@ -128,6 +132,7 @@ sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --
 sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --directory unpacked-image/rootfs
 sandcrab template list --socket /var/lib/sandcrab-demo/runtime/control.sock
 sandcrab template get --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
+sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --template SHA256
 sandcrab template delete --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
 ```
 
@@ -138,6 +143,23 @@ objects and a `nextAfter` cursor; continue with `?after=SHA256`.
 The CLI packs a directory locally; it neither contacts an image registry nor
 interprets OCI layer archives. Supply the merged, unpacked root tree. Coordinate
 source writers before packaging it.
+
+Set `templateId` on `POST /v1/sessions`, or use `session open --template`.
+It is mutually exclusive with `volumeId` and requires the template's execution
+UID/GID to match the selected profile. Named contexts share the parent's view;
+independent parent sessions share only the immutable base. The daemon creates
+one overlay mount per parent in its private mount namespace. File APIs and plain
+tar snapshots operate on the merged view. Temporary-storage accounting charges
+the writable layer and overlay work directory; the template pool owns the base.
+These periodic limits cannot prevent transient overshoot.
+
+An attached template returns `TEMPLATE_BUSY` on deletion. Closing contains all
+contexts and file helpers, unmounts the view and deletes its writable data before
+releasing the template pin. Unconfirmed cleanup retains the pin until recovery.
+Restart contains prior workloads and removes disposable layers while retaining
+templates. Before a 0.x upgrade from a daemon with host-visible runtime mounts,
+stop and reconcile those mounts with that binary; startup refuses existing
+submounts beneath `runtime_root`.
 
 SHA-256 identifies normalized paths, contents, permission bits, symlink targets,
 hard-link topology and the selected profile's execution UID/GID. Archive order,
@@ -229,7 +251,7 @@ account can connect to the socket. TCP uses the bearer credential above.
 | Request | Result |
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
-| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files`, `uploads`, `events` or `calls` selects a bounded view with its referenced schemas |
+| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files`, `uploads`, `events`, `calls` or `templates` selects a bounded view with its referenced schemas. Views describe common discovery fields and selected capability metadata; the response also carries the other fields documented by the full contract. |
 | `GET /v1/runs` or `GET /v1/sessions` | List up to 64 retained IDs, with `serverId` and `nextAfter`; continue with `?after=UUID` |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
@@ -621,13 +643,17 @@ usability, OpenSandbox compatibility or Poketto adoption. Injected cleanup failu
 must retain session admission, and a launcher stopped before workload setup must
 remain cancellable in its leaf. The external `fault_probe.py` controller uses kernel fork/exec/exit
 stops on this fixture's daemon; it is not installed with the service.
+Probe directories default to `/var/lib`. `SANDCRAB_PROBE_ROOT` selects a protected,
+root-owned parent on an overlay-capable filesystem. Container fixtures need a data
+volume for that parent; the Docker writable layer may reject overlay uppers.
 `delegation_probe.py` also takes `--parent CGROUP`, an existing parent delegating
 cpu, memory and pids. It starts the daemon directly, without service-manager calls,
 and checks limits, private temporary storage, recovery and ownership refusal.
 For its disposable container mode, run the probe as PID 1 with
 `--initialize-container --parent /sys/fs/cgroup`. The tested Docker bounds are
 `--privileged --cgroupns private --memory 512m --memory-swap 512m --cpus 2
---pids-limit 512 --network none`, with `/run` and `/tmp` as 64 MiB tmpfs mounts.
+--pids-limit 512 --network none --mount type=volume,destination=/var/lib`, with
+`/run` and `/tmp` as 64 MiB tmpfs mounts.
 Copy the probe sources, binary and prepared tools into root-owned container paths;
 no host cgroup bind mount is used. This acceptance fixture is separate from the
 release installer/container workstream.
@@ -651,5 +677,9 @@ ordinary caller/guest CLI use, isolation, bounded admission and failure recovery
 request refusal before admission, and the ordinary run/session CLI options.
 `contexts_probe.py` uses those arguments to verify independent shell state,
 shared budgets, parent expiry and child containment faults; CI retains its receipt.
+`template_probe.py` checks immutable imports, publication faults and admission
+recovery. `overlay_probe.py` adds an owned XFS fixture for shared views, template
+pins, CLI attachment, unsupported mount syscalls and crash recovery; it requires
+`xfsprogs`. Both use the same binary/tools/report arguments.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

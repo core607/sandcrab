@@ -14,7 +14,10 @@ use std::{
     io,
     os::unix::fs::{DirBuilderExt, MetadataExt},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 pub const ENTRY_LIMIT: usize = 100_000;
@@ -23,6 +26,7 @@ struct State {
     trees: BTreeMap<String, Tree>,
     active: Option<String>,
     fenced: bool,
+    pins: BTreeMap<String, usize>,
 }
 pub struct Store {
     root: PathBuf,
@@ -30,6 +34,47 @@ pub struct Store {
     max_count: usize,
     pool_bytes: u64,
     state: Mutex<State>,
+}
+
+pub struct Finished {
+    /// Helpers are contained and incoming staging has been removed or published.
+    pub cleanup_complete: bool,
+    pub catalog_available: bool,
+}
+
+/// Before setup, drop releases the pin. Once a mount may exist, only confirmed
+/// workspace cleanup releases it; losing an owner preserves the pin until restart.
+pub struct Lease {
+    store: Arc<Store>,
+    id: String,
+    started: AtomicBool,
+    released: AtomicBool,
+}
+impl Lease {
+    pub fn lower(&self) -> PathBuf {
+        self.store.root.join("objects").join(&self.id).join("lower")
+    }
+    pub fn start(&self) {
+        self.started.store(true, Ordering::SeqCst);
+    }
+    pub fn release(&self) {
+        if !self.released.swap(true, Ordering::SeqCst) {
+            let mut state = self.store.state.lock().unwrap();
+            if let Some(count) = state.pins.get_mut(&self.id) {
+                *count -= 1;
+                if *count == 0 {
+                    state.pins.remove(&self.id);
+                }
+            }
+        }
+    }
+}
+impl Drop for Lease {
+    fn drop(&mut self) {
+        if !self.started.load(Ordering::SeqCst) {
+            self.release();
+        }
+    }
 }
 
 fn directory(path: &Path) -> io::Result<()> {
@@ -117,6 +162,7 @@ impl Store {
                 trees,
                 active: None,
                 fenced: false,
+                pins: BTreeMap::new(),
             }),
         }))
     }
@@ -193,6 +239,33 @@ impl Store {
             .get(id)
             .cloned()
             .ok_or((404, "TEMPLATE_NOT_FOUND"))
+    }
+
+    pub fn acquire(self: &Arc<Self>, id: &str, profile: &Profile) -> Result<Lease> {
+        let mut state = self.state.lock().unwrap();
+        if state.fenced {
+            return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
+        }
+        let tree = state.trees.get(id).ok_or((404, "TEMPLATE_NOT_FOUND"))?;
+        if (tree.uid, tree.gid) != (profile.uid, profile.gid) {
+            return Err((409, "TEMPLATE_IDENTITY_MISMATCH"));
+        }
+        self.verify()
+            .map_err(|_| (503, "TEMPLATE_STATE_UNCERTAIN"))?;
+        if checked_tree(&self.root.join("objects").join(id))
+            .ok()
+            .as_ref()
+            != Some(tree)
+        {
+            return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
+        }
+        *state.pins.entry(id.into()).or_default() += 1;
+        Ok(Lease {
+            store: self.clone(),
+            id: id.into(),
+            started: AtomicBool::new(false),
+            released: AtomicBool::new(false),
+        })
     }
 
     pub fn begin(&self, profile_name: &str, profile: &Profile) -> Result<Stage> {
@@ -291,11 +364,14 @@ impl Store {
         Ok(tree)
     }
 
-    pub fn finish(&self, stage: &Stage, contained: bool) -> bool {
+    pub fn finish(&self, stage: &Stage, contained: bool) -> Finished {
         let mut state = self.state.lock().unwrap();
         if !contained || state.active.as_ref() != Some(&stage.id) {
             state.fenced = true;
-            return false;
+            return Finished {
+                cleanup_complete: false,
+                catalog_available: false,
+            };
         }
         let clean = (|| -> io::Result<()> {
             self.verify()?;
@@ -313,10 +389,16 @@ impl Store {
         })();
         if clean.is_err() {
             state.fenced = true;
-            return false;
+            return Finished {
+                cleanup_complete: false,
+                catalog_available: false,
+            };
         }
         state.active = None;
-        !state.fenced
+        Finished {
+            cleanup_complete: true,
+            catalog_available: !state.fenced,
+        }
     }
 
     pub fn delete(&self, id: &str) -> Result<()> {
@@ -326,6 +408,9 @@ impl Store {
         }
         if !state.trees.contains_key(id) {
             return Err((404, "TEMPLATE_NOT_FOUND"));
+        }
+        if state.pins.get(id).copied().unwrap_or(0) > 0 {
+            return Err((409, "TEMPLATE_BUSY"));
         }
         let deleted = (|| -> io::Result<()> {
             self.verify()?;
@@ -413,18 +498,18 @@ mod tests {
         profile.gid = 65534;
         let (stage, tree) = staged(&store, profile, b"retained");
         assert_eq!(store.publish(&stage, tree.clone()).unwrap(), tree);
-        assert!(store.finish(&stage, true));
+        assert!(store.finish(&stage, true).cleanup_complete);
         let (stage, duplicate) = staged(&store, profile, b"retained");
         assert_eq!(duplicate, tree);
         assert_eq!(store.publish(&stage, duplicate).unwrap(), tree);
-        assert!(store.finish(&stage, true));
+        assert!(store.finish(&stage, true).cleanup_complete);
         assert_eq!(store.list("")["pool"]["count"], 1);
         let (stage, another) = staged(&store, profile, b"another");
         assert_eq!(
             store.publish(&stage, another).unwrap_err(),
             (507, "TEMPLATE_CAPACITY")
         );
-        assert!(!store.finish(&stage, false));
+        assert!(!store.finish(&stage, false).cleanup_complete);
         assert!(store.stage(&stage).exists());
         assert!(store.begin("python", profile).is_err());
         drop(store);
@@ -463,6 +548,16 @@ mod tests {
             store.get(&tree.id).unwrap_err(),
             (404, "TEMPLATE_NOT_FOUND")
         );
+        let (stage, candidate) = staged(&store, profile, b"fault");
+        fs::create_dir(store.stage(&stage).join("lower")).unwrap();
+        assert_eq!(
+            store.publish(&stage, candidate).unwrap_err(),
+            (503, "TEMPLATE_PUBLICATION_UNKNOWN")
+        );
+        let finished = store.finish(&stage, true);
+        assert!(finished.cleanup_complete);
+        assert!(!finished.catalog_available);
+        assert!(!store.stage(&stage).exists());
         let limited = Store::open(&runtime, store.owner.clone(), 4, 1).unwrap();
         let (stage, tiny) = staged(&limited, profile, b"a");
         assert_eq!(tiny.bytes, 1);
@@ -471,7 +566,7 @@ mod tests {
             limited.publish(&stage, tiny).unwrap_err(),
             (507, "TEMPLATE_CAPACITY")
         );
-        assert!(limited.finish(&stage, true));
+        assert!(limited.finish(&stage, true).cleanup_complete);
         assert_eq!(runtime.parent(), Some(Path::new("/source")));
         fs::remove_dir_all(runtime).unwrap();
     }

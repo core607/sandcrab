@@ -42,7 +42,9 @@ and add `--security-opt apparmor=sandcrab-service` to the following invocation.
 
 ```sh
 docker run -d --name sandcrab --privileged --cgroupns=private --network=none \
-  --memory=512m --memory-swap=512m --cpus=2 --pids-limit=512 "$SANDCRAB_IMAGE"
+  --memory=512m --memory-swap=512m --cpus=2 --pids-limit=512 \
+  --mount type=volume,source=sandcrab-data,target=/var/lib/sandcrab \
+  --mount type=volume,source=sandcrab-config,target=/etc/sandcrab "$SANDCRAB_IMAGE"
 docker exec sandcrab sandcrab doctor
 docker exec sandcrab sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- id -u
 ```
@@ -52,5 +54,7 @@ first boot. Docker grants the **daemon container** administrative capabilities
 to manage mounts and cgroups; run it only on a trusted host. The workloads use
 the non-root profile. No host cgroup bind mount, Docker socket or systemd is
 required. The isolated network keeps loopback HTTP inside the container.
-Mount dedicated volumes at `/var/lib/sandcrab` and `/etc/sandcrab` to retain
-state and credentials across container replacement.
+The data volume supplies an overlay-capable backing filesystem; the image's
+writable overlay layer is unsuitable for writable template layers. Startup tests
+the selected filesystem and refuses unsupported storage. The two dedicated
+volumes retain data and credentials across container replacement.

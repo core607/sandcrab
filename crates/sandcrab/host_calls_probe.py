@@ -488,7 +488,9 @@ for child in children: child.wait()
         with Calls(self.socket, run) as events:
             request = events.until('call')
             pending = self.socket.parent / 'jobs' / run['id'] / 'calls' / 'responses' / (request['requestId'] + '.pending')
-            assert pending.resolve().is_relative_to(self.socket.parent / 'jobs') and not pending.exists()
+            assert pending.is_relative_to(self.socket.parent / 'jobs')
+            pending = self.daemon_path(pending)
+            assert not pending.exists()
             # An owned fixture directory forces publication failure without weakening permissions.
             pending.mkdir()
             result = self.reply(run, request, b'caller result')

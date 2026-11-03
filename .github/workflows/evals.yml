@@ -101,6 +101,11 @@ jobs:
         run: |
           sudo python3 executor-service/rust/sandcrab/contexts_probe.py --binary build/executor-service/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/contexts.json
+      - name: Check shared template overlays and contained recovery
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo python3 executor-service/rust/sandcrab/overlay_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/overlays.json
       - name: Check direct root deployment through delegated cgroups
         if: inputs.evidence_mode != 'model'
         run: |
@@ -140,7 +145,7 @@ jobs:
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
           fi
-          for name in contexts native delegation retention streaming files templates; do
+          for name in contexts native delegation retention streaming files templates overlays; do
             for suffix in json diagnostic.txt; do
               if [ -f "/var/lib/sandcrab-evals/sdk/$name.$suffix" ]; then
                 sudo install -d -m 755 /var/lib/sandcrab-evals/results

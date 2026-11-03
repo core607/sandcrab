@@ -1,6 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 //! Linux process creation directly into a caller-owned cgroup v2 leaf. This
-//! boundary owns only spawn, stdio and the child handle; callers own identity,
+//! boundary owns spawn, stdio, the child handle and daemon mount-namespace entry; callers own identity,
 //! isolation, resource limits, deadlines and descendant containment.
 use rustix::{
     fs::{Mode, OFlags, open},
@@ -25,6 +25,38 @@ pub enum Input {
     Null,
     Pipe,
     File(File),
+}
+
+/// Start a daemon-private mount tree before creating threads. Restricting this
+/// entry to CLONE_NEWNS preserves the descriptor table and existing Rust I/O
+/// ownership; namespace publication and mount cleanup remain the caller's job.
+pub fn private_mount_namespace() -> io::Result<()> {
+    let tasks = std::fs::read_dir("/proc/self/task")?.collect::<io::Result<Vec<_>>>()?;
+    if !rustix::process::geteuid().is_root() || tasks.len() != 1 {
+        return Err(io::Error::other(
+            "Mount namespace entry requires a single-threaded root daemon",
+        ));
+    }
+    // SAFETY: This fixed flag never unshares FILES or changes descriptor numbers.
+    // No userspace pointers are passed, and failure leaves the caller to abort.
+    if unsafe { libc::unshare(libc::CLONE_NEWNS) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: The target is a static NUL-terminated path; all unused pointers are
+    // null. Recursively private propagation prevents mount changes reaching the host.
+    if unsafe {
+        libc::mount(
+            std::ptr::null(),
+            c"/".as_ptr(),
+            std::ptr::null(),
+            libc::MS_PRIVATE | libc::MS_REC,
+            std::ptr::null(),
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// A real child, signaled through pidfd and reaped only by its parent. Like

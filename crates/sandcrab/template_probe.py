@@ -2,6 +2,7 @@
 """Template import, deduplication and restart through the real native API and CLI."""
 import argparse
 import hashlib
+from http.client import HTTPResponse
 import json
 import os
 from pathlib import Path
@@ -129,6 +130,48 @@ class TemplateProbe(StreamingProbe):
         assert http(self.socket, 'DELETE', '/v1/templates/'+first['id']) == (200, {'deleted': True})
         assert http(self.socket, 'GET', '/v1/templates/'+first['id'])[0] == 404
         self.done('restart-contains-interrupted-imports-and-preserves-published-objects')
+        self.failed_import_admission()
+
+    def failed_import_admission(self):
+        content = archive([('artifact', tarfile.REGTYPE, b'fault fixture', 0o644)])
+        for uncertain_cleanup in (False, True):
+            parent = self.session_open()
+            with socket.socket(socket.AF_UNIX) as stream:
+                stream.settimeout(75)
+                connect(stream, self.socket)
+                stream.sendall((f'POST /v1/templates?profile=python HTTP/1.1\r\nHost: local\r\n'
+                                f'Content-Length: {len(content)}\r\nExpect: 100-continue\r\n\r\n').encode())
+                assert header(stream) == b'HTTP/1.1 100 Continue\r\n\r\n'
+                stages = list((self.socket.parent / 'templates/incoming').glob('.transfer-*'))
+                assert len(stages) == 1
+                stage = stages[0]
+                if uncertain_cleanup:
+                    stage.chmod(0o777)
+                else:
+                    (stage / 'lower').mkdir(mode=0o700)
+                stream.sendall(content)
+                response = HTTPResponse(stream)
+                response.begin()
+                value = json.loads(response.read())
+                assert response.status == 503 and value['error']['code'] == 'TEMPLATE_STATE_UNCERTAIN', value
+            pool = http(self.socket, 'GET', '/v1/templates')[1]['pool']
+            assert not pool['available']
+            status, _, raw = binary_http(self.socket, 'PUT', f'/v1/sessions/{parent["id"]}/files?path=ordinary', b'available')
+            if uncertain_cleanup:
+                assert status >= 400 and json.loads(raw)['error']['code'] == 'FILE_CAPACITY', (status, raw)
+                assert stage.exists()
+                stage.chmod(0o700)
+            else:
+                assert status == 200, raw
+                self.no_stages()
+            self.session_close(parent)
+            self.session_forget(parent)
+            call('systemctl', 'kill', '--kill-who=all', '--signal=SIGKILL', self.unit)
+            self.restart()
+            self.no_stages()
+            assert http(self.socket, 'GET', '/v1/templates')[1]['pool']['available']
+            self.done('template-cleanup-uncertainty-retains-admission-until-recovery' if uncertain_cleanup
+                      else 'template-publication-fence-releases-a-fully-cleaned-transfer-slot')
 
 
 def main():

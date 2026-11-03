@@ -64,7 +64,11 @@ class Probe:
         client = pwd.getpwnam('daemon')
         CLIENT = (client.pw_uid, client.pw_gid)
         self.report = report
-        self.root = Path(tempfile.mkdtemp(prefix='sandcrab-native-', dir='/var/lib'))
+        self.fixture_parent = Path(os.environ.get('SANDCRAB_PROBE_ROOT', '/var/lib'))
+        assert self.fixture_parent.is_absolute() and self.fixture_parent.resolve(strict=True) == self.fixture_parent
+        for ancestor in [self.fixture_parent, *self.fixture_parent.parents]:
+            assert ancestor.is_dir() and ancestor.stat().st_uid == 0 and ancestor.stat().st_mode & 0o022 == 0
+        self.root = Path(tempfile.mkdtemp(prefix='sandcrab-native-', dir=self.fixture_parent))
         self.root.chmod(0o755)
         self.binary = self.root / 'sandcrab'
         shutil.copyfile(binary, self.binary)
@@ -405,6 +409,12 @@ network = "none"
         assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/forget', {}) == (200, {'forgotten': True})
         assert not (self.socket.parent / 'workspaces' / session['id']).exists()
 
+    def daemon_path(self, path):
+        assert path.is_relative_to(self.socket.parent)
+        daemon = call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout.strip()
+        assert daemon.isdecimal() and int(daemon) > 1
+        return Path(f'/proc/{daemon}/root') / path.relative_to('/')
+
     def session_close(self, session):
         assert http(self.socket, 'POST', '/v1/sessions/' + session['id'] + '/close', {})[0] == 200
         result = self.session_wait(session, terminal=True)
@@ -425,6 +435,7 @@ network = "none"
         self.forget(request)
         request = self.submit(closed + 'open("closed-output", "w").close(); time.sleep(30)')
         marker = self.socket.parent / 'jobs' / request['id'] / 'work/closed-output'
+        marker = self.daemon_path(marker)
         deadline = time.monotonic() + 5
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(.01)
@@ -714,7 +725,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         call('systemctl', 'reset-failed', self.unit, self.slice, check=False)
         self.slice_file.unlink(missing_ok=True)
         call('systemctl', 'daemon-reload')
-        assert self.root.parent == Path('/var/lib') and self.root.name.startswith('sandcrab-native-') and not self.root.is_symlink()
+        assert self.root.parent == self.fixture_parent and self.root.name.startswith('sandcrab-native-') and not self.root.is_symlink()
         shutil.rmtree(self.root)
         self.receipt['cleanup'] = 'PASS'
 
@@ -722,7 +733,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         root = mount.parent if mount.name == 'tmp' else mount
         if root.parent == self.socket.parent / 'helper-jobs':
             kind, identity = root.name.split('-', 1)
-            assert kind in ('file', 'copy')
+            assert kind in ('file', 'copy', 'overlay')
             uuid.UUID(identity)
         else:
             assert root.parent == self.socket.parent / 'jobs'
@@ -798,15 +809,19 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         call('systemctl', 'reset-failed', self.unit, check=False)
         self.deny_clone3 = True
         try:
-            self.start()
-            request = self.submit('print("uncontained-fallback")')
-            result = self.wait(request)
-            assert result['state'] == 'failed' and result['result'] == {'code': 'RUN_FAILED'}, result
-            assert not list((self.socket.parent / 'jobs').iterdir())
-            assert not [path for path in self.workloads_group.iterdir() if path.is_dir()]
-            self.forget(request)
-            self.receipt['deniedClone3'] = result
-            self.done('denied-clone3-has-no-process-fallback-and-releases-contained-admission')
+            try:
+                self.start()
+            except AssertionError:
+                journal = call('journalctl', '-u', self.unit, '--no-pager', '-n', '30').stdout
+                assert 'Overlay startup check failed' in journal and 'os error 38' in journal, journal
+                assert call('systemctl', 'show', self.unit, '-p', 'MainPID', '--value').stdout.strip() == '0'
+            else:
+                raise AssertionError('service became ready without clone3 cgroup placement')
+            for name in ['jobs', 'helper-jobs']:
+                assert not list((self.socket.parent / name).iterdir())
+            assert not self.workloads_group.exists() or not [path for path in self.workloads_group.iterdir() if path.is_dir()]
+            self.receipt['deniedClone3'] = {'ready': False, 'helperCleanup': 'PASS'}
+            self.done('denied-clone3-refuses-startup-without-process-fallback-or-helper-residue')
         finally:
             call('systemctl', 'stop', self.unit, check=False)
             call('systemctl', 'reset-failed', self.unit, check=False)

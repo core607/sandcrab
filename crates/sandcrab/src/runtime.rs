@@ -178,6 +178,19 @@ impl Runtime {
         if let Some(storage) = &runtime.storage {
             storage.recover()?;
         }
+        runtime.workspaces.probe_overlay(
+            runtime
+                .config
+                .profiles
+                .values()
+                .next()
+                .expect("validated profile"),
+            &crate::helper::Context {
+                runtime_root: &runtime.config.service.runtime_root,
+                executable: &runtime.executable,
+                workloads: &runtime.resources.workloads,
+            },
+        )?;
         Ok(runtime)
     }
 
@@ -194,7 +207,7 @@ impl Runtime {
         for entry in fs::read_dir(root.join("helper-jobs"))? {
             let entry = entry?;
             if !entry.file_name().to_str().is_some_and(|name| {
-                ["file-", "copy-"]
+                ["file-", "copy-", "overlay-"]
                     .iter()
                     .any(|prefix| name.strip_prefix(prefix).is_some_and(uuid))
             }) {
@@ -284,6 +297,7 @@ impl Runtime {
                 input,
                 crate::helper::Request {
                     kind: "file",
+                    overlay: None,
                     id: &operation,
                     argv: vec![
                         self.executable.to_string_lossy().into(),
@@ -511,9 +525,34 @@ impl Runtime {
             });
         }
         let disk = if shared.is_none() && attachment.is_none() {
-            match self.workspaces.create(id, profile, &cancelled) {
+            let prepared = if let Some(template_id) = &request.template_id {
+                let template = match self.templates.acquire(template_id, profile) {
+                    Ok(template) => template,
+                    Err((_, code)) => {
+                        return Err(OpenError {
+                            code,
+                            contained: cleanup_root().is_ok(),
+                        });
+                    }
+                };
+                self.workspaces.create_template(
+                    id,
+                    profile,
+                    &cancelled,
+                    template,
+                    &crate::helper::Context {
+                        runtime_root: &self.config.service.runtime_root,
+                        executable: &self.executable,
+                        workloads: &self.resources.workloads,
+                    },
+                )
+            } else {
+                self.workspaces.create(id, profile, &cancelled)
+            };
+            match prepared {
                 Ok(disk) => Some(disk),
                 Err(error) => {
+                    eprintln!("Workspace setup failed: {}", error.error);
                     return Err(OpenError {
                         code: "SESSION_UNAVAILABLE",
                         contained: error.contained && cleanup_root().is_ok(),
@@ -622,6 +661,7 @@ impl Runtime {
             Input::Null,
             crate::helper::Request {
                 kind: "copy",
+                overlay: None,
                 id: operation,
                 argv: vec![
                     self.executable.to_string_lossy().into(),

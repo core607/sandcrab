@@ -2374,7 +2374,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "Ready volume exclusively mounted at /workspace until cleanup is confirmed. Omit for a disposable runtime_root directory with periodic accounting."
+            "description": "Ready volume exclusively mounted at /workspace until confirmed cleanup. Omit both volumeId and templateId for an empty disposable workspace."
           },
           "resources": {
             "oneOf": [
@@ -2388,6 +2388,9 @@
           },
           "keepResult": {
             "$ref": "#/components/schemas/KeepResult"
+          },
+          "templateId": {
+            "$ref": "#/components/schemas/TemplateId"
           }
         }
       },
@@ -2449,7 +2452,8 @@
           "parentSessionId",
           "storageUsage",
           "storagePoolUsage",
-          "keepResult"
+          "keepResult",
+          "templateId"
         ],
         "properties": {
           "id": {
@@ -2516,6 +2520,9 @@
           },
           "keepResult": {
             "type": "boolean"
+          },
+          "templateId": {
+            "$ref": "#/components/schemas/TemplateId"
           }
         }
       },
@@ -3589,6 +3596,14 @@
             "minimum": 0
           }
         }
+      },
+      "TemplateId": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "Immutable template for a disposable overlay at /workspace. Requires matching profile UID/GID; mutually exclusive with volumeId."
       }
     },
     "responses": {

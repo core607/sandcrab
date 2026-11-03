@@ -1,0 +1,49 @@
+{
+  "milestone": "L7 shared template workspaces",
+  "scope": "Native API and CLI, private shared overlay mounts, isolated writable layers and contained recovery on a Linux kernel under Docker Desktop",
+  "baseRevision": "70321398cf3068422ce1252b70644a1365798636",
+  "binarySha256": "a285d9ac13890cdeb04344202ab4ddca56f62d7946d997ab4d45bd23394d6565",
+  "rustTestsPassed": 146,
+  "workerTestsPassed": 176,
+  "nativeIsolationChecksPassed": 48,
+  "nativeOverlayChecksPassed": 7,
+  "nativeTemplateChecksPassed": 9,
+  "nativeFileChecksPassed": 26,
+  "nativePlainStorageChecksPassed": 12,
+  "nativeHostCallChecksPassed": 18,
+  "publishedSdkChecksPassed": 21,
+  "publishedSdkVersion": "1.1.0",
+  "containerStartupAndCommand": "PASS",
+  "freshDebianInstaller": "PASS",
+  "nativeCleanup": "PASS",
+  "earlierFailures": [
+    {
+      "kind": "Rust syscall result conversions",
+      "attempts": 2,
+      "resolution": "Check recv byte counts and convert syscall errors explicitly"
+    },
+    {
+      "kind": "Overlay channel credentials after entering a PID namespace",
+      "attempts": 2,
+      "resolution": "Authenticate the inherited root channel before PID namespace entry; the outside peer has PID zero inside it"
+    },
+    {
+      "kind": "Local diagnostic or probe packaging/configuration",
+      "attempts": 4,
+      "resolution": "Preserve the unavailable tracer attempt; include all Python helpers and use a distinct valid execution profile"
+    },
+    {
+      "kind": "Fault probes observed the old startup and mount boundaries",
+      "attempts": 3,
+      "resolution": "Assert clone3 refusal before readiness and inspect helper records, tmpfs devices and host-call faults in the daemon mount namespace; recover the failed fixture, then repeat affected checks"
+    },
+    {
+      "kind": "Debian installer fixture precreated its reserved namespace",
+      "attempts": 1,
+      "resolution": "Mount the fresh distribution data volume at its parent, preserving the occupied-namespace refusal"
+    }
+  ],
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-overlay-l7",
+  "capacityMeasured": false,
+  "remainingL7": ["template rootfs", "whiteout-aware difference tar", "full L7 footprint and density checkpoint"]
+}

@@ -159,7 +159,9 @@ class Controller:
             record = json.loads(path.read_text())
         elif argv[1] == '__helper' and fault['kind'] in ('file', 'copy'):
             assert path.parent.parent == self.args.runtime / 'helper-jobs'
-            record = json.loads(path.read_text())
+            # Helper records live on the daemon's private tmpfs mounts.
+            view = Path(f'/proc/{self.args.pid}/root') / path.relative_to('/')
+            record = json.loads(view.read_text())
             if not path.parent.name.startswith(fault['kind'] + '-'):
                 return None
             if fault['kind'] == 'file':

@@ -116,10 +116,10 @@ impl Service {
         })();
         let finished = store.finish(&stage, contained);
         self.file_cancellations.lock().unwrap().remove(&stage.id);
-        if finished {
+        if finished.cleanup_complete {
             self.file_count.fetch_sub(1, Ordering::SeqCst);
         }
-        if !finished {
+        if !finished.catalog_available {
             return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
         }
         result

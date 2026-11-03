@@ -24,6 +24,7 @@ pub struct Open {
     pub profile: String,
     pub ttl_millis: Option<u64>,
     pub volume_id: Option<String>,
+    pub template_id: Option<String>,
     pub resources: Option<crate::config::Resources>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_result: bool,
@@ -128,7 +129,7 @@ impl Session {
     fn value(&self) -> Value {
         json!({"id":self.request.id,"serverId":self.request.server_id,"profile":self.request.profile,
             "state":self.state,"expiresAtMillis":self.expires_at,"activeRunId":self.active_run,"keepResult":self.request.keep_result,
-            "volumeId":self.request.volume_id,"code":self.code,
+            "volumeId":self.request.volume_id,"templateId":self.request.template_id,"code":self.code,
             "storageUsage":self.files.as_ref().and_then(|files|files.usage.as_ref().map(|usage|usage.value())),
             "storagePoolUsage":self.files.as_ref().and_then(|files|files.pool_usage.as_ref().map(|usage|usage.value())),
             "parentSessionId":self.parent.as_ref().map(|p| &p.id)})
@@ -329,6 +330,11 @@ impl Service {
             return error(409, "SERVER_CHANGED");
         }
         if !sandcrab_core::uuid(&request.id)
+            || request
+                .template_id
+                .as_ref()
+                .is_some_and(|id| !crate::file_io::digest(id))
+            || request.template_id.is_some() && request.volume_id.is_some()
             || request
                 .volume_id
                 .as_ref()

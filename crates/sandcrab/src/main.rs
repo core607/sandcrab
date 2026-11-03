@@ -23,6 +23,7 @@ mod installer;
 mod inventory;
 mod multipart;
 mod opensandbox;
+mod overlay;
 mod runtime;
 mod sdk_commands;
 mod sdk_contexts;
@@ -57,7 +58,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--keep-result] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab template --help\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--keep-result] [--volume UUID | --template SHA256] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab template --help\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -121,6 +122,10 @@ fn execute(args: &[String]) -> io::Result<i32> {
             helper::launch(Path::new(path))?;
             Ok(0)
         }
+        [mode] if mode == "__overlay-export" => {
+            overlay::export()?;
+            Ok(0)
+        }
         [mode, source, destination, pool] if mode == "__copy-tree" => {
             storage::copy_tree(Path::new(source), Path::new(destination), Path::new(pool))?;
             Ok(0)
@@ -150,6 +155,12 @@ fn execute(args: &[String]) -> io::Result<i32> {
                 println!("{{\"configurationValid\":true}}");
                 return Ok(0);
             }
+            // Mounts left by an older host-namespace daemon need that owner's
+            // cleanup. Unsharing first would hide the host's retained references.
+            storage::no_mounts_below(&config.service.runtime_root, true).map_err(|_| {
+                config::invalid("Runtime has host-visible submounts; reconcile them with the previous service before starting the mount-isolated daemon")
+            })?;
+            sandcrab_core::process::private_mount_namespace()?;
             let stopped = Arc::new(AtomicBool::new(false));
             let _signals = [
                 signal_hook::flag::register(signal_hook::consts::SIGTERM, stopped.clone())?,
@@ -333,7 +344,7 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         [mode, flag, socket, profile_flag, profile, rest @ ..]
             if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
-            let (mut ttl, mut volume) = (None, None);
+            let (mut ttl, mut volume, mut template) = (None, None, None);
             let mut keep_result = false;
             let mut resources = config::Resources::default();
             let mut options = rest.iter();
@@ -352,15 +363,22 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                     "--volume" if volume.is_none() && sandcrab_core::uuid(value) => {
                         volume = Some(value.as_str());
                     }
+                    "--template" if template.is_none() && file_io::digest(value) => {
+                        template = Some(value.as_str());
+                    }
                     _ if resource_option(&mut resources, key, value)? => (),
                     _ => return Err(config::invalid("Expected unique session options")),
                 }
+            }
+            if volume.is_some() && template.is_some() {
+                return Err(config::invalid("Choose either --volume or --template"));
             }
             client::open_session(
                 &Endpoint::parse(flag, socket, token_file)?,
                 profile,
                 ttl,
                 volume,
+                template,
                 resources,
                 keep_result,
             )
