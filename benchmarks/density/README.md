@@ -95,6 +95,8 @@ to run all three budgets on separate hosts after smoke. Compare
 these results to W0; there is no intermediate capacity run. Commit a
 `summary.json` linking the CI run; leave raw receipts, ledgers and diagnostics
 in its artifacts. Record a performance miss in a follow-up issue.
+The [L7 summary](../../executor-native/evidence/sandcrab-l7-2026-11-03/summary.json)
+links the complete template checkpoint, its failure populations and follow-up.
 Select `storage=plain` for the periodic-accounting variant. Footprint, cache and
 startup-trace collectors keep their XFS fixture; only density selects that backend.
 L7 and L9 select template workspaces in density, empty template overlays in the
