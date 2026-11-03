@@ -9,7 +9,31 @@ implements the documented OpenSandbox 1.1.0 subset, verified through
 Consumer adoption and extraction remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
-## Installation
+## Get started
+
+On a Linux systemd host with bash and Python 3, place the four files from
+`./gradlew buildExecutorRust` in a protected release directory, then install
+and test the default service:
+
+```sh
+cd build/executor-service/bin
+sudo install -d -m 755 /var/lib/sandcrab-release
+sudo install -m 755 sandcrab bwrap /var/lib/sandcrab-release/
+sudo install -m 644 bwrap-notices.txt bwrap-source.tar.xz /var/lib/sandcrab-release/
+sudo /var/lib/sandcrab-release/sandcrab install
+sudo /var/lib/sandcrab-release/sandcrab doctor
+```
+
+`doctor` submits a real command under the `default` profile. To run your own:
+
+```sh
+sudo /var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
+```
+
+See the [installation reference](install/README.md) for the dry run, token,
+host requirements and exact Docker invocation.
+
+## Custom installation
 
 Build with `./gradlew buildExecutorRust`. In `build/executor-service/bin`,
 `sandcrab` and `bwrap` are static executables; install both with mode 0755 in
@@ -22,11 +46,11 @@ Startup and every launch verify the helper beside the resolved executable,
 including its protected path and pinned SHA-256. A missing, modified or mismatched
 helper refuses execution. The host needs writable delegated cgroup v2,
 unprivileged user namespaces and `mount`/`umount`.
-[Tool preparation](../../prepare-tools.sh) supplies workload utilities; the helper
+[Tool preparation](../../prepare-tools.sh) supplies optional workload utilities; the helper
 comes from the release. The seccomp filter is compiled into Sandcrab, which needs
 no Node.js, npm or SRT runtime.
 
-Copy [config.example.toml](config.example.toml) to a root-owned file with mode 0600
+For a custom service, copy [config.example.toml](config.example.toml) to a root-owned file with mode 0600
 in a protected directory. Set the client's numeric UID/GID and a separate execution
 account. Profiles choose readable paths, tools, finite resource limits and
 `network = "none"`; calls can lower timeout and output limits but cannot select

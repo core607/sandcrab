@@ -1,0 +1,35 @@
+[service]
+runtime_root = "/var/lib/sandcrab/runtime"
+socket = "/var/lib/sandcrab/runtime/control.sock"
+client_uid = 0
+client_gid = 0
+cgroup_root = "@CGROUP@"
+max_sandboxes = 8
+max_records = 128
+max_output_bytes = 8388608
+
+[tcp]
+listen = "127.0.0.1:9011"
+token_file = "/etc/sandcrab/token"
+
+[storage]
+root = "/var/lib/sandcrab/storage"
+pool_bytes = 1073741824
+max_volume_bytes = 67108864
+max_volume_inodes = 4096
+max_volumes = 8
+max_records = 128
+
+[profiles.default]
+exec_user = "sandcrab-exec"
+tools = "/var/lib/sandcrab/tools"
+read_only = [@MOUNTS@]
+memory_bytes = 134217728
+temporary_bytes = 16777216
+temporary_inodes = 4096
+tasks_max = 64
+cpu_quota_percent = 50
+timeout_millis = 30000
+session_ttl_millis = 60000
+output_limit_bytes = 65536
+network = "none"

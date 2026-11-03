@@ -1,0 +1,4 @@
+abi <abi/4.0>,
+profile sandcrab-service flags=(unconfined) {
+  userns,
+}

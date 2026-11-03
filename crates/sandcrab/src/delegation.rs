@@ -150,7 +150,7 @@ impl Delegation {
     }
 }
 
-fn verify_pool(group: &Cgroup) -> io::Result<()> {
+pub(crate) fn verify_pool(group: &Cgroup) -> io::Result<()> {
     let (mut memory, mut tasks, mut cpu, mut no_swap) = (false, false, false, false);
     let mut ancestor = Some(group.clone());
     while let Some(parent) = ancestor {

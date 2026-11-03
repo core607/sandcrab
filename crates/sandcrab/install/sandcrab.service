@@ -1,0 +1,15 @@
+[Unit]
+Description=Sandcrab sandbox service
+After=local-fs.target
+
+[Service]
+Type=exec
+ExecStart=@EXECUTABLE@ serve --config /etc/sandcrab/config.toml
+Slice=sandcrab.slice
+Delegate=yes
+TasksMax=infinity
+OOMPolicy=continue
+@APPARMOR@
+
+[Install]
+WantedBy=multi-user.target

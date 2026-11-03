@@ -1,22 +1,25 @@
-name: Sandcrab readiness baseline
+name: Sandcrab installer acceptance
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - experiments/sandcrab-density/readiness*.py
       - experiments/sandcrab-density/Dockerfile.readiness
-      - executor-service/prepare-tools.sh
-      - executor-service/install-sandbox-tools.sh
       - executor-service/rust/sandcrab/README.md
-      - executor-service/rust/sandcrab/config.example.toml
-      - executor-service/rust/sandcrab/native_probe.py
+      - executor-service/rust/sandcrab/install/**
+      - executor-service/rust/sandcrab/src/installer.rs
+      - executor-service/rust/sandcrab/src/doctor.rs
       - executor-service/rust/sandcrab/src/config.rs
-      - executor-service/rust/sandcrab/src/helper.rs
+      - executor-service/rust/sandcrab/src/main.rs
       - executor-service/rust/sandcrab-launch/bwrap/**
       - gradle/executor-service.gradle.kts
       - .github/workflows/sandcrab-readiness.yml
   workflow_dispatch:
+    inputs:
+      publish_image:
+        description: Publish the tested image for this verified main revision
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,44 +51,30 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  measure:
+  debian:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - distribution: ubuntu22
-            image: ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
-          - distribution: ubuntu24
-            image: ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
-          - distribution: debian12
-            image: debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/executor-service/bin
-      - name: Build a disposable systemd distribution
-        env:
-          BASE_IMAGE: ${{ matrix.image }}
+      - name: Exercise install and doctor on fresh Debian 12
         run: |
-          docker build --build-arg "BASE_IMAGE=$BASE_IMAGE" -t sandcrab-readiness:fixture \
-            -f experiments/sandcrab-density/Dockerfile.readiness experiments/sandcrab-density
-      - name: Measure the manual recipe on a fresh container
-        env:
-          DISTRIBUTION: ${{ matrix.distribution }}
-        run: |
-          python3 experiments/sandcrab-density/readiness_container.py \
-            --image sandcrab-readiness:fixture --source . --binary build/executor-service/bin/sandcrab \
-            --report "$RUNNER_TEMP/readiness-$DISTRIBUTION.json"
+          docker build --build-arg BASE_IMAGE=debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
+            -t sandcrab-install:debian -f experiments/sandcrab-density/Dockerfile.readiness experiments/sandcrab-density
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo apparmor_parser -r executor-service/rust/sandcrab/install/sandcrab.apparmor
+          fi
+          python3 executor-service/rust/sandcrab/install/probe.py --distribution sandcrab-install:debian \
+            --bundle build/executor-service/bin --report "$RUNNER_TEMP/readiness-debian12.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: readiness-${{ matrix.distribution }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/readiness-${{ matrix.distribution }}.json
+          name: readiness-debian12-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readiness-debian12.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -98,22 +87,16 @@ jobs:
       matrix:
         runner: [ubuntu-22.04, ubuntu-24.04]
     steps:
-      - name: Start the acquisition clock
-        id: acquisition
-        run: python3 -c 'import time; print("started=" + str(time.monotonic_ns()))' >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/executor-service/bin
-      - name: Measure the manual recipe on a fresh native runner
-        env:
-          ACQUISITION_STARTED: ${{ steps.acquisition.outputs.started }}
+      - name: Exercise install and doctor on the fresh host
         run: |
-          sudo env SANDCRAB_READINESS_DISPOSABLE=1 python3 experiments/sandcrab-density/readiness.py \
-            --source . --binary build/executor-service/bin/sandcrab --revision "$(git rev-parse HEAD)" \
-            --acquisition-started-ns "$ACQUISITION_STARTED" \
-            --report "$RUNNER_TEMP/readiness-native.json"
+          stat -c '%n %U:%G %a' /var/lib /usr/local/bin /etc/systemd/system
+          sudo env SANDCRAB_INSTALL_DISPOSABLE=1 python3 executor-service/rust/sandcrab/install/probe.py \
+            --bundle build/executor-service/bin --report "$RUNNER_TEMP/readiness-native.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -121,3 +104,79 @@ jobs:
           path: ${{ runner.temp }}/readiness-native.json
           if-no-files-found: warn
           retention-days: 30
+
+  container:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/executor-service/bin
+      - name: Run the packaged daemon with a bounded private cgroup
+        run: |
+          docker build -f executor-service/rust/sandcrab/install/Dockerfile -t "sandcrab-ci:$GITHUB_SHA" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" build/executor-service/bin
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo apparmor_parser -r executor-service/rust/sandcrab/install/sandcrab.apparmor
+          fi
+          python3 executor-service/rust/sandcrab/install/probe.py --image "sandcrab-ci:$GITHUB_SHA" --report "$RUNNER_TEMP/install-image.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: sandcrab-container-check
+          path: ${{ runner.temp }}/install-image.json
+          if-no-files-found: warn
+      - name: Save the tested image for publication
+        if: inputs.publish_image && github.ref == 'refs/heads/main'
+        shell: bash
+        run: docker save "sandcrab-ci:$GITHUB_SHA" | gzip -1 > "$RUNNER_TEMP/sandcrab-image.tar.gz"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.publish_image && github.ref == 'refs/heads/main'
+        with:
+          name: tested-sandcrab-image
+          path: ${{ runner.temp }}/sandcrab-image.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  publish:
+    needs: [native, debian, container]
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_image && github.repository == 'core607/poketto' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - name: Require the successful main CI verdict for this revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$GITHUB_SHA&per_page=1"
+          IFS=$'\t' read -r revision conclusion run_id <<< "$(gh api "$runs" --jq '.workflow_runs[0] | [.head_sha,.conclusion,.id] | @tsv')"
+          test "$revision" = "$GITHUB_SHA"
+          test "$conclusion" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" --jq '.jobs[] | select(.name == "verify") | .conclusion')" = success
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tested-sandcrab-image
+          path: ${{ runner.temp }}/publish
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the image exercised by the container check
+        run: |
+          docker load --input "$RUNNER_TEMP/publish/sandcrab-image.tar.gz"
+          source="sandcrab-ci:$GITHUB_SHA"
+          test "$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$source")" = "$GITHUB_SHA"
+          target="ghcr.io/$GITHUB_REPOSITORY-sandcrab:sha-$GITHUB_SHA"
+          docker tag "$source" "$target"
+          docker push "$target"
+          echo "Sandcrab image: $target" >> "$GITHUB_STEP_SUMMARY"

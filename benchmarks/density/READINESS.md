@@ -1,7 +1,6 @@
 # Manual installation baseline
 
-[readiness.py](readiness.py) measures the manual installation requirements in the
-[native service README](../../executor-service/rust/sandcrab/README.md). It installs
+[readiness.py](readiness.py) replays the pre-installer manual setup for comparison with W0. It installs
 a candidate binary and its pinned tools, creates the execution account, writes the
 operator's configuration and resource slice, starts the daemon, and runs the README's
 Python command. The command must succeed and print `42` through the real sandbox.
@@ -22,18 +21,16 @@ Reported time is therefore a lower bound, not an end-to-end installation promise
 
 ## Fresh distribution replay
 
-The [readiness workflow](../../.github/workflows/sandcrab-readiness.yml) owns the
-pinned Ubuntu 22.04, Ubuntu 24.04 and Debian 12 images and also runs directly on
-fresh GitHub-hosted Ubuntu 22.04 and 24.04 machines. The native jobs retain each
-runner's initial tool inventory, kernel and any required AppArmor policy edit;
-they do not treat the runner image as a minimal distribution. The container
+The [readiness workflow](../../.github/workflows/sandcrab-readiness.yml) now checks
+the installer on fresh Ubuntu 22.04 and 24.04 runners and a Debian 12 systemd
+container. The historical W0 manual procedure remains independently runnable. Its
 [Dockerfile](Dockerfile.readiness) adds only systemd, D-Bus and controller Python.
 Each container measurement starts without Sandcrab, its toolchain or prior
 package indexes. Containers share the host kernel, so they supplement the native
 kernel checks. An unprivileged production container configuration is outside this
 baseline.
 
-Build a fixture image using one of the workflow's pinned `BASE_IMAGE` values, then:
+Build a fixture image using the Debian `BASE_IMAGE` pinned in the workflow, then:
 
 ```sh
 python3 experiments/sandcrab-density/readiness_container.py \

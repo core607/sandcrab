@@ -6,6 +6,7 @@ mod call_events;
 mod client;
 mod config;
 mod delegation;
+mod doctor;
 mod event_client;
 mod event_wire;
 mod events;
@@ -17,6 +18,7 @@ mod files;
 mod guest_call;
 mod helper;
 mod host_calls;
+mod installer;
 mod inventory;
 mod multipart;
 mod opensandbox;
@@ -50,7 +52,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab serve --config FILE\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--volume UUID] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -66,6 +68,22 @@ fn execute(args: &[String]) -> io::Result<i32> {
     };
     let token_file = token_file.as_deref();
     match args {
+        [mode] if mode == "install" => {
+            installer::install(false, false)?;
+            Ok(0)
+        }
+        [mode, flag] if mode == "install" && flag == "--dry-run" => {
+            installer::install(true, false)?;
+            Ok(0)
+        }
+        [mode] if mode == "doctor" => doctor::doctor(Path::new(installer::CONFIG)),
+        [mode, flag, path] if mode == "doctor" && flag == "--config" => {
+            doctor::doctor(Path::new(path))
+        }
+        [mode, flag] if mode == "serve" && flag == "--container" => {
+            installer::install(false, true)?;
+            execute(&["serve".into(), "--config".into(), installer::CONFIG.into()])
+        }
         [mode, flag] if mode == "call" && ["--help", "-h"].contains(&flag.as_str()) => {
             print!("{CALL_HELP}");
             Ok(0)
