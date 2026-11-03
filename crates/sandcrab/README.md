@@ -495,11 +495,11 @@ entries, traversal paths and writes through symlinks are refused. Symlinks remai
 opaque; snapshots never follow them. Hard links must name an earlier regular entry
 inside the archive. Extended attributes and original ownership are not preserved.
 
-Staged uploads verify declared length and SHA-256 before publication. By default the
-session freezes briefly for staged installation, and while a snapshot is captured.
-`--no-freeze` requires the caller to coordinate workspace writers; a snapshot can
-then observe different files at different times. The session is thawed before sending snapshot bytes.
-Command timeouts and session expiry continue while frozen. A transfer pins its
+Staged uploads verify declared length and SHA-256 before publication. Native
+transfers keep workspace processes running. Callers coordinate writers when they
+need a consistent collection, for example by producing an archive inside one
+command before downloading it. Tar downloads contain ordinary entries, with no
+private manifest format. A transfer pins its
 session and volume until helper containment and staging cleanup finish; cancellation,
 expiry and shutdown cannot detach storage underneath it. Unconfirmed cleanup holds
 admission until restart. Temporary staging counts against workspace or volume limits.
@@ -510,13 +510,13 @@ boundary and opaque-symlink rules. Deletion remains available during storage ove
 | Request | Result |
 |---|---|
 | `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace` and `mode` |
-| `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `freeze`, `mode`; returns 201 |
+| `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `mode`, `keepResult`; returns 201 |
 | `PUT /v1/uploads/ID/content` | Send exactly the registered Content-Length; return the upload record |
 | `GET /v1/uploads/ID` | Read outcome and publication certainty |
 | `GET /v1/uploads?after=UUID` | Up to ten records in UUID order; continue with `nextAfter` |
 | `POST /v1/uploads/ID/cancel` with `{}` | Cancel pending or active work; inspect the final record |
 | `POST /v1/uploads/ID/forget` with `{}` | Forget a waiting or terminal record when no stage remains |
-| `POST /v1/sessions/ID/snapshot` | Send `path`, `format`, optional `freeze`; receive a fixed-length body with a quoted SHA-256 ETag |
+| `POST /v1/sessions/ID/snapshot` | Send `path` and `format`; receive a fixed-length body with a quoted SHA-256 ETag |
 
 Native snapshot replies include `X-Sandcrab-Server-Id`, the serving daemon epoch.
 Clients retaining a session handle must match this header against its `serverId`
@@ -543,6 +543,12 @@ States are `waiting`, `receiving`, `publishing`, `published`, `succeeded`, `fail
 Cancellation does not undo a committed write. After an ambiguous publication,
 inspect the destination and receipt before choosing another write; replay never
 reexecutes it. Forgetting or result expiry ends replay protection, so never reuse that ID.
+
+Runtime and upload metadata follow the 0.x binary schema without migrations.
+Before a schema-changing upgrade, export needed disposable workspaces and use the
+old binary to reconcile and forget retained uploads. Stop and contain the old
+service, back up runtime and configured storage roots, then rebuild affected
+metadata as needed while preserving volume data.
 
 For staged transfers, the CLI prints the upload ID before submission. It forgets successful or failed
 uploads unless `--keep-result` is set, and retains uncertain outcomes. `--id UUID`

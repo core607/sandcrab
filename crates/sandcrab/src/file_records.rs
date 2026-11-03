@@ -23,10 +23,6 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, (u16, &'static str)>;
-fn freeze() -> bool {
-    true
-}
-
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Upload {
@@ -39,8 +35,6 @@ pub struct Upload {
     pub sha256: String,
     #[serde(default)]
     pub replace: bool,
-    #[serde(default = "freeze")]
-    pub freeze: bool,
     pub mode: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_result: bool,

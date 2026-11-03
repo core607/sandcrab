@@ -139,6 +139,14 @@ class FileProbe(VolumeProbe):
     def tests(self):
         self.bootstrap_recovery()
         session = self.session_open()
+        for retired in (True, False):
+            upload = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'],
+                      'sessionId': session['id'], 'path': 'unused', 'format': 'raw',
+                      'bytes': 0, 'sha256': hashlib.sha256(b'').hexdigest(), 'freeze': retired}
+            assert http(self.socket, 'POST', '/v1/uploads', upload)[0] == 400
+            assert http(self.socket, 'POST', f'/v1/sessions/{session["id"]}/snapshot',
+                        {'path': 'unused', 'format': 'raw', 'freeze': retired})[0] == 400
+        self.done('files-public-requests-reject-the-retired-freeze-option')
         content = bytes((i * 73) % 256 for i in range(131173))
         request, result = self.upload(session, 'data.bin', content)
         assert result['state'] == 'succeeded' and result['publication'] == 'committed', result
@@ -595,15 +603,16 @@ class FileProbe(VolumeProbe):
                                 f'Content-Length: {len(body)}\r\n\r\n').encode() + body)
                 await_gate()
                 events = self.workloads_group / ('session-' + session['id']) / 'cgroup.events'
-                assert 'frozen 1' in events.read_text()
+                assert 'frozen 0' in events.read_text()
+                assert self.command(session, 'printf concurrent') == 'concurrent'
             gate.unlink()
             deadline = time.monotonic() + 15
             while list((self.storage / 'state/uploads/stages').glob('*.json')) and time.monotonic() < deadline:
                 time.sleep(.025)
             self.no_stages(volume)
             assert 'frozen 0' in events.read_text()
-            assert self.command(session, 'printf thawed') == 'thawed'
-            self.done('files-disconnected-snapshot-thaws-the-session-and-removes-staging')
+            assert self.command(session, 'printf running') == 'running'
+            self.done('files-snapshot-keeps-commands-running-and-disconnect-removes-staging')
 
             arm('cleanup', 'fail')
             request, result = self.upload(session, 'kept', b'committed', replace=True)

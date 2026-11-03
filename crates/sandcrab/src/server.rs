@@ -395,7 +395,7 @@ impl Write for Download<'_> {
     }
 }
 fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io::Result<()> {
-    let snapshot = match service.capture(id, body, None, None) {
+    let snapshot = match service.capture(id, body, None, None, false) {
         Ok(s) => s,
         Err((status, code)) => return json_reply(stream, status, &error(status, code).1, true),
     };

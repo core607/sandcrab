@@ -26,16 +26,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn freeze() -> bool {
-    true
-}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Capture {
     pub path: String,
     pub format: Format,
-    #[serde(default = "freeze")]
-    pub freeze: bool,
 }
 pub struct Snapshot {
     pub file: File,
@@ -347,32 +342,30 @@ impl Service {
                 .files
                 .transition(id, &["receiving"], "publishing", None)
                 .map_err(|_| invalid("FILE_STATE_UNCERTAIN"))?;
-            lease.access.frozen(record.request.freeze, || {
-                if lease.cancelled.load(Ordering::SeqCst) {
-                    return Err(invalid("FILE_CANCELLED"));
-                }
-                job.action = "publish".into();
-                attempted = true;
-                let (published, ended) = self.runtime.file_helper(
-                    &job,
-                    &lease.access.profile,
-                    &lease.cancelled,
-                    Input::Null,
-                );
-                contained &= ended;
-                published?;
-                if !contained {
-                    return Err(invalid("FILE_CLEANUP_UNCONFIRMED"));
-                }
-                confirmed = true;
-                self.runtime
-                    .files
-                    .transition(id, &["publishing"], "published", None)
-                    .map_err(|_| invalid("FILE_STATE_UNCERTAIN"))?;
-                self.runtime.clean_stage(&stage)?;
-                cleaned = true;
-                Ok(())
-            })
+            if lease.cancelled.load(Ordering::SeqCst) {
+                return Err(invalid("FILE_CANCELLED"));
+            }
+            job.action = "publish".into();
+            attempted = true;
+            let (published, ended) = self.runtime.file_helper(
+                &job,
+                &lease.access.profile,
+                &lease.cancelled,
+                Input::Null,
+            );
+            contained &= ended;
+            published?;
+            if !contained {
+                return Err(invalid("FILE_CLEANUP_UNCONFIRMED"));
+            }
+            confirmed = true;
+            self.runtime
+                .files
+                .transition(id, &["publishing"], "published", None)
+                .map_err(|_| invalid("FILE_STATE_UNCERTAIN"))?;
+            self.runtime.clean_stage(&stage)?;
+            cleaned = true;
+            Ok(())
         })();
         if contained && !cleaned {
             cleaned = !self.runtime.files.has_stage(id) || self.runtime.clean_stage(&stage).is_ok();
@@ -477,6 +470,7 @@ impl Service {
         body: &[u8],
         incarnation: Option<&str>,
         selection: Option<&crate::sdk_download::Selection>,
+        frozen: bool,
     ) -> Result<Snapshot> {
         let request = sandcrab_core::parse(body)
             .ok()
@@ -505,7 +499,7 @@ impl Service {
                 &path,
             );
             job.selection = selection.cloned();
-            let value = lease.access.frozen(request.freeze, || {
+            let value = lease.access.frozen(frozen, || {
                 if lease.cancelled.load(Ordering::SeqCst) {
                     return Err(invalid("FILE_CANCELLED"));
                 }

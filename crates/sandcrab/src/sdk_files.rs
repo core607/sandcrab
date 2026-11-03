@@ -138,10 +138,10 @@ impl Service {
         }
         self.capture(
             id,
-            &serde_json::to_vec(&serde_json::json!({"path":path,"format":"raw","freeze":true}))
-                .unwrap(),
+            &serde_json::to_vec(&serde_json::json!({"path":path,"format":"raw"})).unwrap(),
             Some(&sandbox.incarnation),
             selection.as_ref(),
+            true,
         )
     }
 }

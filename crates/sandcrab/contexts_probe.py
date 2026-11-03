@@ -65,7 +65,7 @@ class ContextsProbe(ResourcesProbe):
                      'unset\n/workspace\nkept')
         self.execute(parent, 'printf "%s\\n" "$VALUE"; pwd', 'root\n/workspace\n')
         status, headers, content = binary_http(self.socket, 'POST', f'/v1/sessions/{parent["id"]}/snapshot',
-            json.dumps({'path': 'project/artifact', 'format': 'raw', 'freeze': True}).encode())
+            json.dumps({'path': 'project/artifact', 'format': 'raw'}).encode())
         assert status == 200 and content == b'kept', (status, content)
         assert headers['ETag'].strip('"') == hashlib.sha256(content).hexdigest()
         assert (groups[0].parent / 'cgroup.freeze').read_text().strip() == '0'

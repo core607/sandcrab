@@ -1077,7 +1077,7 @@
       ],
       "post": {
         "operationId": "snapshotFiles",
-        "description": "Capture a raw file or an ordinary tar of a directory, then thaw before sending bytes. Symlinks in tar remain links and are never followed. The Content-Length and quoted SHA-256 ETag describe immutable captured bytes. Complete delivery confirms stage cleanup; a failure may truncate the body. Snapshots are request-scoped and are not retained for reconnect. This response closes its connection.",
+        "description": "Read live workspace files; callers coordinate writers for a consistent collection. Capture a raw file or an ordinary tar of a directory. Symlinks in tar remain links and are never followed. The Content-Length and quoted SHA-256 ETag describe immutable captured bytes. Complete delivery confirms stage cleanup; a failure may truncate the body. Snapshots are request-scoped and are not retained for reconnect. This response closes its connection.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2497,10 +2497,6 @@
             "type": "boolean",
             "default": false
           },
-          "freeze": {
-            "type": "boolean",
-            "default": true
-          },
           "mode": {
             "type": [
               "integer",
@@ -2656,10 +2652,6 @@
               "raw",
               "tar"
             ]
-          },
-          "freeze": {
-            "type": "boolean",
-            "default": true
           }
         }
       },

@@ -270,7 +270,7 @@ class PlainStorageProbe(VolumeProbe):
         self.session_close(session)
         self.session_forget(session)
         session = self.session_open(volumeId=volume['id'])
-        body = json.dumps({'path': 'keep.txt', 'format': 'raw', 'freeze': True}).encode()
+        body = json.dumps({'path': 'keep.txt', 'format': 'raw'}).encode()
         with socket.socket(socket.AF_UNIX) as stream:
             stream.settimeout(15)
             connect(stream, self.socket)

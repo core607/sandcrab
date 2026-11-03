@@ -1,0 +1,17 @@
+{
+  "milestone": "L6 native transfer consistency",
+  "scope": "Public freeze removal and consumer conformance on a local Linux kernel under Docker Desktop",
+  "baseRevision": "aba7abc9b9fb49f5eecbc9b4328ae455685a0dd9",
+  "binarySha256": "c62ffacc65b3de597a5c90cf609efaa90349b35ab653d142d2dfc0b90ce69f1d",
+  "nativeProbeBuild": "Runtime changes before the final OpenAPI prose correction",
+  "rustTestsPassed": 143,
+  "javaTestsPassed": 54,
+  "javaTestsSkipped": 0,
+  "nativeFileChecksPassed": 26,
+  "publishedSdkChecksPassed": 21,
+  "publishedSdkVersion": "1.1.0",
+  "javaVolumeLifecycleAcrossRestart": "PASS",
+  "nativeCleanup": "PASS",
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-live-transfers-l6",
+  "capacityMeasured": false
+}

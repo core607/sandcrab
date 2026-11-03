@@ -576,7 +576,7 @@ fn numeric_option(args: &[String], name: &str) -> io::Result<Option<u64>> {
     }
 }
 
-const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--no-freeze] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace] [--no-freeze]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nRaw put streams one request. --id, --keep-result or --tar selects staged upload.\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
+const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nRaw put streams one request. --id, --keep-result or --tar selects staged upload.\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
 fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     use file_io::Format;
     match args {
@@ -633,8 +633,8 @@ fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                 && connection_flag(flag)
                 && sandcrab_core::uuid(session) =>
         {
-            let (mut format, mut replace, mut freeze, mut keep, mut id, mut permissions) =
-                (Format::Raw, false, true, false, None, None);
+            let (mut format, mut replace, mut keep, mut id, mut permissions) =
+                (Format::Raw, false, false, None, None);
             let mut args = rest.iter();
             let mut seen = std::collections::BTreeSet::new();
             while let Some(flag) = args.next() {
@@ -644,7 +644,6 @@ fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                 match flag.as_str() {
                     "--tar" => format = Format::Tar,
                     "--replace" => replace = true,
-                    "--no-freeze" => freeze = false,
                     "--keep-result" if mode == "put" => keep = true,
                     "--id" if mode == "put" => {
                         id = Some(
@@ -678,7 +677,6 @@ fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                         id,
                         format,
                         replace,
-                        freeze,
                         mode: permissions,
                         keep_result: keep,
                     },
@@ -689,11 +687,7 @@ fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
                     session,
                     source,
                     Path::new(destination),
-                    file_client::Get {
-                        format,
-                        freeze,
-                        replace,
-                    },
+                    file_client::Get { format, replace },
                 )
             }
         }

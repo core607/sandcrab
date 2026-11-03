@@ -20,7 +20,6 @@ pub struct Put {
     pub id: Option<String>,
     pub format: Format,
     pub replace: bool,
-    pub freeze: bool,
     pub mode: Option<u32>,
     pub keep_result: bool,
 }
@@ -164,7 +163,7 @@ pub fn put(
     };
     eprintln!("uploadId={id}");
     let plan = json!({"id":id,"serverId":info["serverId"],"sessionId":session,"path":destination,"format":options.format,
-        "bytes":bytes,"sha256":sha256,"replace":options.replace,"freeze":options.freeze,"mode":options.mode,"keepResult":options.keep_result});
+        "bytes":bytes,"sha256":sha256,"replace":options.replace,"mode":options.mode,"keepResult":options.keep_result});
     let registered = client::request(socket, "POST", "/v1/uploads", Some(&plan))?;
     if registered["state"] != "waiting" {
         return outcome(socket, registered, options.keep_result);
@@ -215,7 +214,6 @@ fn receive(
 }
 pub struct Get {
     pub format: Format,
-    pub freeze: bool,
     pub replace: bool,
 }
 pub fn get(
@@ -230,8 +228,7 @@ pub fn get(
     }
     let mut stream = client::connect(socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(75)))?;
-    let body =
-        serde_json::to_vec(&json!({"path":path,"format":options.format,"freeze":options.freeze}))?;
+    let body = serde_json::to_vec(&json!({"path":path,"format":options.format}))?;
     write!(
         stream,
         "POST /v1/sessions/{session}/snapshot HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
