@@ -543,7 +543,6 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     let job: Job = serde_json::from_slice(&raw)?;
     if !sandcrab_core::fs::normal(&job.workspace)
         || !sandcrab_core::fs::normal(&job.stage)
-        || job.workspace.parent() != job.stage.parent()
         || !job
             .stage
             .file_name()
@@ -592,9 +591,19 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     let owner: crate::file_records::Stage = serde_json::from_slice(
         &sandcrab_core::fs::protected_file(&job.stage.join("owner.json"), 16384)?,
     )?;
+    let parent = job
+        .stage
+        .parent()
+        .ok_or_else(|| invalid("Missing stage parent"))?;
+    let layout = if owner.rootfs {
+        owner.volume_id.is_none() && job.workspace == parent.join("data/workspace")
+    } else {
+        job.workspace.parent() == Some(parent)
+    };
     if job.stage.file_name().unwrap().to_string_lossy() != format!(".transfer-{}", owner.id)
         || owner.uid != job.uid
         || owner.gid != job.gid
+        || !layout
     {
         return Err(invalid("File stage ownership changed"));
     }

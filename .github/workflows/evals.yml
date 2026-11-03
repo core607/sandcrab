@@ -106,6 +106,14 @@ jobs:
         run: |
           sudo python3 executor-service/rust/sandcrab/overlay_probe.py --binary build/executor-service/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/overlays.json
+      - name: Check template root filesystems through native and published SDK clients
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo python3 executor-service/rust/sandcrab/rootfs_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/sdk-python/bin/python \
+            --python-client evals/sdk/rootfs_client.py --java "$JAVA_HOME/bin/java" \
+            --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \
+            --report /var/lib/sandcrab-evals/sdk/rootfs.json
       - name: Check direct root deployment through delegated cgroups
         if: inputs.evidence_mode != 'model'
         run: |
@@ -145,7 +153,7 @@ jobs:
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
           fi
-          for name in contexts native delegation retention streaming files templates overlays; do
+          for name in contexts native delegation retention streaming files templates overlays rootfs; do
             for suffix in json diagnostic.txt; do
               if [ -f "/var/lib/sandcrab-evals/sdk/$name.$suffix" ]; then
                 sudo install -d -m 755 /var/lib/sandcrab-evals/results

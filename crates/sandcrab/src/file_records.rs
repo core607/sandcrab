@@ -115,6 +115,7 @@ pub struct Stage {
     pub id: String,
     pub session_id: String,
     pub volume_id: Option<String>,
+    pub rootfs: bool,
     pub profile: String,
     pub uid: u32,
     pub gid: u32,
@@ -124,10 +125,19 @@ impl Stage {
         uuid(&self.id)
             && uuid(&self.session_id)
             && self.volume_id.as_ref().is_none_or(|v| uuid(v))
+            && (!self.rootfs || self.volume_id.is_none())
             && name(&self.profile)
             && self.uid != 0
     }
     pub fn workspace(&self, config: &Config) -> io::Result<PathBuf> {
+        let root = self.base(config)?.join("data");
+        Ok(if self.rootfs {
+            root.join("workspace")
+        } else {
+            root
+        })
+    }
+    fn base(&self, config: &Config) -> io::Result<PathBuf> {
         match &self.volume_id {
             Some(id) => Ok(config
                 .storage
@@ -135,22 +145,16 @@ impl Stage {
                 .ok_or_else(|| invalid("File stage requires its volume store"))?
                 .root
                 .join("data/volumes")
-                .join(id)
-                .join("data")),
+                .join(id)),
             None => Ok(config
                 .service
                 .runtime_root
                 .join("workspaces")
-                .join(&self.session_id)
-                .join("data")),
+                .join(&self.session_id)),
         }
     }
     pub fn path(&self, config: &Config) -> io::Result<PathBuf> {
-        Ok(self
-            .workspace(config)?
-            .parent()
-            .ok_or_else(|| invalid("Invalid stage parent"))?
-            .join(format!(".transfer-{}", self.id)))
+        Ok(self.base(config)?.join(format!(".transfer-{}", self.id)))
     }
 }
 struct State {
@@ -203,7 +207,7 @@ impl Store {
             |s| s.root.join("state/uploads"),
         );
         directory(&root)?;
-        let owner = json!({"version":2,"runtimeRoot":config.service.runtime_root,
+        let owner = json!({"version":3,"runtimeRoot":config.service.runtime_root,
             "cgroupRoot":config.service.cgroup_root});
         let owner_path = root.join("owner.json");
         match read::<Value>(&owner_path) {
@@ -586,6 +590,7 @@ mod retention_tests {
                         id: id.clone(),
                         session_id: id.clone(),
                         volume_id: None,
+                        rootfs: false,
                         profile: "python".into(),
                         uid: 1000,
                         gid: 1000,

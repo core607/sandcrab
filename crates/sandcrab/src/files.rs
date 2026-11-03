@@ -77,6 +77,7 @@ pub(crate) fn stage(id: &str, access: &Access) -> Stage {
         id: id.into(),
         session_id: access.session.clone(),
         volume_id: access.volume.clone(),
+        rootfs: access.rootfs,
         profile: access.profile_name.clone(),
         uid: access.profile.uid,
         gid: access.profile.gid,

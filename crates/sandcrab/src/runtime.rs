@@ -38,6 +38,7 @@ struct Record {
     command: Vec<String>,
     shell: bool,
     workspace: PathBuf,
+    rootfs: Option<PathBuf>,
     host_calls: bool,
 }
 
@@ -567,10 +568,35 @@ impl Runtime {
             disk.as_ref()
                 .map_or(Ok(()), crate::workspaces::Workspace::remove)
         };
+        if request.rootfs
+            && let Some(disk) = &disk
+        {
+            let prepared = (|| -> io::Result<()> {
+                crate::rootfs::prepare(&disk.path(), profile)?;
+                disk.usage.refresh(true, &cancelled);
+                disk.usage.allow_growth().map_err(invalid)
+            })();
+            if let Err(error) = prepared {
+                eprintln!("Rootfs setup failed: {error}");
+                return Err(OpenError {
+                    code: "ROOTFS_UNAVAILABLE",
+                    contained: cleanup().is_ok(),
+                });
+            }
+        }
         let workspace = shared
             .map(|s| s.access.workspace.clone())
             .or_else(|| attachment.as_ref().map(Attachment::path))
-            .or_else(|| disk.as_ref().map(crate::workspaces::Workspace::path))
+            .or_else(|| {
+                disk.as_ref().map(|disk| {
+                    let path = disk.path();
+                    if request.rootfs {
+                        path.join("workspace")
+                    } else {
+                        path
+                    }
+                })
+            })
             .expect("Parent session has a volume or disk workspace");
         let (mut launch, mailbox) = match self.prepare(
             &root,
@@ -578,7 +604,7 @@ impl Runtime {
             profile,
             &[],
             None,
-            Some((&workspace, &resources)),
+            Some((&workspace, &resources, request.rootfs)),
         ) {
             Ok(launch) => launch,
             Err(error) => {
@@ -685,11 +711,20 @@ impl Runtime {
         profile: &Profile,
         argv: &[String],
         timeout: Option<u64>,
-        session: Option<(&Path, &crate::session_resources::Group)>,
+        session: Option<(&Path, &crate::session_resources::Group, bool)>,
     ) -> Result<(Launch, Option<Arc<sandcrab_core::mailbox::Mailbox>>), SetupError> {
-        let workspace = session.map(|(workspace, _)| workspace);
+        let workspace = session.map(|(workspace, _, _)| workspace);
+        let rootfs = session
+            .filter(|(_, _, rootfs)| *rootfs)
+            .map(|(workspace, _, _)| {
+                workspace
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .ok_or_else(|| invalid("Missing rootfs workspace parent"))
+            })
+            .transpose()?;
         let parent = match session {
-            Some((_, resources)) => resources.kernel()?,
+            Some((_, resources, _)) => resources.kernel()?,
             None => self.resources.workloads.clone(),
         };
         let id = root
@@ -751,15 +786,19 @@ impl Runtime {
                 command: argv.into(),
                 shell: timeout.is_none(),
                 workspace: workspace.unwrap_or(&root.join("work")).into(),
+                rootfs: rootfs.clone(),
                 host_calls: profile.host_calls,
             },
             profile.gid,
             0o440,
         )?;
-        let mut read = profile.read_only.clone();
-        for path in [&profile.tools, &root.join("bootstrap")] {
-            if !read.contains(path) {
-                read.push(path.clone());
+        let mut read = Vec::new();
+        if rootfs.is_none() {
+            read = profile.read_only.clone();
+            for path in [&profile.tools, &root.join("bootstrap")] {
+                if !read.contains(path) {
+                    read.push(path.clone());
+                }
             }
         }
         create(
@@ -885,9 +924,21 @@ pub fn launch(path: &Path) -> io::Result<()> {
     };
     let mut args = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &command)
         .map_err(io::Error::other)?;
+    if let Some(rootfs) = &record.rootfs {
+        if record.workspace != rootfs.join("workspace") {
+            return Err(invalid("Rootfs workspace identity changed"));
+        }
+        crate::rootfs::mount(&mut args, rootfs)?;
+    }
     let separator = args
         .iter()
-        .position(|s| s == "--remount-ro")
+        .position(|s| {
+            s == if record.rootfs.is_some() {
+                "--seccomp"
+            } else {
+                "--remount-ro"
+            }
+        })
         .ok_or_else(|| invalid("Missing sandbox root protection"))?;
     if record.shell {
         let binary = std::env::current_exe()?.canonicalize()?;
@@ -918,28 +969,34 @@ pub fn launch(path: &Path) -> io::Result<()> {
             ],
         );
     }
-    args.splice(
-        separator..separator,
-        [
-            "--bind".into(),
-            record.root.join("tmp").to_string_lossy().into(),
-            "/tmp".into(),
+    let mut mounts = vec![
+        "--bind".into(),
+        record.root.join("tmp").to_string_lossy().into(),
+        "/tmp".into(),
+    ];
+    if record.rootfs.is_none() {
+        mounts.extend([
             "--bind".into(),
             record.workspace.to_string_lossy().into(),
             "/workspace".into(),
-            "--chdir".into(),
-            "/workspace".into(),
-        ],
-    );
+        ]);
+    }
+    mounts.extend(["--chdir".into(), "/workspace".into()]);
+    args.splice(separator..separator, mounts);
+    let path = if record.rootfs.is_some() {
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into()
+    } else {
+        format!("{}:/usr/bin:/bin", record.tools.display())
+    };
     let mut environment = vec![
         ("HOME".into(), "/workspace".into()),
         ("TMPDIR".into(), "/tmp".into()),
         (
             "PATH".into(),
             format!(
-                "{}{}:/usr/bin:/bin",
+                "{}{}",
                 if record.host_calls { "/sandcrab:" } else { "" },
-                record.tools.display()
+                path
             ),
         ),
         ("SANDBOX_RUNTIME".into(), "1".into()),

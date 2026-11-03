@@ -118,6 +118,18 @@ pub struct Image {
     pub uri: String,
     pub auth: Option<Value>,
 }
+impl Image {
+    pub fn selection(&self) -> Result<(&str, Option<&str>)> {
+        let (profile, template) = match self.uri.split_once("@sha256:") {
+            Some((profile, digest)) => (profile, Some(digest)),
+            None => (self.uri.as_str(), None),
+        };
+        if !crate::config::name(profile) || template.is_some_and(|id| !crate::file_io::digest(id)) {
+            return Err((400, "INVALID_IMAGE"));
+        }
+        Ok((profile, template))
+    }
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceLimits {
@@ -296,6 +308,36 @@ pub fn query(value: &str) -> Result<Vec<(String, String)>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn image_selection_requires_a_profile_and_an_exact_template_identity() {
+        let id = "a".repeat(64);
+        for (uri, expected) in [
+            ("python".to_string(), Ok(("python", None))),
+            (
+                format!("python@sha256:{id}"),
+                Ok(("python", Some(id.as_str()))),
+            ),
+        ] {
+            let image = Image { uri, auth: None };
+            assert_eq!(image.selection(), expected);
+        }
+        for uri in [
+            "",
+            "../python",
+            "python@sha256:abc",
+            "@sha256:abc",
+            "python:latest",
+        ] {
+            assert_eq!(
+                Image {
+                    uri: uri.into(),
+                    auth: None
+                }
+                .selection(),
+                Err((400, "INVALID_IMAGE"))
+            );
+        }
+    }
     #[test]
     fn explicit_null_sdk_defaults_do_not_enable_unsupported_options() {
         let mut request = json!({"image":{"uri":"python","auth":null},

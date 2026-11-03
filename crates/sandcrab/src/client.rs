@@ -332,7 +332,7 @@ pub fn open_session(
     profile: &str,
     ttl: Option<u64>,
     volume: Option<&str>,
-    template: Option<&str>,
+    template: Option<(&str, bool)>,
     resources: crate::config::Resources,
     keep_result: bool,
 ) -> io::Result<i32> {
@@ -344,7 +344,7 @@ pub fn open_session(
         "POST",
         "/v1/sessions",
         Some(
-            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume,"templateId":template,"resources":resources,"keepResult":keep_result}),
+            &json!({"id":id,"serverId":info["serverId"],"profile":profile,"ttlMillis":ttl,"volumeId":volume,"templateId":template.map(|(id,_)|id),"rootfs":template.is_some_and(|(_,rootfs)|rootfs),"resources":resources,"keepResult":keep_result}),
         ),
     )?;
     wait_session(socket, &id, true)

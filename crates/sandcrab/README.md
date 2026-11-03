@@ -123,8 +123,8 @@ Import a plain tar archive or an already unpacked OCI root tree through the
 authenticated API. Sandcrab stores each normalized tree once beneath
 `runtime_root/templates`; published objects survive daemon restart and remain
 until explicitly deleted. Sessions attach a template as a shared read-only base
-with their own disposable writable layer at `/workspace`. Rootfs execution and
-difference export remain under the
+with their own disposable writable layer at `/workspace`, or use it as the root
+filesystem. Difference export remains under the
 [lightweight service proposal](../../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md).
 
 ```sh
@@ -160,6 +160,34 @@ Restart contains prior workloads and removes disposable layers while retaining
 templates. Before a 0.x upgrade from a daemon with host-visible runtime mounts,
 stop and reconcile those mounts with that binary; startup refuses existing
 submounts beneath `runtime_root`.
+
+For a custom environment, add `rootfs: true` to the session request, or use
+`session open --template SHA256 --rootfs`. The template must contain `/bin/bash`
+and its loader/libraries. Its programs and libraries replace the profile's host
+read mounts and tools; the profile still controls execution identity, resource
+limits, network isolation and optional host calls. The command starts in
+`/workspace`, which is also the scope of file APIs and plain tar snapshots.
+Seed files there when packaging the template.
+
+Rootfs sessions share the parent's full filesystem view across contexts. Writes
+to image directories and `/workspace` use the same overlay. Sandcrab protects
+`/` and runtime mount anchors with root ownership; `/workspace` is writable by
+the execution identity, and its name cannot be replaced. `/tmp`, `/dev`, `/proc`
+and `/sandcrab-driver` are supplied by the runtime. Host-call profiles also
+reserve `/sandcrab` and `/sandcrab-calls`. Symlinks or incompatible node types at
+these targets refuse session setup with `ROOTFS_UNAVAILABLE`. Reserved file
+targets must be absent or empty regular files with one link; populated files
+are refused before ownership changes can copy them into the writable layer. Transfer staging
+stays outside the guest root. These metadata changes affect only the writable
+layer; the template content and identity remain unchanged.
+
+Rootfs-aware file-stage metadata uses a new 0.x format. Drain and reconcile old
+file transfers and template imports with the old binary before stopping it, back
+up runtime and volume-store metadata, and rebuild affected upload records for the
+new binary. Upload metadata
+may live under `runtime_root/uploads` or the configured storage's `state/uploads`;
+changing `runtime_root` alone does not rebuild the latter. Preserve volume data
+and immutable templates.
 
 SHA-256 identifies normalized paths, contents, permission bits, symlink targets,
 hard-link topology and the selected profile's execution UID/GID. Archive order,
@@ -681,5 +709,8 @@ shared budgets, parent expiry and child containment faults; CI retains its recei
 recovery. `overlay_probe.py` adds an owned XFS fixture for shared views, template
 pins, CLI attachment, unsupported mount syscalls and crash recovery; it requires
 `xfsprogs`. Both use the same binary/tools/report arguments.
+`rootfs_probe.py` additionally packages host bash and its libraries as a minimal
+fixture, then checks template execution, protected mount anchors, atomic file
+operations, context sharing and contained recovery. It also needs `ldd`.
 Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).

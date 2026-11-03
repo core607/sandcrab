@@ -69,14 +69,20 @@ The adapter owns and pins its native session, shell and command records until it
 existing lifecycle releases them. The native [result TTL](README.md#result-retention)
 does not shorten SDK session lifetimes or command observation.
 
-`image.uri` selects an operator profile. The SDK default entrypoint
+`image.uri` selects an operator profile. Use `PROFILE@sha256:TEMPLATE_ID` to
+run an imported [template rootfs](README.md#templates) under that profile's
+identity and resource policy; a plain profile name creates an empty workspace
+with its configured host read mounts. Import the tree through the native API
+before SDK creation. SDK commands need `env` on the template's PATH as well as
+`/bin/bash` and its libraries. The adapter does not contact image registries.
+The SDK default entrypoint
 `["tail", "-f", "/dev/null"]` selects an idle managed shell; it does not launch
 that executable. Other entrypoints and image authentication are refused.
 
 Create, get, filtered list, renew and delete use `/v1/sandboxes`. Endpoint lookup
 maps ports 44772 and 18080 to path-routed command and read-only egress services.
 The returned network policy is the enforced deny-all policy. Custom networking,
-images, snapshots, templates, scheduling, credential proxies and volume requests
+registry images, snapshots, separate template options, scheduling, credential proxies and volume requests
 are refused. Unused snapshot, template, platform, resource-request, lifecycle,
 network, credential-proxy and volume options may be omitted or null. Unknown
 fields fail.

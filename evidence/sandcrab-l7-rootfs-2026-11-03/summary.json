@@ -1,0 +1,44 @@
+{
+  "milestone": "L7 template root filesystems",
+  "scope": "Native API/CLI and published SDK clients running a minimal template environment on a local Linux kernel under Docker Desktop",
+  "baseRevision": "9673f953f9bd32c09dab81b83ad69920449c19da",
+  "binarySha256": "d6751f6c1c26497b792a83809a29b82bbb65ac772a9a56a90ef967d175b680bd",
+  "rustTestsPassed": 147,
+  "workerTestsPassed": 176,
+  "nativeRootfsChecksPassed": 8,
+  "nativeIsolationChecksPassed": 48,
+  "nativeOverlayChecksPassed": 7,
+  "nativeTemplateChecksPassed": 9,
+  "nativeFileChecksPassed": 26,
+  "publishedSdkChecksPassed": 21,
+  "publishedRootfsClients": ["Python 1.1.0", "Kotlin 1.1.0 through Java"],
+  "nativeCleanup": "PASS",
+  "earlierFailures": [
+    {
+      "kind": "Isolated mount prototype lacked the template PATH",
+      "attempts": 1,
+      "resolution": "Use explicit template executable paths; subsequent native service probes passed"
+    },
+    {
+      "kind": "JVM smoke used incorrect published SDK method names",
+      "attempts": 1,
+      "resolution": "Inspect the pinned SDK types and use their image and file APIs"
+    },
+    {
+      "kind": "Minimal rootfs fixture omitted env required by SDK command setup",
+      "attempts": 2,
+      "resolution": "Package env in the fixture and document the SDK rootfs requirement"
+    },
+    {
+      "kind": "Systemd stop exceeded the probe timeout after a main-only crash",
+      "attempts": 1,
+      "observedStopSeconds": 90,
+      "probeTimeoutSeconds": 30,
+      "recovery": "Owned fixture cleanup passed after process containment. Focused baseline/rootfs replays and the full file replay passed without shutdown-policy changes",
+      "followup": "https://github.com/core607/poketto/issues/374"
+    }
+  ],
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-rootfs-l7",
+  "capacityMeasured": false,
+  "remainingL7": ["whiteout-aware difference tar", "full L7 footprint and density checkpoint"]
+}

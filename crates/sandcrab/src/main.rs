@@ -24,6 +24,7 @@ mod inventory;
 mod multipart;
 mod opensandbox;
 mod overlay;
+mod rootfs;
 mod runtime;
 mod sdk_commands;
 mod sdk_contexts;
@@ -58,7 +59,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--keep-result] [--volume UUID | --template SHA256] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab template --help\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info --socket PATH\n  sandcrab run --socket PATH --profile NAME [--timeout-ms N] [--stream] [--keep-result] [--memory-bytes N] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list --socket PATH [--after UUID]\n  sandcrab get|cancel|forget --socket PATH RUN_ID\n  sandcrab events --socket PATH RUN_ID [--after CURSOR]\n  sandcrab session open --socket PATH --profile NAME [--ttl-ms N] [--keep-result] [--volume UUID | --template SHA256] [--rootfs] [--memory-bytes N] [--cpu-percent N]\n  sandcrab session shell --socket PATH PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec --socket PATH SESSION_ID [--timeout-ms N] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list --socket PATH [--after UUID]\n  sandcrab session get|close|forget --socket PATH SESSION_ID\n  sandcrab session renew --socket PATH SESSION_ID --ttl-ms N\n  sandcrab template --help\n  sandcrab volume create --socket PATH --profile NAME [--id UUID] [--clone-from UUID] [--bytes N] [--inodes N]\n  sandcrab volume list --socket PATH [--after UUID]\n  sandcrab volume get|delete|forget --socket PATH VOLUME_ID\n\nClient commands also accept --endpoint http://LOOPBACK:PORT in place of --socket PATH.\nUse sandcrab --token-file FILE COMMAND ... or SANDCRAB_TOKEN_FILE for TCP.\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
 
 fn connection_flag(flag: &str) -> bool {
     matches!(flag, "--socket" | "--endpoint")
@@ -345,12 +346,17 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             if mode == "open" && connection_flag(flag) && profile_flag == "--profile" =>
         {
             let (mut ttl, mut volume, mut template) = (None, None, None);
+            let mut rootfs = false;
             let mut keep_result = false;
             let mut resources = config::Resources::default();
             let mut options = rest.iter();
             while let Some(key) = options.next() {
                 if key == "--keep-result" && !keep_result {
                     keep_result = true;
+                    continue;
+                }
+                if key == "--rootfs" && !rootfs {
+                    rootfs = true;
                     continue;
                 }
                 let value = options
@@ -373,12 +379,15 @@ fn session(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             if volume.is_some() && template.is_some() {
                 return Err(config::invalid("Choose either --volume or --template"));
             }
+            if rootfs && template.is_none() {
+                return Err(config::invalid("--rootfs requires --template"));
+            }
             client::open_session(
                 &Endpoint::parse(flag, socket, token_file)?,
                 profile,
                 ttl,
                 volume,
-                template,
+                template.map(|id| (id, rootfs)),
                 resources,
                 keep_result,
             )

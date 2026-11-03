@@ -25,6 +25,7 @@ pub struct Sandbox {
     pub incarnation: String,
     pub environment: BTreeMap<String, String>,
     pub profile: String,
+    pub image: String,
     metadata: BTreeMap<String, String>,
     created: u64,
     token: Token,
@@ -154,7 +155,7 @@ impl Service {
     fn sdk_value(self: &Arc<Self>, sandbox: &Sandbox) -> Result<Value> {
         let native = self.sdk_native(sandbox, "", None)?;
         Ok(
-            json!({"id":sandbox.id,"image":{"uri":sandbox.profile},"entrypoint":sdk_types::IDLE,
+            json!({"id":sandbox.id,"image":{"uri":sandbox.image},"entrypoint":sdk_types::IDLE,
             "metadata":sandbox.metadata,"createdAt":sdk_types::timestamp(sandbox.created),
             "expiresAt":sdk_types::timestamp(native["expiresAtMillis"].as_u64().ok_or((503,"INVALID_NATIVE_STATE"))?),
             "status":{"state":state(&native)}}),
@@ -175,10 +176,11 @@ impl Service {
             .ok_or((400, "BOUNDED_TIMEOUT_REQUIRED"))?
             * 1000;
         let resources = request.resource_limits.native()?;
+        let (profile, template) = request.image.selection()?;
         self.sdk_reap();
         let id = sandcrab_core::new_uuid().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
         let token = Token::random().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
-        let input = json!({"id":id,"serverId":self.id,"profile":request.image.uri,"ttlMillis":ttl,"resources":resources,"keepResult":true});
+        let input = json!({"id":id,"serverId":self.id,"profile":profile,"templateId":template,"rootfs":template.is_some(),"ttlMillis":ttl,"resources":resources,"keepResult":true});
         let accepted = sdk_types::native(self.session_route(
             "POST",
             "/v1/sessions",
@@ -195,7 +197,8 @@ impl Service {
         let sandbox = Arc::new(Sandbox {
             id: id.clone(),
             incarnation,
-            profile: request.image.uri,
+            profile: profile.into(),
+            image: request.image.uri,
             environment: request.env,
             metadata: request.metadata,
             created: sdk_types::now(),

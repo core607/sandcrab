@@ -2391,6 +2391,11 @@
           },
           "templateId": {
             "$ref": "#/components/schemas/TemplateId"
+          },
+          "rootfs": {
+            "type": "boolean",
+            "default": false,
+            "description": "Use templateId as the root filesystem. Requires templateId; profile resource limits and identity apply, while programs and libraries come from the template. File APIs remain scoped to /workspace."
           }
         }
       },
@@ -2453,7 +2458,8 @@
           "storageUsage",
           "storagePoolUsage",
           "keepResult",
-          "templateId"
+          "templateId",
+          "rootfs"
         ],
         "properties": {
           "id": {
@@ -2523,6 +2529,9 @@
           },
           "templateId": {
             "$ref": "#/components/schemas/TemplateId"
+          },
+          "rootfs": {
+            "type": "boolean"
           }
         }
       },
@@ -3603,7 +3612,7 @@
           "null"
         ],
         "pattern": "^[0-9a-f]{64}$",
-        "description": "Immutable template for a disposable overlay at /workspace. Requires matching profile UID/GID; mutually exclusive with volumeId."
+        "description": "Immutable template for the session overlay. Requires matching profile UID/GID; mutually exclusive with volumeId."
       }
     },
     "responses": {

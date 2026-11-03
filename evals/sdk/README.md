@@ -38,6 +38,14 @@ account. The controller creates its own bounded units and temporary credentials,
 runs both clients without root, checks effective kernel limits and native record
 cleanup, and verifies containment before removing its fixture.
 
+[rootfs_probe.py](../../executor-service/rust/sandcrab/rootfs_probe.py) uses the
+same arguments with `--python-client evals/sdk/rootfs_client.py` to package a
+minimal template and run [rootfs_client.py](rootfs_client.py) and
+[SdkRootfs.java](jvm/src/main/java/example/sandcrab/SdkRootfs.java). Both published
+clients select `PROFILE@sha256:TEMPLATE_ID`, execute template programs, round-trip
+files and release their native records. The probe also checks native rootfs
+isolation and lifecycle; its raw receipt stays in the CI artifact.
+
 The receipt pins the [specification revision](https://github.com/opensandbox-group/OpenSandbox/tree/b1a29cf93a823a95913f7943010febb3f29de05c/specs)
 and records binary, probe and Python-client hashes, JVM artifact hashes, client
 checks and cleanup. Failed attempts keep their receipts and separate

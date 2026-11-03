@@ -283,6 +283,7 @@ impl Store {
             id: id.clone(),
             session_id: id.clone(),
             volume_id: None,
+            rootfs: false,
             profile: profile_name.into(),
             uid: profile.uid,
             gid: profile.gid,
