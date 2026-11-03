@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Sandcrab native service",
+    "title": "Sandcrab",
     "version": "0.1.0",
     "description": "Unix: configured peer UID (the empty security alternative). Every loopback TCP request requires a bearer token; no TLS or listener attestation. HTTP/1.1 honors Connection: close; consume complete chunked events before reuse. Epochs scope new operations; volumes/uploads have independent lifetimes."
   },
@@ -71,6 +71,7 @@
                 "sessions",
                 "volumes",
                 "files",
+                "uploads",
                 "events",
                 "calls"
               ]
@@ -1161,7 +1162,7 @@
     "/v1/runs/{id}/events": {
       "get": {
         "operationId": "observeRun",
-        "description": "Observe a finite run or session command without starting, cancelling or forgetting it. A state event precedes stdout/stderr blocks and one result event. Output order is preserved within each stream; cross-stream order is unspecified. Every complete event carries an id cursor. Reconnect explicitly with Last-Event-ID to continue after its bytes. A finite run emits result after its process tree stops; a normal session command may retain background processes until session closure. EOF, heartbeat or an error does not imply completion. Retain the run until observation finishes. Slow readers lose only their subscription. Maximum observation time is 350 seconds; an unfinished run remains inspectable. Requests and non-stream responses still require fixed HTTP lengths.",
+        "description": "Observe a finite run or session command without starting, cancelling or forgetting it. A state event precedes stdout/stderr blocks and one result event. Output order is preserved within each stream; cross-stream order is unspecified. Every complete event carries an id cursor. Reconnect explicitly with Last-Event-ID to continue after its bytes. A finite run emits result after its process tree stops; a normal session command may retain background processes until session closure. EOF, heartbeat or an error does not imply completion. Submit with keepResult=true when observation may outlast resultTtlMillis; expiry can end an unpinned stream with RUN_NOT_FOUND. Slow readers lose only their subscription. Maximum observation time is 350 seconds; an unfinished run remains inspectable. Requests and non-stream responses still require fixed HTTP lengths.",
         "parameters": [
           {
             "$ref": "#/components/parameters/Id"
@@ -1549,6 +1550,115 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "put": {
+        "operationId": "putFile",
+        "description": "Stream a raw file using Content-Length or chunked encoding. Replace atomically after complete ingestion; parent directories must exist. No session freeze or retained upload ID. A lost reply or PUBLICATION_UNKNOWN requires destination inspection before another write. Admission and authentication precede 100 Continue; connections close after the response.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Workspace-relative path; symlinks are refused."
+          },
+          {
+            "name": "replace",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 511,
+              "default": 420
+            },
+            "description": "Ordinary permission bits as a decimal integer."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Published and staging cleanup confirmed. SHA-256 describes received bytes; concurrent commands can change the destination.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "bytes",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "417": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     }
   },
@@ -1605,6 +1715,7 @@
                 "sessions",
                 "volumes",
                 "files",
+                "uploads",
                 "events",
                 "calls"
               ]

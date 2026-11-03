@@ -42,14 +42,12 @@ fn error(value: &io::Error, attempted: bool) -> (u16, &'static str) {
 }
 fn publication(value: serde_json::Value) -> Result<()> {
     match serde_json::from_value(value) {
-        Ok(crate::sdk_file_io::Publication::Succeeded) => Ok(()),
-        Ok(crate::sdk_file_io::Publication::Rejected { code }) => {
-            Err(if code == "FILE_NOT_FOUND" {
-                (404, "FILE_NOT_FOUND")
-            } else {
-                error(&invalid(&code), false)
-            })
-        }
+        Ok(crate::file_io::Publication::Succeeded) => Ok(()),
+        Ok(crate::file_io::Publication::Rejected { code }) => Err(if code == "FILE_NOT_FOUND" {
+            (404, "FILE_NOT_FOUND")
+        } else {
+            error(&invalid(&code), false)
+        }),
         Err(_) => Err((503, "PUBLICATION_UNKNOWN")),
     }
 }

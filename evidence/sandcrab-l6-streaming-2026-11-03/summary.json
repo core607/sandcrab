@@ -1,0 +1,16 @@
+{
+  "milestone": "L6 ordinary streaming file upload",
+  "scope": "Functional checks on a local Linux kernel under Docker Desktop",
+  "baseRevision": "7fc00da7121e7a6dc72aa838bd6cb11ee90a39d8",
+  "binarySha256": "4fd1ae7c47265fb48db470742589e9a860429c7fa1dbf7ae9680eadcb141f816",
+  "rustTestsPassed": 143,
+  "executorServiceTestsPassed": 176,
+  "applicationImageIdentity": "PASS",
+  "streamingFileChecksPassed": 6,
+  "stagedFileChecksPassed": 25,
+  "publishedSdkChecksPassed": 21,
+  "publishedSdkVersion": "1.1.0",
+  "nativeCleanup": "PASS",
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-streaming-files-l6",
+  "capacityMeasured": false
+}

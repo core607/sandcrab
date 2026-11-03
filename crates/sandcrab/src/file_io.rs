@@ -23,6 +23,13 @@ pub enum Format {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Publication {
+    Succeeded,
+    Rejected { code: String },
+}
+
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Job {
     pub action: String,
@@ -263,11 +270,12 @@ fn unpack(job: &Job) -> io::Result<()> {
     Ok(())
 }
 
-fn receive(job: &Job) -> io::Result<()> {
+fn receive(job: &Job, checked: bool) -> io::Result<serde_json::Value> {
     let stage = directory(&job.stage)?;
     let mut content = new_file(&stage, "content")?;
-    let (bytes, sha) = copy_hash(&mut io::stdin().lock(), &mut content, job.bytes)?;
-    if bytes != job.bytes || sha != job.sha256 {
+    let limit = if checked { job.bytes } else { job.byte_limit };
+    let (bytes, sha) = copy_hash(&mut io::stdin().lock(), &mut content, limit)?;
+    if checked && (bytes != job.bytes || sha != job.sha256) {
         return Err(invalid("CONTENT_MISMATCH"));
     }
     content.sync_all()?;
@@ -276,10 +284,11 @@ fn receive(job: &Job) -> io::Result<()> {
     } else {
         ownership(&content, job, job.mode)?;
     }
-    stage.sync_all()
+    stage.sync_all()?;
+    Ok(serde_json::json!({"bytes":bytes,"sha256":sha}))
 }
 
-fn publish(job: &Job) -> io::Result<()> {
+fn publish(job: &Job, attempted: &mut bool) -> io::Result<()> {
     let workspace = directory(&job.workspace)?;
     let stage = directory(&job.stage)?;
     let (dir, name) = parent(&workspace, &job.path, false)?;
@@ -288,7 +297,7 @@ fn publish(job: &Job) -> io::Result<()> {
     } else {
         "tree"
     };
-    if job.format == Format::Raw && job.replace {
+    if job.format == Format::Raw && (job.replace || job.action == "stream-publish") {
         match statat(&dir, &name, AtFlags::SYMLINK_NOFOLLOW) {
             Ok(info)
                 if rustix::fs::FileType::from_raw_mode(info.st_mode)
@@ -296,6 +305,7 @@ fn publish(job: &Job) -> io::Result<()> {
             {
                 return Err(invalid("NOT_REGULAR_FILE"));
             }
+            Ok(_) if !job.replace => return Err(io::ErrorKind::AlreadyExists.into()),
             Err(rustix::io::Errno::NOENT) | Ok(_) => (),
             Err(error) => return Err(error.into()),
         }
@@ -313,14 +323,17 @@ fn publish(job: &Job) -> io::Result<()> {
                 {
                     return Err(invalid("NOT_DIRECTORY"));
                 }
+                *attempted = true;
                 renameat_with(&stage, source, &dir, &name, RenameFlags::EXCHANGE)?;
             }
             Err(rustix::io::Errno::NOENT) => {
+                *attempted = true;
                 renameat_with(&stage, source, &dir, &name, RenameFlags::NOREPLACE)?
             }
             Err(error) => return Err(error.into()),
         }
     } else {
+        *attempted = true;
         renameat_with(&stage, source, &dir, &name, flags)?;
     }
     dir.sync_all()?;
@@ -521,6 +534,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         || job.bytes > job.byte_limit
         || job.byte_limit > 1_073_741_824
         || job.mode > 0o777
+        || (job.action.starts_with("stream-") && job.format != Format::Raw)
         || !(1..=10000).contains(&job.entry_limit)
         || !valid_path(
             &job.path,
@@ -536,6 +550,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     crate::storage::no_mounts_below(&job.stage, true)?;
     if [
         "publish",
+        "stream-publish",
         "snapshot",
         "sdk-publish",
         "sdk-query",
@@ -563,10 +578,23 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     if job.action == "sdk-publish" {
         return crate::sdk_file_io::execute(&job);
     }
+    if ["receive", "stream-receive"].contains(&job.action.as_str()) {
+        return receive(&job, job.action == "receive");
+    }
+    if job.action == "stream-publish" {
+        let mut attempted = false;
+        let receipt = match publish(&job, &mut attempted) {
+            Ok(()) => Publication::Succeeded,
+            Err(error) if !attempted => Publication::Rejected {
+                code: error_code(&error).into(),
+            },
+            Err(error) => return Err(error),
+        };
+        return Ok(serde_json::to_value(receipt)?);
+    }
     match job.action.as_str() {
         "sdk-receive" => crate::sdk_file_io::receive(&job),
-        "receive" => receive(&job),
-        "publish" => publish(&job),
+        "publish" => publish(&job, &mut false),
         "cleanup" => {
             for entry in fs::read_dir(&job.stage)? {
                 let entry = entry?;

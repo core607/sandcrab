@@ -1,4 +1,4 @@
-//! Streaming CLI file operations. A lost upload response keeps its recovery ID;
+//! Streaming CLI file operations. Staged uploads keep an explicit recovery ID;
 //! a failed download never replaces an existing local destination.
 use crate::{
     client::{self, Endpoint},
@@ -66,6 +66,60 @@ fn outcome(socket: &Endpoint, result: Value, keep: bool) -> io::Result<i32> {
     }
     Ok(if state == "succeeded" { 0 } else { 1 })
 }
+
+fn transfer(
+    socket: &Endpoint,
+    route: &str,
+    file: &mut File,
+    bytes: u64,
+    recovery: &str,
+) -> io::Result<Value> {
+    let mut stream = client::connect(socket)?;
+    stream.set_write_timeout(Some(Duration::from_secs(35)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(75)))?;
+    write!(
+        stream,
+        "PUT {route} HTTP/1.1\r\nContent-Type: application/octet-stream\r\nContent-Length: {bytes}\r\nConnection: close\r\n"
+    )?;
+    socket.headers(&mut stream)?;
+    stream.write_all(b"\r\n")?;
+    let sent = io::copy(&mut file.take(bytes), &mut stream);
+    if sent.as_ref().is_err() || sent.as_ref().is_ok_and(|n| *n != bytes) {
+        return Err(invalid(format!(
+            "Upload did not finish sending; {recovery}"
+        )));
+    }
+    let (head, mut response) = sandcrab_core::http::response(&mut stream)
+        .map_err(|_| invalid(format!("Upload response is incomplete; {recovery}")))?;
+    if head.length > 65536 {
+        return Err(invalid("Upload response exceeds 65536 bytes"));
+    }
+    let mut payload = Vec::new();
+    response
+        .read_to_end(&mut payload)
+        .map_err(|_| invalid(format!("Upload response is incomplete; {recovery}")))?;
+    let value: Value = serde_json::from_slice(&payload)?;
+    if head.status != 200 {
+        return Err(invalid(format!(
+            "Upload: HTTP {} {}; {recovery}",
+            head.status, value["error"]["code"]
+        )));
+    }
+    Ok(value)
+}
+
+fn query_path(path: &str) -> String {
+    use std::fmt::Write;
+    let mut query = String::new();
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            query.push(byte as char);
+        } else {
+            write!(query, "%{byte:02X}").unwrap();
+        }
+    }
+    query
+}
 pub fn put(
     socket: &Endpoint,
     session: &str,
@@ -79,6 +133,27 @@ pub fn put(
     let mut file = File::open(source)?;
     if !file.metadata()?.is_file() {
         return Err(invalid("Upload source must be a regular file"));
+    }
+    if options.format == Format::Raw && options.id.is_none() && !options.keep_result {
+        let bytes = file.metadata()?.len();
+        if bytes > 1_073_741_824 {
+            return Err(invalid("File exceeds the 1 GiB transfer limit"));
+        }
+        let route = format!(
+            "/v1/sessions/{session}/files?path={}&replace={}&mode={}",
+            query_path(destination),
+            options.replace,
+            options.mode.unwrap_or(0o644)
+        );
+        let result = transfer(
+            socket,
+            &route,
+            &mut file,
+            bytes,
+            "inspect the destination before another write",
+        )?;
+        println!("{result}");
+        return Ok(0);
     }
     let (bytes, sha256) = hash(&mut file)?;
     file.seek(SeekFrom::Start(0))?;
@@ -94,42 +169,13 @@ pub fn put(
     if registered["state"] != "waiting" {
         return outcome(socket, registered, options.keep_result);
     }
-    let mut stream = client::connect(socket)?;
-    stream.set_write_timeout(Some(Duration::from_secs(35)))?;
-    stream.set_read_timeout(Some(Duration::from_secs(75)))?;
-    write!(
-        stream,
-        "PUT /v1/uploads/{id}/content HTTP/1.1\r\nContent-Type: application/octet-stream\r\nContent-Length: {bytes}\r\nConnection: close\r\n"
+    let value = transfer(
+        socket,
+        &format!("/v1/uploads/{id}/content"),
+        &mut file,
+        bytes,
+        &format!("inspect upload {id} before another write"),
     )?;
-    socket.headers(&mut stream)?;
-    stream.write_all(b"\r\n")?;
-    let sent = io::copy(&mut (&mut file).take(bytes), &mut stream);
-    if sent.as_ref().is_err() || sent.as_ref().is_ok_and(|n| *n != bytes) {
-        return Err(invalid(format!(
-            "Upload {id} did not finish sending; inspect this ID before retrying"
-        )));
-    }
-    let (head, mut response) = sandcrab_core::http::response(&mut stream).map_err(|_| {
-        invalid(format!(
-            "Upload {id} response is incomplete; inspect this ID before retrying"
-        ))
-    })?;
-    if head.length > 65536 {
-        return Err(invalid("Upload response exceeds 65536 bytes"));
-    }
-    let mut payload = Vec::new();
-    response.read_to_end(&mut payload).map_err(|_| {
-        invalid(format!(
-            "Upload {id} response is incomplete; inspect this ID before retrying"
-        ))
-    })?;
-    let value: Value = serde_json::from_slice(&payload)?;
-    if head.status != 200 {
-        return Err(invalid(format!(
-            "Upload {id}: HTTP {} {}",
-            head.status, value["error"]["code"]
-        )));
-    }
     outcome(socket, value, options.keep_result)
 }
 struct Partial {

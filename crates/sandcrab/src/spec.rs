@@ -39,10 +39,7 @@ pub fn document(capability: Option<&str>) -> Value {
                 } else if capability == "calls" {
                     path.starts_with("/v1/runs/{id}/calls")
                 } else if capability == "files" {
-                    path == "/v1/uploads"
-                        || path.starts_with("/v1/uploads/")
-                        || path == "/v1/sessions/{id}/snapshot"
-                        || path == "/v1/sessions/{id}/files"
+                    path == "/v1/sessions/{id}/snapshot" || path == "/v1/sessions/{id}/files"
                 } else {
                     (path == &prefix || path.starts_with(&format!("{prefix}/")))
                         && !path.ends_with("/snapshot")
@@ -83,12 +80,14 @@ mod tests {
     use super::*;
     #[test]
     fn capability_views_are_bounded_and_resolve_every_reference() {
-        for capability in ["runs", "sessions", "volumes", "files", "events", "calls"] {
+        for capability in [
+            "runs", "sessions", "volumes", "files", "uploads", "events", "calls",
+        ] {
             let document = document(Some(capability));
             let path = if capability == "events" {
                 "/v1/runs/{id}/events".into()
             } else if capability == "files" {
-                "/v1/uploads".into()
+                "/v1/sessions/{id}/files".into()
             } else if capability == "calls" {
                 "/v1/runs/{id}/calls".into()
             } else {
@@ -119,12 +118,12 @@ mod tests {
                     "{reference}"
                 );
             }
-            for other in ["runs", "sessions", "volumes", "files", "events"] {
+            for other in ["runs", "sessions", "volumes", "files", "uploads", "events"] {
                 if other != capability {
                     let path = if other == "events" {
                         "/v1/runs/{id}/events".into()
                     } else if other == "files" {
-                        "/v1/uploads".into()
+                        "/v1/sessions/{id}/files".into()
                     } else {
                         format!("/v1/{other}")
                     };

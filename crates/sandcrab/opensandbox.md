@@ -151,6 +151,9 @@ independent wire checks verify Sandcrab's actual status and resource cleanup.
 
 ## Files
 
+The adapter uses multipart uploads; native callers can use the ordinary
+[streaming PUT](README.md#files). Both share bounded staging and file admission.
+
 SDK uploads accept fixed-length and chunked multipart bodies. Downloads return
 fixed-length raw bytes. Paths are relative to `/workspace` or start with
 `/workspace/`; traversal, symlink parents and other absolute roots are refused.

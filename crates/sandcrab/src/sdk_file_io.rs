@@ -1,7 +1,7 @@
 //! SDK multipart staging runs only in the bounded native file helper.
 use crate::{
     config::invalid,
-    file_io::{self, Job},
+    file_io::{self, Job, Publication},
     multipart::Multipart,
 };
 use rustix::fs::{AtFlags, FileType, RenameFlags, renameat_with, statat};
@@ -32,12 +32,6 @@ struct Metadata {
 pub(crate) struct Entry {
     pub path: String,
     pub mode: u32,
-}
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Publication {
-    Succeeded,
-    Rejected { code: String },
 }
 fn metadata(bytes: &[u8]) -> io::Result<Entry> {
     let value = sandcrab_core::parse(bytes).map_err(|_| invalid("INVALID_FILE_METADATA"))?;

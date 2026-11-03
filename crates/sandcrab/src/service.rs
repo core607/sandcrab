@@ -193,7 +193,10 @@ impl Service {
                 None
             } else {
                 let Some(name) = path.strip_prefix("/v1/openapi?capability=").filter(|s| {
-                    ["runs", "sessions", "volumes", "files", "events", "calls"].contains(s)
+                    [
+                        "runs", "sessions", "volumes", "files", "uploads", "events", "calls",
+                    ]
+                    .contains(s)
                 }) else {
                     return error(400, "INVALID_REQUEST");
                 };
@@ -206,7 +209,7 @@ impl Service {
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network,"hostCalls":p.host_calls,
                     "memoryBytes":p.memory_bytes,"minimumMemoryBytes":p.minimum_memory(),"cpuQuotaPercent":p.cpu_quota_percent})))
                 .collect::<serde_json::Map<_,_>>();
-            let mut capabilities = vec!["runs", "sessions", "files", "events", "calls"];
+            let mut capabilities = vec!["runs", "sessions", "files", "uploads", "events", "calls"];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,

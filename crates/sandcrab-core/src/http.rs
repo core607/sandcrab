@@ -177,7 +177,7 @@ impl Envelope {
 /// Read one request head. Clean EOF before the first byte returns `None`; an
 /// incomplete message is an error. A body must be consumed before reading again.
 pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'static str> {
-    let Some((head, prefix)) = request_head(source, |_| false)? else {
+    let Some((head, prefix)) = request_head(source, |_, _| false)? else {
         return Ok(None);
     };
     let remaining = head.length;
@@ -193,7 +193,7 @@ pub fn start<R: Read>(source: &mut R) -> Result<Option<(Head, Body<'_, R>)>, &'s
 
 fn request_head(
     source: &mut impl Read,
-    chunks: impl Fn(&str) -> bool,
+    chunks: impl Fn(&str, &str) -> bool,
 ) -> Result<Option<(Head, Vec<u8>)>, &'static str> {
     let Some(raw) = envelope(source, true)? else {
         return Ok(None);
@@ -211,8 +211,8 @@ fn request_head(
     }
     let chunked = raw.headers.contains_key("transfer-encoding");
     let length = if chunked {
-        if *method != "POST"
-            || !chunks(path)
+        if !["POST", "PUT"].contains(method)
+            || !chunks(method, path)
             || raw.headers.contains_key("content-length")
             || raw
                 .headers
@@ -239,12 +239,12 @@ fn request_head(
     Ok(Some((head, raw.prefix)))
 }
 
-/// Chunked request bodies are permitted only by the caller's path selector. No
+/// Chunked bodies require the caller's method and path selector. No
 /// body is decoded before return; authenticate and impose a total byte/time limit.
 /// Chunk sizes never allocate a correspondingly sized buffer.
 pub fn streaming_start<R: Read>(
     source: &mut R,
-    chunks: impl Fn(&str) -> bool,
+    chunks: impl Fn(&str, &str) -> bool,
 ) -> Result<Option<(Head, StreamingBody<'_, R>)>, &'static str> {
     let Some((head, prefix)) = request_head(source, chunks)? else {
         return Ok(None);
@@ -613,9 +613,9 @@ mod tests {
         wire.extend(vec![0xff; 131072]);
         wire.extend_from_slice(b"\r\n0\r\n\r\n");
         assert!(start(&mut wire.as_slice()).is_err());
-        assert!(streaming_start(&mut wire.as_slice(), |_| false).is_err());
+        assert!(streaming_start(&mut wire.as_slice(), |_, _| false).is_err());
         let mut input = wire.as_slice();
-        let (head, mut body) = streaming_start(&mut input, |p| p == "/upload")
+        let (head, mut body) = streaming_start(&mut input, |m, p| m == "POST" && p == "/upload")
             .unwrap()
             .unwrap();
         assert!(head.chunked);
@@ -628,7 +628,7 @@ mod tests {
             "Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked",
         ] {
             let bad = format!("POST /upload HTTP/1.1\r\n{header}\r\n\r\n0\r\n\r\n");
-            assert!(streaming_start(&mut bad.as_bytes(), |_| true).is_err());
+            assert!(streaming_start(&mut bad.as_bytes(), |_, _| true).is_err());
         }
         for body in [
             "2\r\nx",
@@ -638,8 +638,33 @@ mod tests {
             let mut bad = prefix.to_vec();
             bad.extend_from_slice(body.as_bytes());
             let mut source = bad.as_slice();
-            let (_, mut input) = streaming_start(&mut source, |_| true).unwrap().unwrap();
+            let (_, mut input) = streaming_start(&mut source, |_, _| true).unwrap().unwrap();
             assert!(input.read_to_end(&mut Vec::new()).is_err());
+        }
+    }
+    #[test]
+    fn chunked_put_does_not_enable_other_methods_or_paths() {
+        let allowed = |method: &str, path: &str| method == "PUT" && path == "/file";
+        for (method, path, accepted) in [
+            ("PUT", "/file", true),
+            ("POST", "/file", false),
+            ("GET", "/file", false),
+            ("PUT", "/other", false),
+        ] {
+            let wire = format!(
+                "{method} {path} HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nraw\r\n0\r\n\r\n"
+            );
+            let mut source = wire.as_bytes();
+            let result = streaming_start(&mut source, allowed);
+            if accepted {
+                let (head, mut body) = result.unwrap().unwrap();
+                assert_eq!(head.method, "PUT");
+                let mut bytes = Vec::new();
+                body.read_to_end(&mut bytes).unwrap();
+                assert_eq!(bytes, b"raw");
+            } else {
+                assert!(result.is_err());
+            }
         }
     }
     use super::*;

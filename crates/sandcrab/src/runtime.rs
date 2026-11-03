@@ -251,7 +251,9 @@ impl Runtime {
             }
             // Renaming across two bind mounts fails with EXDEV even on the same
             // filesystem. Publication binds their protected common parent once.
-            if ["publish", "sdk-publish", "sdk-mutate"].contains(&job.action.as_str()) {
+            if ["publish", "stream-publish", "sdk-publish", "sdk-mutate"]
+                .contains(&job.action.as_str())
+            {
                 writable = vec![
                     job.stage
                         .parent()

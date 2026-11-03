@@ -177,7 +177,7 @@ account can connect to the socket. TCP uses the bearer credential above.
 | Request | Result |
 |---|---|
 | `GET /v1/info` | API version, server epoch, capabilities and profile limits |
-| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files` or `events` selects a bounded view with its referenced schemas |
+| `GET /v1/openapi` | The bundled [OpenAPI contract](openapi.json); `?capability=runs`, `sessions`, `volumes`, `files`, `uploads`, `events` or `calls` selects a bounded view with its referenced schemas |
 | `GET /v1/runs` or `GET /v1/sessions` | List up to 64 retained IDs, with `serverId` and `nextAfter`; continue with `?after=UUID` |
 | `POST /v1/runs` | Admit a run; return 202 with its state |
 | `GET /v1/runs/ID` | Read current state and any terminal result |
@@ -468,6 +468,23 @@ sandcrab files forget --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOA
 sandcrab files list --socket /var/lib/sandcrab-demo/runtime/control.sock
 ```
 
+Raw `files put` streams one request without hashing the source first. `--id`,
+`--keep-result` or `--tar` selects a staged upload. Discovery exposes ordinary
+transfers under `capability=files` and staged operations under `capability=uploads`.
+
+```sh
+curl --unix-socket /var/lib/sandcrab-demo/runtime/control.sock --upload-file ./input.bin \
+  'http://localhost/v1/sessions/SESSION_ID/files?path=input.bin'
+```
+
+`PUT /v1/sessions/ID/files?path=PATH` accepts fixed-length or chunked raw bytes,
+including an empty file. It replaces a regular file atomically by default;
+`replace=false` refuses an existing target. Optional `mode` is a decimal permission
+mask, default 420 (0644). The reply contains `path`, received `bytes` and `sha256`.
+Publication and staging cleanup finish before success. The session keeps running;
+concurrent commands can change the destination. A lost reply or `PUBLICATION_UNKNOWN`
+requires destination inspection before another write. This route retains no upload ID.
+
 Paths are relative to `/workspace`, preserving case and Unicode. Upload parents
 must already exist. Raw uploads install one file; tar uploads install one complete
 directory. Existing targets require `--replace`; tar replacement replaces the
@@ -478,8 +495,8 @@ entries, traversal paths and writes through symlinks are refused. Symlinks remai
 opaque; snapshots never follow them. Hard links must name an earlier regular entry
 inside the archive. Extended attributes and original ownership are not preserved.
 
-Uploads stage and verify length and SHA-256 before publication. By default the
-session freezes briefly for atomic installation, and while a snapshot is captured.
+Staged uploads verify declared length and SHA-256 before publication. By default the
+session freezes briefly for staged installation, and while a snapshot is captured.
 `--no-freeze` requires the caller to coordinate workspace writers; a snapshot can
 then observe different files at different times. The session is thawed before sending snapshot bytes.
 Command timeouts and session expiry continue while frozen. A transfer pins its
@@ -492,6 +509,7 @@ boundary and opaque-symlink rules. Deletion remains available during storage ove
 
 | Request | Result |
 |---|---|
+| `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace` and `mode` |
 | `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `freeze`, `mode`; returns 201 |
 | `PUT /v1/uploads/ID/content` | Send exactly the registered Content-Length; return the upload record |
 | `GET /v1/uploads/ID` | Read outcome and publication certainty |
@@ -514,6 +532,9 @@ operations; each session allows only one file operation. `max_file_records` boun
 retained upload identities independently of run and session records. Info exposes
 the configured limits and whether file metadata is writable.
 
+Use staged uploads for large build artifacts or archive imports when a dropped
+reply must be reconciled by operation ID, including after daemon restart. Partial
+bodies restart from zero; the retained receipt records publication state.
 Retained records survive daemon restart while their configured storage survives. Reusing
 an ID with the same plan returns its record, excluding `serverId` from the digest;
 a different plan conflicts. Unknown IDs require the current epoch and a live session.
@@ -523,7 +544,7 @@ Cancellation does not undo a committed write. After an ambiguous publication,
 inspect the destination and receipt before choosing another write; replay never
 reexecutes it. Forgetting or result expiry ends replay protection, so never reuse that ID.
 
-The CLI prints the upload ID before submission. It forgets successful or failed
+For staged transfers, the CLI prints the upload ID before submission. It forgets successful or failed
 uploads unless `--keep-result` is set, and retains uncertain outcomes. `--id UUID`
 reconciles an explicit replay. Downloads verify length and ETag before atomically
 installing a local file; `--replace` is required to replace an existing regular

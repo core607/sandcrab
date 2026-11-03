@@ -14,6 +14,7 @@ mod file_access;
 mod file_client;
 mod file_io;
 mod file_records;
+mod file_stream;
 mod files;
 mod guest_call;
 mod helper;
@@ -575,7 +576,7 @@ fn numeric_option(args: &[String], name: &str) -> io::Result<Option<u64>> {
     }
 }
 
-const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--no-freeze] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace] [--no-freeze]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
+const FILE_HELP: &str = "\nFiles:\n  sandcrab files put --socket PATH SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--no-freeze] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get --socket PATH SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace] [--no-freeze]\n  sandcrab files status|cancel|forget --socket PATH UPLOAD_ID\n  sandcrab files list --socket PATH [--after UUID]\n\nRaw put streams one request. --id, --keep-result or --tar selects staged upload.\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
 fn file_command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
     use file_io::Format;
     match args {
