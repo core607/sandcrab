@@ -58,6 +58,8 @@ pub struct Service {
     pub max_connections: usize,
     #[serde(default = "event_streams")]
     pub max_event_streams: usize,
+    #[serde(default = "proxy_connections")]
+    pub max_proxy_connections: usize,
 }
 
 #[derive(Clone, Deserialize)]
@@ -87,7 +89,7 @@ pub struct Profile {
     pub timeout_millis: u64,
     pub session_ttl_millis: u64,
     pub output_limit_bytes: usize,
-    pub network: String,
+    pub network: crate::egress::policy::Policy,
     #[serde(default)]
     pub host_calls: bool,
     #[serde(default = "transfer_bytes")]
@@ -148,6 +150,9 @@ fn daemon_tasks() -> u64 {
 }
 fn connections() -> usize {
     32
+}
+fn proxy_connections() -> usize {
+    16
 }
 fn event_streams() -> usize {
     16
@@ -316,6 +321,7 @@ impl Config {
             ));
         }
         if !(1..=512).contains(&service.max_sandboxes)
+            || !(1..=128).contains(&service.max_proxy_connections)
             || !(service.max_sandboxes..=1024).contains(&service.max_records)
             || !(65536..=64 * 1024 * 1024).contains(&service.max_output_bytes)
             || self.profiles.is_empty()
@@ -351,12 +357,12 @@ impl Config {
                 || self.storage.as_ref().is_some_and(|s| {
                     profile.tools.starts_with(&s.root) || s.root.starts_with(&profile.tools)
                 })
-                || profile.network != "none"
             {
                 return Err(invalid(format!(
-                    "Profile {key} needs a name, execution account, absolute tools path and network=none"
+                    "Profile {key} needs a name, execution account and absolute tools path"
                 )));
             }
+            profile.network.validate()?;
             if profile.host_calls
                 && (host_call_mount(&profile.tools)
                     || profile.read_only.iter().any(|path| host_call_mount(path)))
@@ -411,7 +417,7 @@ mod tests {
     fn example_has_no_consumer_identity_or_signing_key() {
         let config = Config::parse(EXAMPLE).unwrap();
         assert!(config.profiles.contains_key("python"));
-        assert_eq!(config.profiles["python"].network, "none");
+        assert!(!config.profiles["python"].network.enabled());
     }
     #[test]
     fn requested_resources_preserve_operator_mounts_identity_and_hard_caps() {

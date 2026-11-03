@@ -16,6 +16,7 @@ max_file_records = 256
 max_file_transfers = 2
 max_connections = 32
 max_event_streams = 16
+max_proxy_connections = 16
 
 # Optional: use a literal loopback address and a root-owned, mode-0600 token file.
 # Generate its contents with `openssl rand -hex 32` under umask 077.
@@ -47,5 +48,7 @@ session_ttl_millis = 60000
 output_limit_bytes = 65536
 transfer_bytes = 33554432
 network = "none"
+# Optional exact DNS names for CONNECT/SOCKS5 egress; see README.md#network-egress.
+# network = { allow = ["pypi.org", "files.pythonhosted.org"] }
 # Allow opaque requests to a caller-supplied host service; no handler runs in the daemon.
 host_calls = false

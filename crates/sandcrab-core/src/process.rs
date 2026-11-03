@@ -2,7 +2,7 @@
 //! Clone-time placement precedes the trusted child's identity/mount setup and
 //! workload exec. The child handle remains owned before and after exec.
 use crate::cgroup::Cgroup;
-pub use sandcrab_spawn::{Child, Input, private_mount_namespace};
+pub use sandcrab_spawn::{Child, Input, private_mount_namespace, private_network_namespace};
 use std::{
     io,
     os::unix::process::ExitStatusExt,

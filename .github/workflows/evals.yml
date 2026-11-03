@@ -76,6 +76,12 @@ jobs:
         run: |
           sudo python3 executor-service/rust/sandcrab/native_probe.py --binary build/executor-service/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --report /var/lib/sandcrab-evals/sdk/native.json
+      - name: Check isolated domain-authorized egress and proxy cleanup
+        if: inputs.evidence_mode != 'model'
+        run: |
+          sudo python3 executor-service/rust/sandcrab/egress_probe.py --binary build/executor-service/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/sdk-python/bin/python \
+            --python-client evals/sdk/network_client.py --report /var/lib/sandcrab-evals/sdk/egress.json
       - name: Check native terminal result retention
         if: inputs.evidence_mode != 'model'
         run: |
@@ -159,7 +165,7 @@ jobs:
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo install -m 644 /var/lib/sandcrab-evals/sdk/result.json /var/lib/sandcrab-evals/results/sdk.json
           fi
-          for name in contexts native delegation retention streaming files templates overlays rootfs diff; do
+          for name in contexts native egress delegation retention streaming files templates overlays rootfs diff; do
             for suffix in json diagnostic.txt; do
               if [ -f "/var/lib/sandcrab-evals/sdk/$name.$suffix" ]; then
                 sudo install -d -m 755 /var/lib/sandcrab-evals/results

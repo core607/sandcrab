@@ -40,6 +40,7 @@ struct Record {
     workspace: PathBuf,
     rootfs: Option<PathBuf>,
     host_calls: bool,
+    network: bool,
 }
 
 fn command(args: &[String]) -> io::Result<std::process::Output> {
@@ -79,11 +80,18 @@ pub struct Runtime {
     pub config: Config,
     resources: crate::delegation::Delegation,
     executable: PathBuf,
+    egress: Option<crate::egress::Hub>,
     _lock: fs::File,
 }
 pub struct Control<'a> {
     pub cancelled: &'a AtomicBool,
     pub calls: Option<Arc<crate::host_calls::Calls>>,
+}
+
+struct Prepared {
+    launch: Launch,
+    mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
+    network: Option<crate::egress::Lease>,
 }
 
 pub(crate) struct SetupError {
@@ -125,8 +133,7 @@ pub(crate) fn prepare_launch(
 }
 
 impl Runtime {
-    pub fn start(config: Config) -> io::Result<Self> {
-        let executable = std::env::current_exe()?.canonicalize()?;
+    pub fn start(config: Config, executable: PathBuf) -> io::Result<Self> {
         sandcrab_launch::trusted_executable(&executable).map_err(io::Error::other)?;
         let root = &config.service.runtime_root;
         protected_directory(
@@ -151,7 +158,7 @@ impl Runtime {
                 )
             })
             .transpose()?;
-        let runtime = Self {
+        let mut runtime = Self {
             files: crate::file_records::Store::open(&config)?,
             templates: crate::templates::Store::open(
                 root,
@@ -168,6 +175,7 @@ impl Runtime {
             config,
             resources,
             executable,
+            egress: None,
             _lock: lock,
         };
         runtime.cleanup()?;
@@ -192,6 +200,17 @@ impl Runtime {
                 workloads: &runtime.resources.workloads,
             },
         )?;
+        if runtime
+            .config
+            .profiles
+            .values()
+            .any(|profile| profile.network.enabled())
+        {
+            runtime.egress = Some(crate::egress::Hub::start(
+                runtime.config.service.max_sandboxes,
+                runtime.config.service.max_proxy_connections,
+            )?);
+        }
         Ok(runtime)
     }
 
@@ -418,28 +437,40 @@ impl Runtime {
         });
         let (result, contained) =
             match self.prepare(&root, &records, profile, argv, Some(timeout), None) {
-                Ok((mut launch, mailbox)) => {
-                    match start_calls(calls.as_ref(), mailbox.as_ref(), id) {
-                        Ok(mut guard) => {
-                            let (result, contained) = job::run(
-                                &mut launch,
-                                cancelled,
-                                Duration::from_millis(timeout),
-                                limit,
-                                on_output,
-                            );
-                            let ended = guard.as_mut().map(|g| g.finish()).transpose().map(|_| ());
-                            let closed = mailbox.map(|m| m.close()).transpose().map(|_| ());
-                            (result, contained.and(ended).and(closed))
-                        }
-                        Err(error) => (
-                            Err(error),
-                            launch
-                                .finish(None, Duration::from_secs(15))
-                                .map(|_| ())
-                                .and(mailbox.map(|m| m.close()).transpose().map(|_| ())),
-                        ),
-                    }
+                Ok(Prepared {
+                    mut launch,
+                    mailbox,
+                    network,
+                }) => {
+                    let (result, contained) =
+                        match start_calls(calls.as_ref(), mailbox.as_ref(), id) {
+                            Ok(mut guard) => {
+                                let (result, contained) = job::run(
+                                    &mut launch,
+                                    cancelled,
+                                    Duration::from_millis(timeout),
+                                    limit,
+                                    on_output,
+                                );
+                                let ended =
+                                    guard.as_mut().map(|g| g.finish()).transpose().map(|_| ());
+                                let closed = mailbox.map(|m| m.close()).transpose().map(|_| ());
+                                (result, contained.and(ended).and(closed))
+                            }
+                            Err(error) => (
+                                Err(error),
+                                launch
+                                    .finish(None, Duration::from_secs(15))
+                                    .map(|_| ())
+                                    .and(mailbox.map(|m| m.close()).transpose().map(|_| ())),
+                            ),
+                        };
+                    let network = network
+                        .as_ref()
+                        .map(crate::egress::Lease::finish)
+                        .transpose()
+                        .map(|_| ());
+                    (result, contained.and(network))
                 }
                 Err(error) => (
                     Err(error.error),
@@ -607,7 +638,11 @@ impl Runtime {
                 })
             })
             .expect("Parent session has a volume or disk workspace");
-        let (mut launch, mailbox) = match self.prepare(
+        let Prepared {
+            mut launch,
+            mailbox,
+            network,
+        } = match self.prepare(
             &root,
             &records,
             profile,
@@ -626,9 +661,15 @@ impl Runtime {
         let child = match launch.spawn(Input::Pipe) {
             Ok(child) => child,
             Err(_) => {
+                let network = network
+                    .as_ref()
+                    .map(crate::egress::Lease::finish)
+                    .transpose()
+                    .is_ok();
                 return Err(OpenError {
                     code: "SESSION_UNAVAILABLE",
                     contained: launch.finish(None, Duration::from_secs(15)).is_ok()
+                        && network
                         && cleanup().is_ok(),
                 });
             }
@@ -666,6 +707,7 @@ impl Runtime {
             records,
             attachment,
             mailbox,
+            network,
             resources,
             shared: None,
             disk,
@@ -721,7 +763,7 @@ impl Runtime {
         argv: &[String],
         timeout: Option<u64>,
         session: Option<(&Path, &crate::session_resources::Group, bool)>,
-    ) -> Result<(Launch, Option<Arc<sandcrab_core::mailbox::Mailbox>>), SetupError> {
+    ) -> Result<Prepared, SetupError> {
         let workspace = session.map(|(workspace, _, _)| workspace);
         let rootfs = session
             .filter(|(_, _, rootfs)| *rootfs)
@@ -797,6 +839,7 @@ impl Runtime {
                 workspace: workspace.unwrap_or(&root.join("work")).into(),
                 rootfs: rootfs.clone(),
                 host_calls: profile.host_calls,
+                network: profile.network.enabled(),
             },
             profile.gid,
             0o440,
@@ -817,7 +860,7 @@ impl Runtime {
             profile.gid,
             0o440,
         )?;
-        let launch = prepare_launch(
+        let mut launch = prepare_launch(
             &parent,
             &format!("run-{id}"),
             profile,
@@ -827,7 +870,29 @@ impl Runtime {
                 record.to_string_lossy().into(),
             ],
         )?;
-        Ok((launch, mailbox))
+        let network = if profile.network.enabled() {
+            let registered = self
+                .egress
+                .as_ref()
+                .ok_or_else(|| invalid("Proxy service is unavailable"))
+                .and_then(|hub| hub.register(root, id, profile.network.clone()));
+            match registered {
+                Ok(network) => Some(network),
+                Err(error) => {
+                    return Err(SetupError {
+                        error,
+                        contained: launch.finish(None, Duration::from_secs(15)).is_ok(),
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        Ok(Prepared {
+            launch,
+            mailbox,
+            network,
+        })
     }
 }
 
@@ -910,6 +975,9 @@ pub fn launch(path: &Path) -> io::Result<()> {
     if record.uid == 0 || record.gid == 0 {
         return Err(invalid("Wrong execution account"));
     }
+    if record.network {
+        crate::egress::export(&record.root)?;
+    }
     sandcrab_core::process::enter(
         &Cgroup::open(&record.cgroup)?,
         record.uid,
@@ -933,6 +1001,15 @@ pub fn launch(path: &Path) -> io::Result<()> {
     };
     let mut args = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &command)
         .map_err(io::Error::other)?;
+    if record.network {
+        // export() already created the disconnected network and received the
+        // daemon's positive acknowledgement. A second netns would lose its proxy.
+        let index = args
+            .iter()
+            .position(|arg| arg == "--unshare-net")
+            .ok_or_else(|| invalid("Missing sandbox network isolation argument"))?;
+        args.remove(index);
+    }
     if let Some(rootfs) = &record.rootfs {
         if record.workspace != rootfs.join("workspace") {
             return Err(invalid("Rootfs workspace identity changed"));
@@ -1010,6 +1087,9 @@ pub fn launch(path: &Path) -> io::Result<()> {
         ),
         ("SANDBOX_RUNTIME".into(), "1".into()),
     ];
+    if record.network {
+        environment.extend(crate::egress::environment());
+    }
     if record.host_calls && !record.shell {
         environment.push((
             "SANDBOX_EXECUTION_ID".into(),
@@ -1036,6 +1116,7 @@ pub struct Shell {
     records: [PathBuf; 2],
     attachment: Option<Attachment>,
     mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
+    network: Option<crate::egress::Lease>,
     resources: crate::session_resources::Group,
     shared: Option<crate::file_access::ShellLease>,
     disk: Option<crate::workspaces::Workspace>,
@@ -1066,6 +1147,9 @@ impl Shell {
         }
         self.launch
             .finish(Some(self.channel.process()), Duration::from_secs(15))?;
+        if let Some(network) = &self.network {
+            network.finish()?;
+        }
         if self.shared.is_none() {
             self.files.wait()?;
         }

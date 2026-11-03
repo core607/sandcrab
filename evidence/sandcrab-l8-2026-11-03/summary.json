@@ -1,0 +1,60 @@
+{
+  "milestone": "L8 domain-authorized egress",
+  "scope": "Real sandbox namespaces, CONNECT/SOCKS5, deterministic DNS/TLS peers and the published Python SDK on a local Linux kernel under Docker Desktop; no external traffic or density measurement",
+  "baseRevision": "df08c19fd052f367fd879292fdb645e0d4b40cc4",
+  "binarySha256": "c1e3f5c7b0c897d7c0004fc85216dbe654a1c3b636e2b43b82c248ece0763b01",
+  "binaryBytes": 4658080,
+  "rustTestsPassed": 155,
+  "workerTestsPassed": 176,
+  "evalUnitTestsPassed": 48,
+  "nativeChecksPassed": {
+    "egress": 12,
+    "isolation": 48,
+    "rootfs": 8,
+    "publishedSdk": 21
+  },
+  "nativeCleanup": "PASS",
+  "egressCoverage": [
+    "HTTPS proxy environment with verified fixture certificate",
+    "CONNECT and SOCKS5 binary relay and half-close",
+    "UDP DNS truncation and TCP fallback",
+    "Domain denial before DNS, public-address filtering and per-connection rebinding checks",
+    "Host/direct-network/DNS/Unix-socket isolation and unchanged seccomp",
+    "Template rootfs and named-context egress",
+    "Bounded global connections, parent close and cancellation during DNS",
+    "Structured decision logs and daemon namespace ownership",
+    "Published Python SDK 1.1.0 policy and HTTPS",
+    "Daemon loss, old workload containment and fresh-epoch recovery"
+  ],
+  "modelTokens": 0,
+  "capacityMeasured": false,
+  "earlierFailures": [
+    {
+      "kind": "Daemon executable lookup after mount-namespace isolation lost the mounted path prefix",
+      "attempts": 1,
+      "diagnosticAttempts": 2,
+      "resolution": "Resolve and verify the executable before cloning the mount namespace; verify the retained path again at runtime startup",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "Internal Unix bridge address exceeded sockaddr_un length under a long runtime path",
+      "attempts": 1,
+      "resolution": "Bind and connect relative to an owned protected directory descriptor through /proc/self/fd",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "SDK probe resolved its virtualenv interpreter symlink to the system interpreter",
+      "attempts": 1,
+      "resolution": "Preserve the virtualenv entry path",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "SDK probe tried to forget records already collected by SDK sandbox deletion",
+      "attempts": 1,
+      "resolution": "Verify the existing lifecycle by observing 404 for the released session and commands",
+      "cleanup": "PASS"
+    }
+  ],
+  "buildEnvironment": "Initial direct Cargo tests against a Windows bind-mounted /source failed three existing protected-path tests; the official Docker COPY-based Rust lane passed all tests without changing those guards.",
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-egress-l8"
+}

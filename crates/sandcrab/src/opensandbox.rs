@@ -381,7 +381,8 @@ impl Service {
             }
             if method == "GET" && action == "egress/policy" && pairs.is_empty() {
                 self.sdk_native(&sandbox, "", None)?;
-                return Ok((200, json!({"policy":{"defaultAction":"deny","egress":[]}})));
+                let profile = &self.runtime.config.profiles[&sandbox.profile];
+                return Ok((200, json!({"policy":profile.network.sdk()})));
             }
             if crate::sdk_fs::endpoint(method, action) {
                 let request = crate::sdk_fs::Request::parse(method, action, &pairs, body)?;

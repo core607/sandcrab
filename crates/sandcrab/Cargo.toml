@@ -21,3 +21,4 @@ sha2 = "0.10"
 tar = { version = "=0.4.46", default-features = false }
 time = { version = "=0.3.55", features = ["formatting", "parsing"] }
 regex = "=1.13.1"
+domain = { version = "=0.12.3", default-features = false, features = ["std"] }

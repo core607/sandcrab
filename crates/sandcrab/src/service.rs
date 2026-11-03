@@ -446,7 +446,8 @@ impl Service {
                 run.result =
                     Some(json!({"exitCode":finished.exit_code,"truncated":finished.truncated}));
             }
-            Err(_) => {
+            Err(error) => {
+                eprintln!("Run infrastructure failed: {error}");
                 run.state = if cancelled { "cancelled" } else { "failed" }.into();
                 run.result = Some(json!({"code":"RUN_FAILED"}));
             }

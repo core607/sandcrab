@@ -2039,7 +2039,22 @@
                   "maximum": 1048576
                 },
                 "network": {
-                  "const": "none"
+                  "oneOf": [
+                    { "const": "none" },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["allow"],
+                      "properties": {
+                        "allow": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 256,
+                          "items": { "type": "string", "maxLength": 254 }
+                        }
+                      }
+                    }
+                  ]
                 },
                 "sessionTtlMillis": {
                   "type": "integer",

@@ -81,7 +81,8 @@ that executable. Other entrypoints and image authentication are refused.
 
 Create, get, filtered list, renew and delete use `/v1/sandboxes`. Endpoint lookup
 maps ports 44772 and 18080 to path-routed command and read-only egress services.
-The returned network policy is the enforced deny-all policy. Custom networking,
+The returned network policy reports the selected profile's [egress allowlist](README.md#network-egress)
+with a deny default, or an empty allowlist for `network = "none"`. Custom networking,
 registry images, snapshots, separate template options, scheduling, credential proxies and volume requests
 are refused. Unused snapshot, template, platform, resource-request, lifecycle,
 network, credential-proxy and volume options may be omitted or null. Unknown

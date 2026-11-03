@@ -8,6 +8,7 @@ mod config;
 mod delegation;
 mod diff;
 mod doctor;
+mod egress;
 mod event_client;
 mod event_wire;
 mod events;
@@ -162,13 +163,17 @@ fn execute(args: &[String]) -> io::Result<i32> {
             storage::no_mounts_below(&config.service.runtime_root, true).map_err(|_| {
                 config::invalid("Runtime has host-visible submounts; reconcile them with the previous service before starting the mount-isolated daemon")
             })?;
+            // Preserve the verified path before cloning a service manager's
+            // mount namespace: /proc/self/exe can then name a detached mount.
+            let executable = std::env::current_exe()?.canonicalize()?;
+            sandcrab_launch::trusted_executable(&executable).map_err(io::Error::other)?;
             sandcrab_core::process::private_mount_namespace()?;
             let stopped = Arc::new(AtomicBool::new(false));
             let _signals = [
                 signal_hook::flag::register(signal_hook::consts::SIGTERM, stopped.clone())?,
                 signal_hook::flag::register(signal_hook::consts::SIGINT, stopped.clone())?,
             ];
-            let runtime = runtime::Runtime::start(config)?;
+            let runtime = runtime::Runtime::start(config, executable)?;
             server::serve(Arc::new(service::Service::new(runtime, stopped)?))?;
             Ok(0)
         }

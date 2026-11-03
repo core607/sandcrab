@@ -59,6 +59,40 @@ pub fn private_mount_namespace() -> io::Result<()> {
     Ok(())
 }
 
+/// A fresh trusted launcher creates a loopback-only network before dropping
+/// credentials. No interface, route or descriptor from the parent is added.
+/// Callers must abort after any error, including one after namespace creation.
+pub fn private_network_namespace() -> io::Result<()> {
+    let tasks = std::fs::read_dir("/proc/self/task")?.collect::<io::Result<Vec<_>>>()?;
+    if !rustix::process::geteuid().is_root() || tasks.len() != 1 {
+        return Err(io::Error::other(
+            "Network namespace entry requires a single-threaded root launcher",
+        ));
+    }
+    // SAFETY: this fixed flag changes only the calling process's network
+    // namespace, never its descriptor table, memory or Rust I/O ownership.
+    if unsafe { libc::unshare(libc::CLONE_NEWNET) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let socket = std::net::UdpSocket::bind("127.0.0.1:0")?;
+    // SAFETY: ifreq is plain C storage. Only its fixed interface name and flag
+    // union member are used; each ioctl receives the complete writable object.
+    let mut request: libc::ifreq = unsafe { std::mem::zeroed() };
+    request.ifr_name[0] = b'l' as libc::c_char;
+    request.ifr_name[1] = b'o' as libc::c_char;
+    if unsafe { libc::ioctl(socket.as_raw_fd(), libc::SIOCGIFFLAGS as _, &mut request) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: SIOCGIFFLAGS initialized this union member on success.
+    unsafe { request.ifr_ifru.ifru_flags |= libc::IFF_UP as libc::c_short };
+    // SAFETY: the fixed loopback interface and initialized flags are the only
+    // inputs. This namespace is private and contains no external interfaces.
+    if unsafe { libc::ioctl(socket.as_raw_fd(), libc::SIOCSIFFLAGS as _, &request) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 /// A real child, signaled through pidfd and reaped only by its parent. Like
 /// std::process::Child, dropping this handle does not terminate or reap it.
 pub struct Child {
