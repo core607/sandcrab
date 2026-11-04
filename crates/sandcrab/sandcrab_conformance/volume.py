@@ -184,6 +184,7 @@ max_records = 12
         assert (original / 'restart.txt').read_text() == 'survived'
         self.done('volume-supervisor-loss-retains-published-data-and-durable-replay')
         self.fault_tests(volume)
+        self.shared_quota_mount(volume)
         self.capacity_tests(volume)
         self.pool_exhaustion()
 
@@ -213,6 +214,56 @@ max_records = 12
         self.volume_forget(volume)
         assert http(self.socket, 'GET', '/v1/volumes')[1] == {'volumes': [], 'nextAfter': None}
         self.done('volume-explicit-deletion-tombstone-and-record-release')
+
+    def shared_quota_mount(self, volume):
+        assert self.info['storage']['quotaEnforced'] is True
+        strict = self.root / 'require-quota.toml'
+        strict.write_text(self.config.read_text().replace('[storage]\n', '[storage]\nrequire_quota = true\n'))
+        strict.chmod(0o600)
+        call(str(self.binary), 'check', '--config', str(strict))
+        call('systemctl', 'stop', self.unit)
+        shared = self.data / 'shared'
+        shared.mkdir(mode=0o755)
+        shared.chmod(0o755)
+        alternate = self.root / 'alternate'
+        target = alternate / 'data'
+        target.mkdir(parents=True)
+        alternate.chmod(0o755)
+        target.chmod(0o755)
+        other = self.root / 'alternate-quota.toml'
+        other.write_text(strict.read_text().replace(json.dumps(str(self.storage)), json.dumps(str(alternate))))
+        other.chmod(0o600)
+        call('mount', '--bind', str(shared), str(target))
+        try:
+            refused = call(str(self.binary), 'check', '--config', str(other), check=False)
+            assert refused.returncode != 0 and 'whole XFS filesystem' in refused.stderr, refused
+        finally:
+            call('umount', str(target))
+        call('mount', '--bind', str(shared), str(self.data))
+        try:
+            mount = json.loads(call('findmnt', '-J', '-T', str(self.data), '-o', 'TARGET,FSTYPE,FSROOT').stdout)
+            assert {'target': str(self.data), 'fstype': 'xfs', 'fsroot': '/shared'} in mount['filesystems'], mount
+            refused = call(str(self.binary), 'check', '--config', str(strict), check=False)
+            assert refused.returncode != 0 and ('whole XFS filesystem' in refused.stderr
+                                                or 'exactly one mount' in refused.stderr), refused
+            call(str(self.binary), 'check', '--config', str(self.config))
+            try:
+                self.start()
+            except AssertionError:
+                log = call('journalctl', '-u', self.unit, '--no-pager', '-n', '10').stdout
+                assert 'Restore the quota pool for existing project volumes' in log, log
+            else:
+                raise AssertionError('An existing quota store started on a subtree bind')
+            assert not list(self.data.iterdir()), 'Recovery wrote to the replacement mount'
+        finally:
+            call('systemctl', 'stop', self.unit, check=False)
+            call('umount', str(self.data))
+        shared.rmdir()
+        self.restart()
+        assert self.info['storage']['quotaEnforced'] is True
+        assert http(self.socket, 'GET', '/v1/volumes/' + volume['id'])[1]['state'] == 'ready'
+        assert (self.data / 'volumes' / volume['id'] / 'data/restart.txt').read_text() == 'survived'
+        self.done('whole-xfs-quotas-and-retained-volumes-survive-a-subdirectory-bind-refusal')
 
     def quota_tests(self):
         volume, result = self.volume(byteLimit=1048576, inodeLimit=32)

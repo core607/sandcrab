@@ -592,11 +592,13 @@ For a new store, prepare `root/data` as an empty protected directory.
 It never formats a disk, remounts a filesystem or adopts a nonempty unowned store.
 Profiles cannot expose this storage through their read mounts.
 
-For enforced quotas, provision a dedicated XFS mount at `root/data` with reflinks,
+For enforced quotas, mount the root of a dedicated XFS filesystem at `root/data` with reflinks,
 `prjquota` or `pquota`, `nosuid` and `nodev`, and a filesystem size no larger than
 `pool_bytes`. Install `xfsprogs` under `/usr/sbin` and keep `root/state` on another
-filesystem. `require_quota = true` refuses startup without verified enforcement;
-its default is false. `/v1/info` reports the actual `storage.quotaEnforced` mode.
+filesystem. Project IDs span the whole filesystem. A subdirectory bind supports
+periodic accounting for a new store. Restore the dedicated pool to recover existing
+project volumes. Set `require_quota = true` to require verified enforcement at startup.
+The default is false. `/v1/info` reports the actual `storage.quotaEnforced` mode.
 Existing plain volumes retain periodic accounting; enabling host quotas does not
 silently assign projects to their data.
 

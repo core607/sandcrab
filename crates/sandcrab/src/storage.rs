@@ -210,11 +210,15 @@ fn verify_project_pool(config: &Storage) -> io::Result<()> {
         "-T".into(),
         data.to_string_lossy().into(),
         "-o".into(),
-        "TARGET,FSTYPE,OPTIONS".into(),
+        "TARGET,FSTYPE,OPTIONS,FSROOT".into(),
     ])?;
     let value =
         sandcrab_core::parse(&output.stdout).map_err(|_| invalid("Invalid mount description"))?;
-    let mount = &value["filesystems"][0];
+    let Some([mount]) = value["filesystems"].as_array().map(Vec::as_slice) else {
+        return Err(invalid(
+            "Quota discovery needs exactly one mount at storage.root/data",
+        ));
+    };
     let options = mount["options"]
         .as_str()
         .unwrap_or("")
@@ -222,13 +226,14 @@ fn verify_project_pool(config: &Storage) -> io::Result<()> {
         .collect::<Vec<_>>();
     if mount["target"] != data.to_string_lossy().as_ref()
         || mount["fstype"] != "xfs"
+        || mount["fsroot"] != "/"
         || !(options.contains(&"prjquota") || options.contains(&"pquota"))
         || options.contains(&"pqnoenforce")
         || !options.contains(&"nosuid")
         || !options.contains(&"nodev")
     {
         return Err(invalid(
-            "storage.root/data needs a dedicated XFS mount with enforced project quotas, nosuid and nodev",
+            "storage.root/data needs a whole XFS filesystem with enforced project quotas, nosuid and nodev",
         ));
     }
     let stat = rustix::fs::statvfs(&data)?;
@@ -281,7 +286,6 @@ impl Store {
             }
             Err(e) => return Err(e),
         }
-        directory(&config.root.join("data/volumes"), 0o711)?;
         directory(&state_dir.join("records"), 0o700)?;
         let mut records = BTreeMap::new();
         for entry in fs::read_dir(state_dir.join("records"))? {
@@ -317,6 +321,16 @@ impl Store {
             // Retain the store's honest weaker mode until its plain volumes are gone.
             quota_enforced = false;
         }
+        if !quota_enforced
+            && records
+                .values()
+                .any(|record| record.occupies_volume() && record.project.is_some())
+        {
+            return Err(invalid(
+                "Restore the quota pool for existing project volumes",
+            ));
+        }
+        directory(&config.root.join("data/volumes"), 0o711)?;
         let usage = records
             .values()
             .filter(|record| !quota_enforced && record.occupies_volume())
