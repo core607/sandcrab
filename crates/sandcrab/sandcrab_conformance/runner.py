@@ -34,8 +34,8 @@ SUITES = {
     'delegation': ('delegation', 'DirectProbe'),
     'sdk': ('opensandbox', 'SdkProbe'),
 }
-SOURCE = Path(__file__).resolve().parents[4]
 ENTRY = Path(__file__).resolve().parents[1] / 'conformance.py'
+SOURCE = (ENTRY.parent / '../../..').resolve()
 
 
 def create_fixture(name, args, report):

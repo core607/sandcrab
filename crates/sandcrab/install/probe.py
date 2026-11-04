@@ -1,5 +1,6 @@
 """Exercise the installed CLI on a disposable systemd machine or a bounded Docker container."""
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -107,30 +108,45 @@ def systemd(bundle, passed):
             passed('installed service stopped on the disposable machine')
 
 
-def container(image, passed, bundle=None):
+@contextmanager
+def disposable_machine(image, passed, *, systemd, network='none'):
     name = 'sandcrab-install-' + uuid.uuid4().hex
     label = 'sandcrab.install-probe=' + name
     # No host namespace, cgroup bind mount, host network or Docker socket.
-    memory = '1536m' if bundle else '512m'
+    memory = '1536m' if systemd else '512m'
     # A fresh installer must create its own namespace beneath the backing volume.
-    data = '/var/lib' if bundle else '/var/lib/sandcrab'
+    data = '/var/lib' if systemd else '/var/lib/sandcrab'
     args = ['docker','run','--detach','--name',name,'--label',label,'--privileged','--cgroupns=private',
-            '--network=none','--memory='+memory,'--memory-swap='+memory,'--cpus=2','--pids-limit=512',
+            '--network='+network,'--memory='+memory,'--memory-swap='+memory,'--cpus=2','--pids-limit=512',
             '--mount','type=volume,destination='+data]
     restricted = Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
     if restricted.exists() and restricted.read_text().strip() == '1':
         args.append('--security-opt=apparmor=sandcrab-service')
-    if bundle:
+    if systemd:
         args.extend(['--tmpfs','/run','--tmpfs','/tmp'])
     args.append(image)
     identifier = run(args).stdout.strip()
     try:
         deadline = time.monotonic() + 25
-        if bundle:
+        if systemd:
             while run(['docker','exec',identifier,'systemctl','is-system-running'],check=False).stdout.strip() not in ('running','degraded'):
                 if time.monotonic() > deadline:
                     raise RuntimeError('Disposable distribution did not boot systemd')
                 time.sleep(.25)
+        yield identifier
+    finally:
+        labels = json.loads(run(['docker','inspect','--format','{{json .Config.Labels}}',identifier]).stdout)
+        if labels.get('sandcrab.install-probe') != name:
+            raise RuntimeError('Fixture ownership changed')
+        run(['docker','stop','--time','15',identifier])
+        run(['docker','rm','--volumes',identifier])
+        passed('disposable container stopped and removed')
+
+
+def container(image, passed, bundle=None):
+    with disposable_machine(image, passed, systemd=bundle is not None) as identifier:
+        deadline = time.monotonic() + 25
+        if bundle:
             for program in ('sandcrab','bwrap','bwrap-notices.txt','bwrap-source.tar.xz'):
                 run(['docker','cp',bundle/program,identifier+':/root/'+program])
             run(['docker','cp',Path(__file__),identifier+':/root/probe.py'])
@@ -155,13 +171,6 @@ def container(image, passed, bundle=None):
                                  '--','/usr/bin/id','-u']).stdout)
         assert result['state']=='succeeded' and int(result['result']['stdout'])>0
         passed('packaged daemon is usable in a bounded private cgroup without systemd')
-    finally:
-        labels = json.loads(run(['docker','inspect','--format','{{json .Config.Labels}}',identifier]).stdout)
-        if labels.get('sandcrab.install-probe') != name:
-            raise RuntimeError('Fixture ownership changed')
-        run(['docker','stop','--time','15',identifier])
-        run(['docker','rm','--volumes',identifier])
-        passed('disposable container stopped and removed')
 
 
 def main():

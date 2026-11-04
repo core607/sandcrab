@@ -699,7 +699,7 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         shutil.copyfile(source, staged)
         staged.chmod(0o644)
         result = call('runuser', '-u', 'daemon', '--', 'env', '-i', 'PATH=/usr/bin:/bin',
-                      'SANDCRAB_BIN=' + str(self.binary), 'SANDCRAB_SOCKET=' + str(self.socket),
+                      'SANDCRAB_BIN=' + str(self.binary), 'SANDCRAB_SOCKET=' + str(self.socket), 'SANDCRAB_PROFILE=python',
                       'bash', str(staged))
         assert '"state":"succeeded"' in result.stdout, result.stdout
         assert not list((self.socket.parent / 'jobs').iterdir())

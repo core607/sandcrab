@@ -1,8 +1,10 @@
 # Installing Sandcrab
 
-Follow [Get started](../README.md#get-started) with a release directory owned by
-root and not writable by other users. Keep that directory installed: the service
-unit uses its executable. The installer does not change shell search paths.
+[Get started](../README.md#get-started) installs the bundled executables, notices and
+source into `/var/lib/sandcrab-release`. Keep that directory installed because systemd
+uses its executable. Replaying the same bundle reuses matching protected files.
+For a different bundle in an existing installation, use the
+[custom installation](../README.md#custom-installation) and manage the service unit explicitly.
 
 `sandcrab install --dry-run` prints directory modes, the account, configuration,
 units and activation commands without changing the machine or generating a
@@ -11,7 +13,8 @@ existing protected configuration and token and refuses to replace conflicting
 units or accounts.
 
 The service listens on a root-only Unix client interface and on `127.0.0.1:9011`
-with a private token in `/etc/sandcrab/token`. The `default` profile runs as
+with a private token in `/etc/sandcrab/token`. The installed service enables the
+[OpenSandbox adapter](../opensandbox.md) for the same listener. The `default` profile runs as
 `sandcrab-exec`, mounts the host's `/usr` and runtime libraries read-only and has
 no network. The [default configuration](default.toml) and [slice](sandcrab.slice)
 own the limits. Edit `/etc/sandcrab/config.toml` and restart `sandcrab.service`

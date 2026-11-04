@@ -7,6 +7,10 @@ on:
       - experiments/sandcrab-density/Dockerfile.readiness
       - executor-service/rust/sandcrab/README.md
       - executor-service/rust/sandcrab/install/**
+      - executor-service/rust/sandcrab/conformance.py
+      - executor-service/rust/sandcrab/sandcrab_conformance/delegation.py
+      - examples/sandcrab-*
+      - evals/sdk/requirements.txt
       - executor-service/rust/sandcrab/src/installer.rs
       - executor-service/rust/sandcrab/src/doctor.rs
       - executor-service/rust/sandcrab/src/config.rs
@@ -30,6 +34,9 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      bundle_id: ${{ steps.bundle.outputs.artifact-id }}
+      bundle_sha256: ${{ steps.fingerprint.outputs.sha256 }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -40,6 +47,22 @@ jobs:
           java-version: '26'
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - run: ./gradlew buildExecutorRust --no-daemon
+      - name: Check release staging and the documented command budget
+        run: sudo python3 -m unittest discover -s executor-service/rust/sandcrab/install -p test_quickstart.py -v
+      - name: Package the directly downloadable release
+        id: fingerprint
+        run: |
+          archive="$RUNNER_TEMP/sandcrab-linux-x86_64.zip"
+          python3 -m zipfile -c "$archive" executor-service/rust/sandcrab/install/__main__.py \
+            build/executor-service/bin/{sandcrab,bwrap,bwrap-notices.txt,bwrap-source.tar.xz}
+          echo "sha256=$(sha256sum "$archive" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: bundle
+        with:
+          path: ${{ runner.temp }}/sandcrab-linux-x86_64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: readiness-binary-${{ github.run_id }}-${{ github.run_attempt }}
@@ -50,6 +73,87 @@ jobs:
             build/executor-service/bin/bwrap-source.tar.xz
           if-no-files-found: error
           retention-days: 14
+
+  quickstart:
+    name: quickstart (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, runner: ubuntu-22.04 }
+          - { os: ubuntu-24.04, runner: ubuntu-24.04 }
+          - { os: debian-12, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Prepare a fresh Debian systemd guest
+        if: matrix.os == 'debian-12'
+        run: |
+          docker build --target quickstart --build-arg BASE_IMAGE=debian:12@sha256:d74df7598108a173a621eda4d58a2adbf850b2d9a9d81bc2cca1a6c21174a880 \
+            -f experiments/sandcrab-density/Dockerfile.readiness -t sandcrab-quickstart:debian experiments/sandcrab-density
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ]; then
+            sudo apparmor_parser -r executor-service/rust/sandcrab/install/sandcrab.apparmor
+          fi
+      - name: Time the README from download to first run and verify the installed binary
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SANDCRAB_ARTIFACT_API: ${{ github.api_url }}/repos/${{ github.repository }}/actions/artifacts/${{ needs.build.outputs.bundle_id }}/zip
+          SHA256: ${{ needs.build.outputs.bundle_sha256 }}
+        run: |
+          args=(--sha256 "$SHA256" --output "$RUNNER_TEMP/quickstart")
+          if [ "$TARGET_OS" = debian-12 ]; then
+            python3 executor-service/rust/sandcrab/install/quickstart.py "${args[@]}" --distribution sandcrab-quickstart:debian
+          else
+            sudo --preserve-env=GITHUB_TOKEN,SANDCRAB_ARTIFACT_API env SANDCRAB_INSTALL_DISPOSABLE=1 \
+              python3 executor-service/rust/sandcrab/install/quickstart.py "${args[@]}"
+          fi
+      - name: Run the curl, build agent and batch examples
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          sudo curl --fail --unix-socket /var/lib/sandcrab/runtime/control.sock http://localhost/v1/info | jq -e '.profiles.default'
+          sudo bash examples/sandcrab-build-test.sh
+          printf 'print(21 * 2)\n' > "$RUNNER_TEMP/one.py"
+          printf 'raise SystemExit(7)\n' > "$RUNNER_TEMP/two.py"
+          rc=0
+          sudo python3 examples/sandcrab-batch.py "$RUNNER_TEMP/one.py" "$RUNNER_TEMP/two.py" > "$RUNNER_TEMP/batch.jsonl" || rc=$?
+          test "$rc" = 1
+          jq -es 'length == 2 and .[0].run.result.stdout == "42\n" and .[1].run.result.exitCode == 7' "$RUNNER_TEMP/batch.jsonl"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        if: matrix.os == 'ubuntu-24.04'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run the published Python and Kotlin SDK examples as an ordinary client
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/sdk-python"
+          "$RUNNER_TEMP/sdk-python/bin/pip" install --disable-pip-version-check -r evals/sdk/requirements.txt
+          curl -fsSL -o "$RUNNER_TEMP/kotlin.zip" https://github.com/JetBrains/kotlin/releases/download/v2.2.21/kotlin-compiler-2.2.21.zip
+          echo "a623871f1cd9c938946948b70ef9170879f0758043885bbd30c32f024e511714  $RUNNER_TEMP/kotlin.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP/kotlin"
+          export SANDCRAB_TOKEN_FILE="$RUNNER_TEMP/sdk-client-token"
+          sudo install -o "$(id -u)" -g "$(id -g)" -m 600 /etc/sandcrab/token "$SANDCRAB_TOKEN_FILE"
+          test "$("$RUNNER_TEMP/sdk-python/bin/python" examples/sandcrab-sdk.py)" = 42
+          test "$("$RUNNER_TEMP/kotlin/kotlinc/bin/kotlin" examples/sandcrab-sdk.main.kts)" = 42
+      - name: Hand quickstart receipts to the collector
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/quickstart" ]; then
+            sudo chown --no-dereference -R "$(id -u):$(id -g)" "$RUNNER_TEMP/quickstart"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: quickstart-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/quickstart/
+          if-no-files-found: warn
+          retention-days: 30
 
   debian:
     needs: build
@@ -144,7 +248,7 @@ jobs:
           compression-level: 0
 
   publish:
-    needs: [native, debian, container]
+    needs: [native, debian, container, quickstart]
     if: github.event_name == 'workflow_dispatch' && inputs.publish_image && github.repository == 'core607/poketto' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

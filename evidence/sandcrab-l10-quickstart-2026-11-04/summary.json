@@ -1,0 +1,40 @@
+{
+  "scope": "Local systemd containers on Docker Desktop. The release ZIP was fetched from a disposable HTTP server on the Docker bridge. Hosted readiness uses the build artifact download.",
+  "baseline": "executor-native/evidence/sandcrab-w0-2026-11-02/README.md",
+  "binarySha256": "1ebf91f11c255459e9f0d120f9fdc039ca6706f0e2404cf1e6088e5d9dfa6977",
+  "bundleSha256": "2ebaa64117e919db680b5e7289f77ea2afc97b49770a68e55cf805831275ef97",
+  "readiness": {
+    "ubuntu-24.04-container": {
+      "operatorCommands": 3,
+      "manualConfigurationEdits": 0,
+      "wallSeconds": 0.442,
+      "firstRun": {
+        "state": "succeeded",
+        "stdout": "42"
+      },
+      "delegationChecks": 10,
+      "cleanup": "PASS"
+    },
+    "debian-12-container": {
+      "operatorCommands": 3,
+      "manualConfigurationEdits": 0,
+      "wallSeconds": 0.364,
+      "firstRun": {
+        "state": "succeeded",
+        "stdout": "42"
+      },
+      "delegationChecks": 10,
+      "cleanup": "PASS"
+    }
+  },
+  "examples": [
+    "curl-discovery",
+    "independent-build-test-agent",
+    "mixed-batch-retains-both-results",
+    "published-python-sdk-example",
+    "published-kotlin-sdk-example"
+  ],
+  "nativeChecks": 49,
+  "nativeCleanup": "PASS",
+  "installerRegressionChecks": 9
+}

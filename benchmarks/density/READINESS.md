@@ -21,10 +21,13 @@ Reported time is therefore a lower bound, not an end-to-end installation promise
 
 ## Fresh distribution replay
 
-The [readiness workflow](../../.github/workflows/sandcrab-readiness.yml) now checks
-the installer on fresh Ubuntu 22.04 and 24.04 runners and a Debian 12 systemd
-container. The historical W0 manual procedure remains independently runnable. Its
-[Dockerfile](Dockerfile.readiness) adds only systemd, D-Bus and controller Python.
+The [readiness workflow](../../.github/workflows/sandcrab-readiness.yml) times the
+[current README recipe](../../executor-service/rust/sandcrab/README.md#get-started)
+on fresh Ubuntu 22.04 and 24.04 runners and a Debian 12 systemd container. Its
+clock starts at the artifact download and stops after checking the first run's
+stdout. The ensuing delegation suite has a separate result. The historical manual
+procedure remains independently runnable. The [baseline image](Dockerfile.readiness)
+adds systemd, D-Bus and controller Python. The quickstart image also supplies curl and CA certificates.
 Each container measurement starts without Sandcrab, its toolchain or prior
 package indexes. Containers share the host kernel, so they supplement the native
 kernel checks. An unprivileged production container configuration is outside this

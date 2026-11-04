@@ -1,5 +1,5 @@
 ARG BASE_IMAGE
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS systemd-machine
 
 # Supply the init system a stock VM has; Sandcrab and its tools are installed only
 # by the measured operator recipe. No host cgroup bind mount is used.
@@ -10,3 +10,9 @@ RUN apt-get update \
 ENV container=docker
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
+
+FROM systemd-machine AS quickstart
+RUN apt-get update && apt-get install --yes --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM systemd-machine AS baseline

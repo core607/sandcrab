@@ -11,27 +11,42 @@ Consumer adoption and extraction remain under the
 
 ## Get started
 
-On a Linux systemd host with bash and Python 3, place the four files from
-`./gradlew buildExecutorRust` in a protected release directory, then install
-and test the default service:
+On x86-64 Ubuntu 22.04, Ubuntu 24.04 or Debian 12, use a root shell on a systemd host
+with curl, bash and Python 3. Set `SANDCRAB_BUNDLE_URL` to the download URL for the
+chosen release ZIP. Development builds provide `sandcrab-linux-x86_64.zip` in the
+[installer workflow](../../../.github/workflows/sandcrab-readiness.yml). You can also download
+that artifact in a signed-in browser and start at the second command.
 
+<!-- sandcrab-quickstart -->
 ```sh
-cd build/executor-service/bin
-sudo install -d -m 755 /var/lib/sandcrab-release
-sudo install -m 755 sandcrab bwrap /var/lib/sandcrab-release/
-sudo install -m 644 bwrap-notices.txt bwrap-source.tar.xz /var/lib/sandcrab-release/
-sudo /var/lib/sandcrab-release/sandcrab install
-sudo /var/lib/sandcrab-release/sandcrab doctor
+curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "$SANDCRAB_BUNDLE_URL"
+python3 -I sandcrab-linux-x86_64.zip
+/var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
 ```
 
-`doctor` submits a real command under the `default` profile. To run your own:
+The last command prints a terminal JSON record with `state` equal to `succeeded` and
+`42` in `result.stdout`. The installer provisions the service, execution account and
+private loopback token. The [installation reference](install/README.md) covers dry run,
+doctor and the [container quickstart](install/README.md#standalone-container).
+
+## Try the clients
+
+Read the installed service's profiles with curl over its Unix socket:
 
 ```sh
-sudo /var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
+curl --fail --unix-socket /var/lib/sandcrab/runtime/control.sock http://localhost/v1/info
 ```
 
-See the [installation reference](install/README.md) for the dry run, token,
-host requirements and exact Docker invocation.
+The [build-and-test agent](../../../examples/sandcrab-build-test.sh) creates a Python
+project and runs its unit tests in a retained shell. The [batch runner](../../../examples/sandcrab-batch.py)
+runs each input file in a fresh sandbox and emits one JSON result per file. Run these
+in an account with access to the socket. The [SDK examples](opensandbox.md#connection-and-ownership)
+use the published Python and Kotlin clients with a private loopback token.
+
+```sh
+bash examples/sandcrab-build-test.sh
+python3 examples/sandcrab-batch.py first.py second.py
+```
 
 ## Custom installation
 

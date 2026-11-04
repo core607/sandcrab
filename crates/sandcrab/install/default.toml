@@ -1,4 +1,5 @@
 [service]
+opensandbox = true
 runtime_root = "/var/lib/sandcrab/runtime"
 socket = "/var/lib/sandcrab/runtime/control.sock"
 client_uid = 0

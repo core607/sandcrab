@@ -1,7 +1,8 @@
 # OpenSandbox adapter
 
-Set `service.opensandbox = true` with the authenticated loopback TCP listener in
-[config.example.toml](config.example.toml). The adapter is disabled by default.
+The [installer](install/README.md) enables the adapter on its authenticated loopback
+listener. Custom configurations opt in with `service.opensandbox = true` and a
+[TCP listener](config.example.toml).
 It targets the published OpenSandbox 1.1.0 Python and Kotlin SDKs. The
 [independent SDK clients](../../../evals/sdk/README.md) exercise both against
 the native daemon, including named shell contexts.
@@ -21,46 +22,16 @@ The transport and host trust requirements are those of [native TCP](README.md#lo
 The SDK's Kubernetes `secureAccess` option is unsupported; scoped endpoint
 credentials are always required by this adapter.
 
-Install the [pinned Python dependencies](../../../evals/sdk/requirements.txt), set
-`SANDCRAB_TOKEN_FILE` to your private client token file, and enable the `python`
-profile and TCP example above. `SANDCRAB_ENDPOINT` defaults to `127.0.0.1:9011`.
-This client writes a program, runs it and reads its output file:
+The [Python example](../../../examples/sandcrab-sdk.py) writes a program, runs it
+and reads its output file. Install the [Python dependencies](../../../evals/sdk/requirements.txt)
+in the client's virtual environment. The [Kotlin example](../../../examples/sandcrab-sdk.main.kts)
+resolves the published SDK from its script dependency. Run either from a client account
+with a private token. Set `SANDCRAB_TOKEN_FILE`, `SANDCRAB_ENDPOINT` or `SANDCRAB_PROFILE`
+to override the installed token path, `127.0.0.1:9011` or the `default` profile.
 
-```python
-import asyncio
-import os
-from datetime import timedelta
-from pathlib import Path
-
-from opensandbox import Sandbox
-from opensandbox.config import ConnectionConfig
-
-
-async def main():
-    connection = ConnectionConfig(
-        domain=os.environ.get("SANDCRAB_ENDPOINT", "127.0.0.1:9011"), protocol="http",
-        api_key=Path(os.environ["SANDCRAB_TOKEN_FILE"]).read_text().strip(),
-    )
-    sandbox = await Sandbox.create(
-        "python", connection_config=connection, timeout=timedelta(seconds=60),
-        resource={"cpu": "0.25", "memory": "32Mi"},
-    )
-    try:
-        await sandbox.files.write_file(
-            "answer.py", "from pathlib import Path\nPath('answer.txt').write_text(str(6 * 7))\n"
-        )
-        result = await sandbox.commands.run(["python3", "answer.py"])
-        if result.exit_code != 0:
-            raise RuntimeError("The sandbox command did not succeed")
-        print(await sandbox.files.read_file("answer.txt"))
-    finally:
-        try:
-            await sandbox.kill()
-        finally:
-            await sandbox.close()
-
-
-asyncio.run(main())
+```sh
+python3 examples/sandcrab-sdk.py
+kotlin examples/sandcrab-sdk.main.kts
 ```
 
 ## Lifecycle
