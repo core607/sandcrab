@@ -1,0 +1,244 @@
+{
+  "milestone": "L9 full checkpoint",
+  "measurementStatus": "completed_with_performance_misses",
+  "sourceCommit": "e7d5a04a22c8d4a90c66ec7b7a54f6bc96848b70",
+  "sourceTree": "593011c1faca70c9b23d685bbd338a9d28702c54",
+  "sourceDirty": false,
+  "binarySha256": "10c54a0ef5d8361fb5bcfcf2b113912f249fbb5e1d3444d122b5c6422d6b9331",
+  "binaryBytes": 4686752,
+  "protocolSha256": "c028f90a704556b0b95eb9b2d9d8e06065f4a3d7752496e9d3520ef4b569bc35",
+  "workflow": "https://github.com/core607/poketto/actions/runs/41750805999",
+  "attempt": 1,
+  "scope": "Independent CI hosts, 2 CPUs, no swap, 20000 Markdown files and a 32-file Git repository, XFS and template overlays.",
+  "capacityRule": "All three repetitions pass at 99% OK or higher, judged p95 at most 1 second, and zero OOM. Stop after the first failed repetition.",
+  "modelTokens": 0,
+  "allCollectorsAndCleanup": "PASS",
+  "budgets": [
+    {
+      "memoryBudgetGB": 4,
+      "largestPassingStage": 50,
+      "passingP95Millis": [
+        293.533,
+        356.496,
+        273.45
+      ],
+      "passingColdP50Millis": [
+        38.834,
+        38.863,
+        39.164
+      ],
+      "firstFailure": {
+        "agents": 100,
+        "repetitionZeroBased": 0,
+        "judgedAttempts": 1739,
+        "okRate": 1.0,
+        "p95Millis": 1417.101,
+        "reasons": [
+          "P95"
+        ],
+        "outcomes": {
+          "OK": 1739
+        },
+        "refusalsByCode": {}
+      },
+      "passingQueue": {
+        "judgedAttempts": 2671,
+        "waitReported": 2671,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "failedQueue": {
+        "judgedAttempts": 1739,
+        "waitReported": 1739,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "oomKills": 0,
+      "daemonIdleMedianRssBytes": 3678208,
+      "idleSessionBytesAt50": 1353072.64,
+      "finiteRunBytesAt50": 769556.48,
+      "p1ConservativeEstimate": {
+        "maximumObservedIdlePerItemBytes": 2433024.0,
+        "population": 50,
+        "poolMedianMinimumBytes": 1107748864.0,
+        "daemonCeilingBytes": 536870912,
+        "denominatorBytes": 570877952.0,
+        "fraction": 0.2130949348697215
+      },
+      "startupTrace": {
+        "completeTrials": 3,
+        "apiObservedP50Millis": 36.372
+      },
+      "w0LargestPassingStage": 25,
+      "l7LargestPassingStage": 100,
+      "artifact": "https://github.com/core607/poketto/actions/runs/41750805999/artifacts/13286778700",
+      "archiveSha256": "5d5ee880a74329dff41c51b7b48779754275c320d45352a070741675ba9886f7"
+    },
+    {
+      "memoryBudgetGB": 5,
+      "largestPassingStage": 100,
+      "passingP95Millis": [
+        174.508,
+        161.041,
+        179.153
+      ],
+      "passingColdP50Millis": [
+        33.277,
+        33.093,
+        33.158
+      ],
+      "firstFailure": {
+        "agents": 200,
+        "repetitionZeroBased": 0,
+        "judgedAttempts": 3505,
+        "okRate": 1.0,
+        "p95Millis": 1420.397,
+        "reasons": [
+          "P95"
+        ],
+        "outcomes": {
+          "OK": 3505
+        },
+        "refusalsByCode": {}
+      },
+      "passingQueue": {
+        "judgedAttempts": 5436,
+        "waitReported": 5436,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "failedQueue": {
+        "judgedAttempts": 3505,
+        "waitReported": 3505,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "oomKills": 0,
+      "daemonIdleMedianRssBytes": 3674112,
+      "idleSessionBytesAt50": 1393295.36,
+      "finiteRunBytesAt50": 791920.64,
+      "p1ConservativeEstimate": {
+        "maximumObservedIdlePerItemBytes": 2371584.0,
+        "population": 100,
+        "poolMedianMinimumBytes": 2104313856.0,
+        "daemonCeilingBytes": 536870912,
+        "denominatorBytes": 1567442944.0,
+        "fraction": 0.15130273220331011
+      },
+      "startupTrace": {
+        "completeTrials": 3,
+        "apiObservedP50Millis": 23.076
+      },
+      "w0LargestPassingStage": 50,
+      "l7LargestPassingStage": 100,
+      "artifact": "https://github.com/core607/poketto/actions/runs/41750805999/artifacts/13288520978",
+      "archiveSha256": "0a99174424f88c6ab6ed17aa79e3e4c14193d2ca57a5b2c0b8321f730bf6d27b"
+    },
+    {
+      "memoryBudgetGB": 8,
+      "largestPassingStage": 100,
+      "passingP95Millis": [
+        335.844,
+        423.797,
+        347.019
+      ],
+      "passingColdP50Millis": [
+        32.602,
+        33.295,
+        32.673
+      ],
+      "firstFailure": {
+        "agents": 200,
+        "repetitionZeroBased": 0,
+        "judgedAttempts": 3344,
+        "okRate": 0.7688397129186603,
+        "p95Millis": 3000.207,
+        "reasons": [
+          "OK_RATE",
+          "P95"
+        ],
+        "outcomes": {
+          "REFUSED": 773,
+          "OK": 2571
+        },
+        "refusalsByCode": {
+          "SESSION_NOT_READY": 773
+        }
+      },
+      "passingQueue": {
+        "judgedAttempts": 5387,
+        "waitReported": 5387,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "failedQueue": {
+        "judgedAttempts": 3344,
+        "waitReported": 2571,
+        "positiveWaits": 0,
+        "p95ReportedMillis": 0,
+        "maxReportedMillis": 0,
+        "maxSampledQueued": 0
+      },
+      "oomKills": 0,
+      "daemonIdleMedianRssBytes": 3670016,
+      "idleSessionBytesAt50": 1362001.92,
+      "finiteRunBytesAt50": 821739.52,
+      "p1ConservativeEstimate": {
+        "maximumObservedIdlePerItemBytes": 2301952.0,
+        "population": 100,
+        "poolMedianMinimumBytes": 2100865024.0,
+        "daemonCeilingBytes": 536870912,
+        "denominatorBytes": 1563994112.0,
+        "fraction": 0.14718418581872514
+      },
+      "startupTrace": {
+        "completeTrials": 3,
+        "apiObservedP50Millis": 24.211
+      },
+      "w0LargestPassingStage": 100,
+      "l7LargestPassingStage": 50,
+      "artifact": "https://github.com/core607/poketto/actions/runs/41750805999/artifacts/13288336097",
+      "archiveSha256": "0991482881898bceef6cd750535fd6a74ee293ba051ac449d2183a4d767cc0bd"
+    }
+  ],
+  "runtimeExecutables": 9,
+  "runtimeExecutablesWithoutQuota": 6,
+  "documentCache": {
+    "readers": 10,
+    "coldResidentBytes": 0,
+    "warmResidentBytes": {
+      "reflink": 819200000,
+      "shared-template": 81920000
+    },
+    "copiedUp": false
+  },
+  "p1Decision": {
+    "triggerFraction": 0.4,
+    "method": "Extrapolate the maximum observed per-item idle cost among cohorts 1/10/50 to the passing population, divided by the minimum passing-trial median pool memory minus the full 512 MiB daemon ceiling. This conservative fixed-cost estimate is not a direct attribution of each loaded process.",
+    "estimatedFractions": [
+      0.2130949348697215,
+      0.15130273220331011,
+      0.14718418581872514
+    ],
+    "action": "skip_idle_shell_eviction"
+  },
+  "comparisons": {
+    "w0": "https://github.com/core607/poketto/actions/runs/41362079392",
+    "l2FiveGB": "https://github.com/core607/poketto/actions/runs/41423194616",
+    "l2FiveGBLargestPassingStage": 50,
+    "l7": "https://github.com/core607/poketto/actions/runs/41638071622",
+    "scope": "W0 and L2 used volume clones. L7 and L9 use shared templates. The fixed workload and scoring match; each checkpoint ran on separate CI hosts."
+  },
+  "followup": "https://github.com/core607/poketto/issues/384",
+  "rawEvidence": "Per-budget CI archives contain the raw attempts, samples, timelines, cache cases and cleanup receipts."
+}
