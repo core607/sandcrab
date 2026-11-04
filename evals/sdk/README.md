@@ -1,12 +1,11 @@
 # Published SDK conformance
 
 These independent consumers call OpenSandbox 1.1.0 through Sandcrab's
-[optional adapter](../../executor-service/rust/sandcrab/opensandbox.md).
+[optional adapter](../../crates/sandcrab/opensandbox.md).
 [python_client.py](python_client.py) uses the published Python SDK;
 [SdkConformance.java](jvm/src/main/java/example/sandcrab/SdkConformance.java)
-calls the published Kotlin SDK from Java. Neither depends on Poketto application
-code or calls a model API. They verify the implemented adapter subset, not the
-entire upstream SDK surface.
+calls the published Kotlin SDK from Java. Both consumers exercise the documented
+adapter operations against the running service.
 
 The [Evaluation preflight](../../.github/workflows/evals.yml) runs both consumers
 on code changes and scripted manual runs, before Inspect. It uses a separate
@@ -29,7 +28,7 @@ artifacts before running the JVM client:
 | `sandbox-api-1.1.0.jar` | `4cc5236a3c69d4328a8e80754fe0ccf47bddea10a0eaecd5dd01ba299bb87e45` |
 
 On a prepared Linux host, select `--suite sdk` in the
-[conformance runner](../../executor-service/rust/sandcrab/conformance.py).
+[conformance runner](../../crates/sandcrab/conformance.py).
 Pass `--binary`, `--tools`, `--python`, `--java`, `--jvm-libs` and a fresh
 `--output` directory. Use absolute paths; `--jvm-libs` selects the generated
 `evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib` directory. Keep the

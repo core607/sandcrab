@@ -56,7 +56,7 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.mkdir(mode=0o755)  # Never overwrite an earlier attempt.
-    preflight = subprocess.Popen(['python3', str(source / 'executor-service/rust/sandcrab/conformance.py'),
+    preflight = subprocess.Popen(['python3', str(source / 'crates/sandcrab/conformance.py'),
         '--suite', 'volumes', 'plain-storage', 'files', 'events', 'tcp', 'host-calls', 'resources',
         '--binary', str(args.binary.resolve()), '--tools', str(args.tools.resolve()),
         '--output', str(output / 'preflight')])
@@ -73,7 +73,7 @@ def main():
                 preflight.wait(timeout=10)
     client = pwd.getpwnam('daemon')
     os.chown(output, client.pw_uid, client.pw_gid)
-    sys.path.insert(0, str(source / 'executor-service/rust/sandcrab'))
+    sys.path.insert(0, str(source / 'crates/sandcrab'))
     import sandcrab_conformance.native as module
     from sandcrab_conformance.volume import VolumeProbe
     fixture_type = module.Probe if args.suite == 'native' else VolumeProbe

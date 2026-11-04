@@ -4,7 +4,7 @@ The [installer](install/README.md) enables the adapter on its authenticated loop
 listener. Custom configurations opt in with `service.opensandbox = true` and a
 [TCP listener](config.example.toml).
 It targets the published OpenSandbox 1.1.0 Python and Kotlin SDKs. The
-[independent SDK clients](../../../evals/sdk/README.md) exercise both against
+[independent SDK clients](../../evals/sdk/README.md) exercise both against
 the native daemon, including named shell contexts.
 
 ## Connection and ownership
@@ -22,9 +22,9 @@ The transport and host trust requirements are those of [native TCP](README.md#lo
 The SDK's Kubernetes `secureAccess` option is unsupported; scoped endpoint
 credentials are always required by this adapter.
 
-The [Python example](../../../examples/sandcrab-sdk.py) writes a program, runs it
-and reads its output file. Install the [Python dependencies](../../../evals/sdk/requirements.txt)
-in the client's virtual environment. The [Kotlin example](../../../examples/sandcrab-sdk.main.kts)
+The [Python example](../../examples/sandcrab-sdk.py) writes a program, runs it
+and reads its output file. Install the [Python dependencies](../../evals/sdk/requirements.txt)
+in the client's virtual environment. The [Kotlin example](../../examples/sandcrab-sdk.main.kts)
 resolves the published SDK from its script dependency. Run either from a client account
 with a private token. Set `SANDCRAB_TOKEN_FILE`, `SANDCRAB_ENDPOINT` or `SANDCRAB_PROFILE`
 to override the installed token path, `127.0.0.1:9011` or the `default` profile.

@@ -9,12 +9,12 @@ import tempfile
 import unittest
 from zipfile import ZipFile
 
-from quickstart import SOURCE, recipe
+from quickstart import README, recipe
 
 
 class ReadmeRecipe(unittest.TestCase):
     def test_editor_or_extra_command_cannot_pass_as_three_unassisted_steps(self):
-        readme = (SOURCE / 'README.md').read_text(encoding='utf-8')
+        readme = README.read_text(encoding='utf-8')
         self.assertEqual(len(recipe(readme)), 3)
         install = 'python3 -I sandcrab-linux-x86_64.zip'
         for changed in ('vi /etc/sandcrab/config.toml', install + '\nvi /etc/sandcrab/config.toml',

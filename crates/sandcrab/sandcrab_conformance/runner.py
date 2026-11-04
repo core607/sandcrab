@@ -35,7 +35,7 @@ SUITES = {
     'sdk': ('opensandbox', 'SdkProbe'),
 }
 ENTRY = Path(__file__).resolve().parents[1] / 'conformance.py'
-SOURCE = (ENTRY.parent / '../../..').resolve()
+SOURCE = ENTRY.parent.parent.parent
 
 
 def create_fixture(name, args, report):

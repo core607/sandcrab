@@ -1,11 +1,8 @@
 # Sandcrab density experiment
 
-The [lightweight-service proposal](../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md)
-owns the footprint, readiness, density and breakdown requirements. This directory
-contains the seeded workload, scorer, native HTTP client and isolated density
-driver. Component tests do not establish sandbox capacity.
+The seeded workload, scorer, native HTTP client and collectors exercise the public sandbox API on a disposable Linux systemd host.
 
-The [W0 measurement report](../../executor-native/evidence/sandcrab-w0-2026-11-02/README.md)
+The [W0 measurement report](https://github.com/core607/poketto/blob/0fdd11cbc6ffea63b536ecf3749796551ba414d5/executor-native/evidence/sandcrab-w0-2026-11-02/README.md)
 links retained raw results, failed attempts and their measurement boundaries.
 
 The [manual installation baseline](READINESS.md) measures first-use steps, edits
@@ -49,7 +46,7 @@ in the reported client latency.
 From the repository root, with Python 3.10 or newer, Git, bash and ripgrep available:
 
 ```sh
-python3 -m unittest discover -s experiments/sandcrab-density -p 'test_*.py' -v
+python3 -m unittest discover -s benchmarks/density -p 'test_*.py' -v
 ```
 
 Linux runs the real command mix and Unix-peer/transport checks. On Windows those
@@ -58,8 +55,8 @@ checks skip; a Windows pass is not Linux evidence.
 ## Native measurement
 
 Use an isolated root-capable systemd host with cgroup v2, XFS utilities, Git,
-Python 3.10+, bash, ripgrep and the [prepared toolchain](../../executor-service/prepare-tools.sh).
-Build the binary with `./gradlew buildExecutorRust`. The driver refuses competing
+Python 3.10+, bash, ripgrep and the [prepared toolchain](../../scripts/prepare-tools.sh).
+Build the binary with `docker build --target release --output type=local,dest=build/bin .`. The driver refuses competing
 load controllers or native fixtures, insufficient free disk, and insufficient
 host memory outside its bounded slice. It creates a disposable XFS image and uses
 the public API to create the corpus, clone volumes and run commands. It never
@@ -80,11 +77,11 @@ timed loop. The archive, corpus and request bounds apply during preparation too.
 The original `--workspace volume` path remains available for W0 comparisons.
 
 ```sh
-sudo python3 experiments/sandcrab-density/density.py --smoke \
-  --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
+sudo python3 benchmarks/density/density.py --smoke \
+  --binary build/bin/sandcrab --tools /prepared/tools \
   --report /operator/evidence/smoke-unique.json
-sudo python3 experiments/sandcrab-density/density.py --budget 5 \
-  --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
+sudo python3 benchmarks/density/density.py --budget 5 \
+  --binary build/bin/sandcrab --tools /prepared/tools \
   --report /operator/evidence/density-5gb-unique.json
 ```
 
@@ -95,7 +92,7 @@ to run all three budgets on separate hosts after smoke. Compare
 these results to W0; there is no intermediate capacity run. Commit a
 `summary.json` linking the CI run; leave raw receipts, ledgers and diagnostics
 in its artifacts. Record a performance miss in a follow-up issue.
-The [L7 summary](../../executor-native/evidence/sandcrab-l7-2026-11-03/summary.json)
+The [L7 summary](../../evidence/sandcrab-l7-2026-11-03/summary.json)
 links the complete template checkpoint, its failure populations and follow-up.
 Select `storage=plain` for the periodic-accounting variant. Footprint, cache and
 startup-trace collectors keep their XFS fixture; only density selects that backend.
@@ -142,7 +139,7 @@ Sandbox CPU is pool CPU minus daemon CPU; system-manager CPU outside the slice i
 reported separately. Polling can miss brief executing states. Fresh-distribution
 readiness remains a separate W0 requirement.
 
-The [native density smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-density-smoke.json)
+The [native density smoke receipt](https://github.com/core607/poketto/blob/0fdd11cbc6ffea63b536ecf3749796551ba414d5/executor-native/evidence/2026-11-02-sandcrab-density-smoke.json)
 records one two-agent run on Ubuntu 24.04 with its source/binary hashes and verified
 cleanup. It checks the measurement entry path, not the canonical capacity or
 fresh-install readiness targets. The full attempt ledger is retained in the
@@ -174,7 +171,7 @@ used by core execution, sessions and optional durable volumes, separately from
 installation tools and workload programs. It is not a distribution package count
 or the transitive shared-library closure; the receipt names that boundary.
 
-The [native footprint smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-footprint-smoke.json)
+The [native footprint smoke receipt](https://github.com/core607/poketto/blob/0fdd11cbc6ffea63b536ecf3749796551ba414d5/executor-native/evidence/2026-11-02-sandcrab-footprint-smoke.json)
 covers one idle session and one finite run with verified API and host cleanup.
 It does not establish the 10/50-session fixed costs or any capacity limit.
 
@@ -206,7 +203,7 @@ paths according to the current storage layout. These observations are not an API
 for accessing another daemon's content. Smoke uses 400 documents with all ten readers;
 the canonical comparison uses the full corpus.
 
-The [native page-cache smoke receipt](../../executor-native/evidence/2026-11-02-sandcrab-page-cache-smoke.json)
+The [native page-cache smoke receipt](https://github.com/core607/poketto/blob/0fdd11cbc6ffea63b536ecf3749796551ba414d5/executor-native/evidence/2026-11-02-sandcrab-page-cache-smoke.json)
 records that small comparison, including cold-state proof and verified cleanup.
 It does not replace the full-corpus comparison.
 
@@ -223,7 +220,7 @@ cgroup at the kernel fork event, or a later cgroup attachment for migration-base
 launches. It follows only the measured session tree, excluding volume validation
 helpers. It identifies the actual sandbox launch by following the verified launcher's PID through its
 `exec` replacement, as implemented by
-[`sandcrab-launch`](../../executor-service/rust/sandcrab-launch/src/lib.rs).
+[`sandcrab-launch`](../../crates/sandcrab-launch/src/lib.rs).
 A process exit invalidates that identity. No user argv pointers are read.
 Unparseable events, reported probe errors and missing required events fail the
 measurement.

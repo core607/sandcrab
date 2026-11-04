@@ -9,7 +9,7 @@ service under its normal lifecycle. The default is false. Enabled finite runs an
 session commands receive the `sandcrab call` helper and a protected mailbox. Profiles
 cannot mount over `/sandcrab`, `/sandcrab-driver` or `/sandcrab-calls`.
 
-The [build-signing example](../../../examples/sandcrab-host-calls.py) uses the public CLI
+The [build-signing example](../../examples/sandcrab-host-calls.py) uses the public CLI
 as an ordinary client. It authorizes one artifact digest, signs it with a caller-owned
 key, and verifies the sandbox's returned signature:
 

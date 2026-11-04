@@ -1,13 +1,9 @@
 .env
 .env.*
 !.env.example
-*.local
+/target/
+/build/
 .gradle/
-build/
-out/
-.idea/
-*.iml
+**/build/
 __pycache__/
 *.pyc
-executor-service/rust/target/
-executor-service/bin/

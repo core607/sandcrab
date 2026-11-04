@@ -80,7 +80,7 @@ def main():
             call('docker', 'exec', name, 'mkdir', '/source')
             call('docker', 'exec', name, 'tar', '-xf', '/root/source.tar', '-C', '/source')
             recipe_result = call('docker', 'exec', '-e', 'SANDCRAB_READINESS_DISPOSABLE=1', name,
-                                 'python3', '/source/experiments/sandcrab-density/readiness.py',
+                                 'python3', '/source/benchmarks/density/readiness.py',
                                  '--source', '/source', '--binary', '/root/sandcrab',
                                  '--revision', receipt['sourceCommit'], '--report', '/root/readiness.json',
                                  '--acquisition-started-ns', started, check=False, timeout=900)

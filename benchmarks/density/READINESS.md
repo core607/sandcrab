@@ -22,7 +22,7 @@ Reported time is therefore a lower bound, not an end-to-end installation promise
 ## Fresh distribution replay
 
 The [readiness workflow](../../.github/workflows/sandcrab-readiness.yml) times the
-[current README recipe](../../executor-service/rust/sandcrab/README.md#get-started)
+[current README recipe](../../README.md#quickstart)
 on fresh Ubuntu 22.04 and 24.04 runners and a Debian 12 systemd container. Its
 clock starts at the artifact download and stops after checking the first run's
 stdout. The ensuing delegation suite has a separate result. The historical manual
@@ -36,9 +36,9 @@ baseline.
 Build a fixture image using the Debian `BASE_IMAGE` pinned in the workflow, then:
 
 ```sh
-python3 experiments/sandcrab-density/readiness_container.py \
+python3 benchmarks/density/readiness_container.py \
   --image sandcrab-readiness:fixture --source . \
-  --binary build/executor-service/bin/sandcrab \
+  --binary build/bin/sandcrab \
   --report /operator/evidence/readiness-NEW-RUN.json
 ```
 
@@ -62,7 +62,5 @@ is never overwritten.
 
 `measurementStatus=COMPLETED` requires a successful first command and verified
 cleanup. `readiness.targetPass` separately requires at most three operator commands,
-zero manual configuration edits and less than five minutes. The
-[lightweight proposal](../../notes/proposed/2026-11-02-sandcrab-lightweight-service.md)
-owns those targets. This manual baseline cannot replace the later quickstart gate:
+zero manual configuration edits and less than five minutes. This manual baseline cannot replace the later quickstart gate:
 that gate must follow the released README verbatim, including acquisition.

@@ -2,6 +2,11 @@ name: Evaluation preflight
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths: ['crates/**', 'evals/**', 'examples/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
+  push:
+    branches: [main]
+    paths: ['crates/**', 'evals/**', 'examples/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
   workflow_call:
     inputs:
       evidence_mode:
@@ -65,24 +70,24 @@ jobs:
         if: inputs.evidence_mode != 'model'
         run: ./gradlew -p evals/sdk/jvm spotlessCheck checkstyleMain installDist --no-daemon
       - name: Build the native binary
-        run: ./gradlew buildExecutorRust --no-daemon
+        run: docker build --target release --output type=local,dest=build/bin .
       - name: Prepare the disposable native host
         run: |
           command -v mkfs.xfs || { sudo apt-get update && sudo apt-get install --yes --no-install-recommends xfsprogs; }
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          sudo bash executor-service/prepare-tools.sh /var/lib/sandcrab-evals/tools
+          sudo bash scripts/prepare-tools.sh /var/lib/sandcrab-evals/tools
       - name: Prepare pinned Node for workload compatibility
         if: inputs.evidence_mode != 'model'
-        run: sudo bash executor-service/prepare-node.sh /var/lib/sandcrab-evals/tools
+        run: sudo bash scripts/prepare-node.sh /var/lib/sandcrab-evals/tools
       - name: Check the conformance controller lifecycle
-        run: python3 -m unittest discover -s executor-service/rust/sandcrab -p 'test_conformance.py' -v
+        run: python3 -m unittest discover -s crates/sandcrab -p 'test_conformance.py' -v
       - name: Run native and published SDK conformance
         if: inputs.evidence_mode != 'model'
         run: |
           printf '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
-          sudo python3 executor-service/rust/sandcrab/conformance.py \
+          sudo python3 crates/sandcrab/conformance.py \
             --suite native egress queue retention streaming templates contexts overlays rootfs diff delegation sdk \
-            --binary build/executor-service/bin/sandcrab --tools /var/lib/sandcrab-evals/tools \
+            --binary build/bin/sandcrab --tools /var/lib/sandcrab-evals/tools \
             --python /var/lib/sandcrab-evals/sdk-python/bin/python --java "$JAVA_HOME/bin/java" \
             --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \
             --output /var/lib/sandcrab-evals/conformance
@@ -96,7 +101,7 @@ jobs:
           EVAL_BUDGET: ${{ inputs.budget_usd || '1.00' }}
           DEEPSEEK_API_KEY: ${{ secrets.model_key }}
         run: |
-          sudo --preserve-env=DEEPSEEK_API_KEY python3 evals/native.py --binary build/executor-service/bin/sandcrab \
+          sudo --preserve-env=DEEPSEEK_API_KEY python3 evals/native.py --binary build/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/python/bin/python \
             --output /var/lib/sandcrab-evals/results --mode "$EVIDENCE_MODE" --suite "$EVAL_SUITE" --model "$EVAL_MODEL" \
             --epochs "$EVAL_REPEATS" --budget-usd "$EVAL_BUDGET" --workspace-client "$EVAL_WORKSPACE_CLIENT"

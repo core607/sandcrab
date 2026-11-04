@@ -1,6 +1,6 @@
 # Installing Sandcrab
 
-[Get started](../README.md#get-started) installs the bundled executables, notices and
+[Quickstart](../../../README.md#quickstart) installs the bundled executables, notices and
 source into `/var/lib/sandcrab-release`. Keep that directory installed because systemd
 uses its executable. Replaying the same bundle reuses matching protected files.
 For a different bundle in an existing installation, use the
@@ -29,18 +29,16 @@ service. It leaves the host's global restriction in place.
 
 ## Standalone container
 
-Use a Linux Docker engine with cgroup v2. Set `SANDCRAB_IMAGE` to the per-commit
-image reported by the [installer workflow](../../../../.github/workflows/sandcrab-readiness.yml) after a main dispatch with `publish_image=true` (`ghcr.io/core607/poketto-sandcrab:sha-COMMIT`),
-or build the same image from the local bundle:
+Use a Linux Docker engine with cgroup v2. Set `SANDCRAB_IMAGE` to the image digest published with your release, or build the same image from the local bundle:
 
 ```sh
-docker build -t sandcrab:local -f executor-service/rust/sandcrab/install/Dockerfile build/executor-service/bin
+docker build -t sandcrab:local -f crates/sandcrab/install/Dockerfile build/bin
 SANDCRAB_IMAGE=sandcrab:local
 ```
 
 On a host with `kernel.apparmor_restrict_unprivileged_userns=1`, load the
 [service profile](sandcrab.apparmor) with
-`sudo apparmor_parser -r executor-service/rust/sandcrab/install/sandcrab.apparmor`
+`sudo apparmor_parser -r crates/sandcrab/install/sandcrab.apparmor`
 and add `--security-opt apparmor=sandcrab-service` to the following invocation.
 
 ```sh
