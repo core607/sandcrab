@@ -63,6 +63,7 @@ class Probe:
         client = pwd.getpwnam('daemon')
         CLIENT = (client.pw_uid, client.pw_gid)
         self.report = report
+        self.workload_node = tools / 'node'
         self.fixture_parent = Path(os.environ.get('SANDCRAB_PROBE_ROOT', '/var/lib'))
         assert self.fixture_parent.is_absolute() and self.fixture_parent.resolve(strict=True) == self.fixture_parent
         for ancestor in [self.fixture_parent, *self.fixture_parent.parents]:
@@ -289,15 +290,26 @@ network = "none"
 
         seccomp_probe = Path(__file__).with_name('seccomp_cases.py').read_bytes()
         self.receipt['seccompProbeSha256'] = hashlib.sha256(seccomp_probe).hexdigest()
-        request = self.submit(seccomp_probe.decode())
+        source = seccomp_probe.decode()
+        # The API bounds each literal argument. Preserve the exact probe source across arguments.
+        chunks = [source[start:start + 2048] for start in range(0, len(source), 2048)]
+        request = self.submit('', command=['python3', '-c',
+            "import sys; exec(compile(''.join(sys.argv[1:]), 'seccomp_cases.py', 'exec'))", *chunks])
         response = self.wait(request)
         assert response['state'] == 'succeeded', response
         observed = json.loads(response['result']['stdout'])
-        assert len(observed['checks']) == 13, observed
+        assert len(observed['checks']) == len(set(observed['checks'])) == 64, observed
         self.receipt['nativeSeccomp'] = observed
         self.forget(request)
         for name in observed['checks']:
             self.done('native-seccomp-' + name)
+
+        if self.workload_node.is_file():
+            run = self.submit('', command=[str(self.workload_node), '-e', 'setImmediate(() => console.log(6 * 7))'])
+            value = self.wait(run)
+            assert value['state'] == 'succeeded' and value['result']['stdout'] == '42\n', value
+            self.forget(run)
+            self.done('node-event-loop-through-the-workload-filter')
 
         request = self.submit('raise SystemExit(7)')
         response = self.wait(request)

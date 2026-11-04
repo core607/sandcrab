@@ -1,0 +1,83 @@
+{
+  "scope": "Same-host footprint smoke with one idle template-backed shell and one finite run. The H1 final observation supplies the identical starting binary. Memory deltas include kernel and cache variability.",
+  "footprint": {
+    "before": {
+      "sourceCommit": "ab8387083424e5c5e6f5a5288f13eb012bf06688",
+      "binarySha256": "e25c7769af379f75f4066b57493001bb8e036056e73bda0d800e6fc2160502e1",
+      "staticBinaryBytes": 4686752,
+      "daemonIdleMedianRssBytes": 3674112,
+      "daemonIdleMedianTasks": 2,
+      "oneIdleSessionDeltaBytes": 167936.0,
+      "oneIdleSessionAdditionalTasks": 5.0,
+      "oneFiniteRunDeltaBytes": 2863104.0,
+      "oneFiniteRunAdditionalTasks": 4.0,
+      "runtimeExecutables": 9,
+      "runtimeExecutablesWithoutQuota": 6,
+      "cleanup": "PASS"
+    },
+    "after": {
+      "sourceCommit": "a86ae7f3a6d6b8309c995d608fe8ed4bfae7c33a",
+      "binarySha256": "12e41da3447014132e07ac68ec4eac16adc8f1e7a3949496e6b72131f274516e",
+      "staticBinaryBytes": 4694944,
+      "daemonIdleMedianRssBytes": 3678208,
+      "daemonIdleMedianTasks": 2,
+      "oneIdleSessionDeltaBytes": 2236416.0,
+      "oneIdleSessionAdditionalTasks": 5.0,
+      "oneFiniteRunDeltaBytes": 1552384.0,
+      "oneFiniteRunAdditionalTasks": 4.0,
+      "runtimeExecutables": 9,
+      "runtimeExecutablesWithoutQuota": 6,
+      "cleanup": "PASS"
+    }
+  },
+  "attempts": [
+    {
+      "check": "Rust",
+      "result": "FAIL",
+      "cause": "Clippy required the fixed-size slice API in the BPF instruction interpreter test."
+    },
+    {
+      "check": "native",
+      "result": "FAIL",
+      "checksBeforeFailure": 14,
+      "cleanup": "PASS",
+      "cause": "The expanded probe exceeded the API limit for one literal argument. The harness now splits the source into bounded arguments."
+    },
+    {
+      "check": "Rust and worker",
+      "result": "PASS",
+      "workerTests": 176
+    },
+    {
+      "check": "native",
+      "result": "PASS",
+      "suites": {
+        "native": 104,
+        "egress": 12,
+        "rootfs": 8,
+        "files": 26,
+        "diff": 8,
+        "delegation": 10,
+        "sdk": 21
+      },
+      "cleanup": "PASS"
+    }
+  ],
+  "kernelSeccompChecks": 64,
+  "node": "v22.22.0",
+  "mixSmoke": {
+    "agents": 2,
+    "preflightKinds": [
+      "edit",
+      "git",
+      "list",
+      "python",
+      "read",
+      "rg"
+    ],
+    "outcomes": {
+      "OK": 99
+    },
+    "cleanup": "PASS"
+  }
+}

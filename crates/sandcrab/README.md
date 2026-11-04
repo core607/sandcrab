@@ -84,6 +84,12 @@ nested user namespaces. A profile with a proxy retains the disconnected network
 created for that workload. Fixed file helpers use host UID mappings to publish files
 with the owner's identity.
 
+The x86-64 workload filter denies new Unix and VSOCK sockets, io_uring, BPF,
+keyrings, perf events, userfaultfd, kernel and module loading, mount operations,
+setns, namespace flags in clone/unshare, ptrace and nondefault personality changes.
+Unix socketpairs, ordinary processes and threads, and personality queries remain
+available. `clone3` returns `ENOSYS` so runtimes can use `clone`.
+
 Each session has a child cgroup under the configured delegation. Its
 aggregate memory, CPU and task limits apply to every process in the session.
 Memory caps round down to whole kernel pages; swap is disabled. File freezing

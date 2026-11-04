@@ -1,4 +1,4 @@
-//! The compiled equivalent of the pinned SRT 0.0.75 filter, without its helper.
+//! Sealed workload filters and the inherited bootstrap filter for verified bubblewrap.
 use super::Error;
 use rustix::{
     fs::{MemfdFlags, SealFlags, fcntl_add_seals, memfd_create},
@@ -19,13 +19,22 @@ pub struct Seccomp(File);
 
 impl Seccomp {
     pub fn new() -> Result<Self, Error> {
+        Self::from_program(WORKLOAD_FILTER)
+    }
+
+    /// Only the authenticated, fixed overlay exporter may clone its mount.
+    pub fn for_overlay_export() -> Result<Self, Error> {
+        Self::from_program(OVERLAY_EXPORT_FILTER)
+    }
+
+    fn from_program(program: &[seccompiler::sock_filter]) -> Result<Self, Error> {
         let descriptor = memfd_create(
             c"sandcrab-seccomp",
             MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
         )
         .map_err(std::io::Error::from)?;
         let mut file = File::from(descriptor);
-        for op in FILTER {
+        for op in program {
             file.write_all(&op.code.to_le_bytes())?;
             file.write_all(&[op.jt, op.jf])?;
             file.write_all(&op.k.to_le_bytes())?;
@@ -45,9 +54,9 @@ impl Seccomp {
 
     pub(crate) fn prepare_exec(&self) -> Result<(), Error> {
         // bwrap applies --seccomp independently in its reaper and workload after
-        // forking. Install the same base rules before exec too: a workload must
+        // forking. Keep the base rules active during privileged setup. A workload must
         // never be able to trace an unfiltered reaper during that startup window.
-        seccompiler::apply_filter(FILTER)
+        seccompiler::apply_filter(BOOTSTRAP_FILTER)
             .map_err(|error| Error(format!("Sandbox seccomp installation failed: {error}")))?;
         fcntl_setfd(&self.0, FdFlags::empty()).map_err(std::io::Error::from)?;
         Ok(())

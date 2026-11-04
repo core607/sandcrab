@@ -32,11 +32,17 @@ fn reference() -> Vec<sock_filter> {
     .to_vec()
 }
 
-fn action(program: &[sock_filter], nr: u32, arch: u32, domain: u64) -> u32 {
+fn action(program: &[sock_filter], nr: u32, arch: u32, arg0: u64) -> u32 {
+    evaluate(program, nr, arch, [arg0, 0, 0])
+}
+
+fn evaluate(program: &[sock_filter], nr: u32, arch: u32, args: [u64; 3]) -> u32 {
     let mut data = [0u8; 64];
     data[..4].copy_from_slice(&nr.to_le_bytes());
     data[4..8].copy_from_slice(&arch.to_le_bytes());
-    data[16..24].copy_from_slice(&domain.to_le_bytes());
+    for (slot, arg) in data[16..40].as_chunks_mut::<8>().0.iter_mut().zip(args) {
+        slot.copy_from_slice(&arg.to_le_bytes());
+    }
     let (mut pc, mut value) = (0usize, 0u32);
     for _ in 0..program.len() {
         let op = &program[pc];
@@ -80,7 +86,7 @@ fn compiled_filter_matches_the_pinned_binary_across_rules_and_abi_boundaries() {
                 u64::MAX,
             ] {
                 assert_eq!(
-                    action(FILTER, nr, arch, domain),
+                    action(BOOTSTRAP_FILTER, nr, arch, domain),
                     action(&reference, nr, arch, domain),
                     "nr={nr:x}, arch={arch:x}, domain={domain:x}"
                 );
@@ -98,9 +104,71 @@ fn compiled_filter_matches_the_pinned_binary_across_rules_and_abi_boundaries() {
         };
         let domain = seed.rotate_left(17);
         assert_eq!(
-            action(FILTER, nr, arch, domain),
+            action(BOOTSTRAP_FILTER, nr, arch, domain),
             action(&reference, nr, arch, domain)
         );
+    }
+}
+
+#[test]
+fn workloads_deny_kernel_admin_calls_without_breaking_fork_or_personality_queries() {
+    let arch = 0xc000_003e;
+    let allow = 0x7fff_0000;
+    let denied = 0x0005_0001;
+    for nr in [
+        101, 155, 165, 166, 174, 175, 176, 246, 248, 249, 250, 298, 308, 313, 320, 321, 323, 425,
+        426, 427, 428, 429, 430, 431, 432, 433, 442, 457, 458, 467,
+    ] {
+        assert_eq!(action(WORKLOAD_FILTER, nr, arch, 0), denied, "syscall {nr}");
+    }
+    for bits in [1, 40, 0x1_0000_0028, 0xffff_ffff_0000_0001] {
+        assert_eq!(action(WORKLOAD_FILTER, 41, arch, bits), denied);
+    }
+    for flag in [
+        0x80,
+        0x0002_0000,
+        0x0200_0000,
+        0x0400_0000,
+        0x0800_0000,
+        0x1000_0000,
+        0x2000_0000,
+        0x4000_0000,
+    ] {
+        for nr in [56, 272] {
+            assert_eq!(
+                action(WORKLOAD_FILTER, nr, arch, flag | 0x100),
+                denied,
+                "{nr} {flag:x}"
+            );
+        }
+    }
+    assert_eq!(action(WORKLOAD_FILTER, 56, arch, 1 << 37), denied);
+    assert_eq!(action(WORKLOAD_FILTER, 272, arch, 0x0010_0000), denied);
+    assert_eq!(action(WORKLOAD_FILTER, 56, arch, 0x0010_0000 | 17), allow);
+    assert_eq!(action(WORKLOAD_FILTER, 272, arch, 0), allow);
+    assert_eq!(action(WORKLOAD_FILTER, 435, arch, u64::MAX), 0x0005_0026);
+    for value in [0, u64::from(u32::MAX), u64::MAX] {
+        assert_eq!(action(WORKLOAD_FILTER, 135, arch, value), allow);
+    }
+    for value in [8, 0x40000, 0x1_0000_0008] {
+        assert_eq!(action(WORKLOAD_FILTER, 135, arch, value), denied);
+    }
+    assert_eq!(action(WORKLOAD_FILTER, 41, arch, 2), allow);
+    assert_eq!(action(WORKLOAD_FILTER, 53, arch, 1), allow);
+}
+
+#[test]
+fn only_the_fixed_overlay_exporter_can_clone_its_mount() {
+    let dirfd = (-100i64) as u64;
+    let arch = 0xc000_003e;
+    for (nr, args, expected) in [
+        (428, [dirfd, 0, 0x80001], 0x7fff_0000),
+        (428, [dirfd, 0, 1], 0x0005_0001),
+        (428, [5, 0, 0x80001], 0x0005_0001),
+        (429, [dirfd, 0, 0x80001], 0x0005_0001),
+    ] {
+        assert_eq!(evaluate(OVERLAY_EXPORT_FILTER, nr, arch, args), expected);
+        assert_eq!(evaluate(WORKLOAD_FILTER, nr, arch, args), 0x0005_0001);
     }
 }
 
@@ -113,8 +181,8 @@ fn the_filter_fd_is_sealed_complete_and_close_on_exec_until_launch() {
     let mut reader = filter.0.try_clone().unwrap();
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).unwrap();
-    assert_eq!(bytes.len(), FILTER.len() * 8);
-    for (encoded, op) in bytes.as_chunks::<8>().0.iter().zip(FILTER) {
+    assert_eq!(bytes.len(), WORKLOAD_FILTER.len() * 8);
+    for (encoded, op) in bytes.as_chunks::<8>().0.iter().zip(WORKLOAD_FILTER) {
         assert_eq!(
             u16::from_le_bytes(encoded[..2].try_into().unwrap()),
             op.code
