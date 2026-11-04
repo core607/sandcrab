@@ -90,6 +90,11 @@ setns, namespace flags in clone/unshare, ptrace and nondefault personality chang
 Unix socketpairs, ordinary processes and threads, and personality queries remain
 available. `clone3` returns `ENOSYS` so runtimes can use `clone`.
 
+Workload processes use the profile's execution UID and primary GID with empty
+supplementary groups and capability sets. The launcher sets `no_new_privs` before
+dropping identity. The guest cannot open its cgroup controls for writing or raise
+a process hard resource limit.
+
 Each session has a child cgroup under the configured delegation. Its
 aggregate memory, CPU and task limits apply to every process in the session.
 Memory caps round down to whole kernel pages; swap is disabled. File freezing

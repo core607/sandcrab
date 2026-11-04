@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import selectors
+import shlex
 import signal
 import subprocess
 import time
@@ -13,7 +15,60 @@ import uuid
 from .native import Probe, call, http
 
 
+AUTHORITY = """import errno, json, os, resource
+from pathlib import Path
+fields = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
+caps = {key: int(fields[key], 16) for key in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb')}
+controls = {}
+for name in ('memory.max', 'memory.swap.max', 'cpu.max', 'pids.max', 'cgroup.procs', 'cgroup.subtree_control'):
+    try:
+        fd = os.open('/sys/fs/cgroup/' + name, os.O_WRONLY)
+    except OSError as error:
+        controls[name] = errno.errorcode[error.errno]
+    else:
+        os.close(fd)
+        raise AssertionError('Opened cgroup control for writing: ' + name)
+for line in Path('/proc/self/mountinfo').read_text().splitlines():
+    mount, filesystem = line.split(' - ', 1)
+    if filesystem.split()[0] == 'cgroup2':
+        assert 'ro' in mount.split()[5].split(','), line
+resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
+try:
+    resource.setrlimit(resource.RLIMIT_NOFILE, (33, 33))
+except (ValueError, PermissionError):
+    pass
+else:
+    raise AssertionError('Raised the hard file-descriptor limit')
+print(json.dumps({'uids': fields['Uid'].split(), 'gids': fields['Gid'].split(), 'groups': os.getgroups(),
+                  'caps': caps, 'noNewPrivs': int(fields['NoNewPrivs']), 'controls': controls,
+                  'nofile': resource.getrlimit(resource.RLIMIT_NOFILE)}))
+"""
+
+
 class ResourcesProbe(Probe):
+    def authority(self, session, group):
+        controls = ('memory.max', 'memory.swap.max', 'cpu.max', 'pids.max')
+        def host_limits():
+            return {name: (group / name).read_text().strip() for name in controls}
+        before = host_limits()
+        finite = self.submit(AUTHORITY)
+        session_run, session_result = self.session_exec(session, 'python3 -c ' + shlex.quote(AUTHORITY))
+        observations = {}
+        for mode, run, result in [('finite', finite, self.wait(finite)), ('shell', session_run, session_result)]:
+            assert result['state'] == 'succeeded', result
+            data = json.loads(result['result']['stdout'])
+            assert data['uids'] == [str(self.uid)] * 4 and self.uid != 0 and data['groups'] == [], data
+            assert data['gids'] == [str(pwd.getpwuid(self.uid).pw_gid)] * 4, data
+            assert set(data['caps'].values()) == {0} and data['noNewPrivs'] == 1, data
+            assert all(code in ('EACCES', 'EPERM', 'EROFS', 'ENOENT', 'ENOTDIR') for code in data['controls'].values()), data
+            assert data['nofile'] == [32, 32], data
+            self.forget(run)
+            observations[mode] = data
+        assert host_limits() == before
+        self.receipt['processAuthority'] = {**observations, 'hostCgroupLimits': before}
+        self.done('finite-and-shell-credentials-capabilities-no-new-privileges-and-hard-limits')
+        self.done('guest-cgroup-controls-deny-write-open-and-host-resource-caps-survive')
+
     def limits(self, identity, memory=33554432, cpu=25, session=False):
         deadline = time.monotonic() + 8
         root = self.workloads_group / ('run-' + identity)
@@ -66,6 +121,7 @@ class ResourcesProbe(Probe):
 
         session = self.session_open(resources=resources)
         group = self.limits(session['id'], session=True).parent
+        self.authority(session, group)
         run, result = self.session_exec(session, 'printf bounded')
         assert result['state'] == 'succeeded' and result['result']['stdout'] == 'bounded'
         self.forget(run)
