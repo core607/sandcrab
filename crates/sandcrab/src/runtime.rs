@@ -999,17 +999,15 @@ pub fn launch(path: &Path) -> io::Result<()> {
     } else {
         record.command
     };
-    let mut args = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &command)
-        .map_err(io::Error::other)?;
-    if record.network {
-        // export() already created the disconnected network and received the
-        // daemon's positive acknowledgement. A second netns would lose its proxy.
-        let index = args
-            .iter()
-            .position(|arg| arg == "--unshare-net")
-            .ok_or_else(|| invalid("Missing sandbox network isolation argument"))?;
-        args.remove(index);
-    }
+    let namespaces = if record.network {
+        // export() already established the disconnected namespace and its proxy.
+        sandcrab_launch::NamespaceMode::ProxyNetwork
+    } else {
+        sandcrab_launch::NamespaceMode::Workload
+    };
+    let mut args =
+        sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &command, namespaces)
+            .map_err(io::Error::other)?;
     if let Some(rootfs) = &record.rootfs {
         if record.workspace != rootfs.join("workspace") {
             return Err(invalid("Rootfs workspace identity changed"));

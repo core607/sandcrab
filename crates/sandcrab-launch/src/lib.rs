@@ -168,6 +168,15 @@ fn keys(value: &Value) -> Option<HashSet<&str>> {
         .map(|object| object.keys().map(String::as_str).collect())
 }
 
+/// Only an acknowledged, already private proxy network can be retained by a workload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NamespaceMode {
+    Workload,
+    ProxyNetwork,
+    /// Fixed daemon-owned file operations need host UID mappings for chown.
+    FileHelper,
+}
+
 /// Translate the worker policy into bubblewrap arguments carrying the filter descriptor and
 /// the literal command. Unknown fields, weaker settings, network exceptions and overlapping
 /// grants are refused instead of ignored.
@@ -176,6 +185,7 @@ pub fn sandbox_arguments(
     seccomp: &Seccomp,
     policy: &Value,
     command: &[String],
+    namespaces: NamespaceMode,
 ) -> Result<Vec<String>, Error> {
     if keys(policy)
         != Some(HashSet::from([
@@ -211,11 +221,30 @@ pub fn sandbox_arguments(
         bwrap.to_string_lossy().into(),
         "--new-session".into(),
         "--die-with-parent".into(),
-        "--unshare-user".into(),
         "--cap-drop".into(),
         "ALL".into(),
-        "--unshare-net".into(),
     ];
+    let flags: &[&str] = match namespaces {
+        // --unshare-all only tries user and cgroup namespaces. Require both.
+        NamespaceMode::Workload | NamespaceMode::ProxyNetwork => &[
+            "--unshare-all",
+            "--unshare-user",
+            "--unshare-cgroup",
+            "--disable-userns",
+        ],
+        NamespaceMode::FileHelper => &[
+            "--unshare-ipc",
+            "--unshare-pid",
+            "--unshare-uts",
+            "--unshare-cgroup",
+            "--unshare-net",
+        ],
+    };
+    args.extend(flags.iter().map(|flag| (*flag).to_owned()));
+    if namespaces == NamespaceMode::ProxyNetwork {
+        args.push("--share-net".into());
+    }
+    args.extend(["--hostname".into(), "sandcrab".into()]);
     for path in &read {
         if path == "/dev" || path == "/proc" {
             continue;
@@ -247,18 +276,7 @@ pub fn sandbox_arguments(
         args.extend(["--bind".into(), path.clone(), path.clone()]);
     }
     // Empty-root scaffolding must not be writable; individual write mounts remain writable.
-    args.extend(
-        [
-            "--dev",
-            "/dev",
-            "--unshare-pid",
-            "--proc",
-            "/proc",
-            "--remount-ro",
-            "/",
-        ]
-        .map(String::from),
-    );
+    args.extend(["--dev", "/dev", "--proc", "/proc", "--remount-ro", "/"].map(String::from));
     args.extend([
         "--seccomp".into(),
         seccomp.descriptor().to_string(),

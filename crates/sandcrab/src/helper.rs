@@ -195,11 +195,14 @@ pub fn launch(path: &Path) -> io::Result<()> {
     let policy = serde_json::json!({"network":{"allowedDomains":[],"deniedDomains":[],"allowAllUnixSockets":false},
         "filesystem":{"denyRead":["/","/sys"],"allowRead":read,"allowWrite":[],"denyWrite":[]},
         "enableWeakerNestedSandbox":false});
-    let mut arguments = sandcrab_launch::sandbox_arguments(&bwrap, &seccomp, &policy, &record.argv)
-        .map_err(io::Error::other)?;
-    // Host UID mappings permit chown of staged user files. Fixed file/copy
-    // helpers retain three capabilities; fixed overlay export also needs SYS_ADMIN.
-    arguments.retain(|argument| argument != "--unshare-user");
+    let mut arguments = sandcrab_launch::sandbox_arguments(
+        &bwrap,
+        &seccomp,
+        &policy,
+        &record.argv,
+        sandcrab_launch::NamespaceMode::FileHelper,
+    )
+    .map_err(io::Error::other)?;
     let boundary = arguments
         .iter()
         .position(|argument| argument == "--remount-ro")

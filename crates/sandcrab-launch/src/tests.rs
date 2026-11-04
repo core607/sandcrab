@@ -70,6 +70,7 @@ fn arguments(policy: &Value) -> Result<Vec<String>, Error> {
         &Seccomp::new()?,
         policy,
         &command(),
+        NamespaceMode::Workload,
     )
 }
 fn pair(args: &[String], flag: &str) -> Vec<String> {
@@ -85,14 +86,17 @@ fn the_policy_reaches_the_filter_with_a_literal_command_and_every_namespace() {
     assert_eq!(args[args.len() - 4..], tail[..]);
     assert!(pair(&args, "--seccomp")[1].parse::<i32>().unwrap() >= 0);
     for flag in [
-        "--unshare-net",
+        "--unshare-all",
         "--unshare-user",
-        "--unshare-pid",
+        "--unshare-cgroup",
+        "--disable-userns",
         "--die-with-parent",
         "--new-session",
     ] {
         assert!(args.contains(&flag.to_string()), "{flag}");
     }
+    assert_eq!(pair(&args, "--hostname"), ["--hostname", "sandcrab"]);
+    assert!(!args.iter().any(|flag| flag == "--share-net"));
     assert_eq!(pair(&args, "--cap-drop"), ["--cap-drop", "ALL"]);
     assert_eq!(pair(&args, "--remount-ro"), ["--remount-ro", "/"]);
     let triples: Vec<_> = args.windows(3).collect();
@@ -101,6 +105,42 @@ fn the_policy_reaches_the_filter_with_a_literal_command_and_every_namespace() {
     }
     assert!(triples.contains(&&["--bind".to_string(), "/tmp".into(), "/tmp".into()][..]));
     assert_eq!(args[0], "/tools/bwrap");
+}
+
+#[test]
+fn only_the_acknowledged_proxy_namespace_is_shared_and_helpers_keep_host_ids() {
+    let build = |mode| {
+        sandbox_arguments(
+            Path::new("/tools/bwrap"),
+            &Seccomp::new().unwrap(),
+            &policy(),
+            &command(),
+            mode,
+        )
+        .unwrap()
+    };
+    let proxy = build(NamespaceMode::ProxyNetwork);
+    let all = proxy.iter().position(|arg| arg == "--unshare-all").unwrap();
+    let share = proxy.iter().position(|arg| arg == "--share-net").unwrap();
+    assert!(all < share && proxy.iter().any(|arg| arg == "--disable-userns"));
+    let helper = build(NamespaceMode::FileHelper);
+    for flag in [
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--unshare-pid",
+        "--unshare-cgroup",
+        "--unshare-net",
+    ] {
+        assert!(helper.iter().any(|arg| arg == flag), "{flag}");
+    }
+    for flag in [
+        "--unshare-user",
+        "--unshare-all",
+        "--disable-userns",
+        "--share-net",
+    ] {
+        assert!(!helper.iter().any(|arg| arg == flag), "{flag}");
+    }
 }
 
 #[test]

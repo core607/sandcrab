@@ -77,6 +77,13 @@ in the profile's read mounts. Read mounts cannot expose runtime storage.
 Before starting, create the root-owned parent of `runtime_root` with mode 0755
 (`/var/lib/sandcrab-demo` for the example).
 
+Workloads have private mount, user, PID, IPC, UTS, cgroup and network namespaces.
+Their hostname is `sandcrab`, the sandbox sees its own cgroup root, and sibling
+sessions cannot look up each other's SysV shared memory. The bundled bwrap disables
+nested user namespaces. A profile with a proxy retains the disconnected network
+created for that workload. Fixed file helpers use host UID mappings to publish files
+with the owner's identity.
+
 Each session has a child cgroup under the configured delegation. Its
 aggregate memory, CPU and task limits apply to every process in the session.
 Memory caps round down to whole kernel pages; swap is disabled. File freezing

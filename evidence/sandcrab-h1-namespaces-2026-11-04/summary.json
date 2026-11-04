@@ -1,0 +1,45 @@
+{
+  "scope": "Same disposable Linux host and workload tools. Scoped footprint smoke with one template-backed idle shell and one finite sleep, five samples per phase. Whole-slice deltas include kernel and cache variation.",
+  "footprint": {
+    "before": {
+      "sourceCommit": "51855e2d4598cfacbed32f355217f0e5147c83b7",
+      "binarySha256": "1ebf91f11c255459e9f0d120f9fdc039ca6706f0e2404cf1e6088e5d9dfa6977",
+      "staticBinaryBytes": 4686752,
+      "daemonIdleMedianRssBytes": 3674112,
+      "daemonIdleMedianTasks": 2,
+      "oneIdleSessionDeltaBytes": 1597440.0,
+      "oneIdleSessionAdditionalTasks": 5.0,
+      "oneFiniteRunDeltaBytes": 2281472.0,
+      "oneFiniteRunAdditionalTasks": 4.0,
+      "runtimeExecutables": 9,
+      "runtimeExecutablesWithoutQuota": 6,
+      "apiCleanup": "PASS",
+      "hostCleanup": "PASS"
+    },
+    "after": {
+      "sourceCommit": "ab8387083424e5c5e6f5a5288f13eb012bf06688",
+      "binarySha256": "e25c7769af379f75f4066b57493001bb8e036056e73bda0d800e6fc2160502e1",
+      "staticBinaryBytes": 4686752,
+      "daemonIdleMedianRssBytes": 3674112,
+      "daemonIdleMedianTasks": 2,
+      "oneIdleSessionDeltaBytes": 167936.0,
+      "oneIdleSessionAdditionalTasks": 5.0,
+      "oneFiniteRunDeltaBytes": 2863104.0,
+      "oneFiniteRunAdditionalTasks": 4.0,
+      "runtimeExecutables": 9,
+      "runtimeExecutablesWithoutQuota": 6,
+      "apiCleanup": "PASS",
+      "hostCleanup": "PASS"
+    }
+  },
+  "nativeSuites": {
+    "native": 52,
+    "egress": 12,
+    "rootfs": 8,
+    "files": 26,
+    "diff": 8,
+    "delegation": 10,
+    "sdk": 21
+  },
+  "nativeCleanup": "PASS"
+}

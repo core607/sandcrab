@@ -67,6 +67,8 @@ def create_fixture(name, args, report):
 def exercise(name, probe, examples):
     probe.tests()
     if name == 'native':
+        from .namespaces import check_namespaces
+        check_namespaces(probe)
         probe.session_tests()
         probe.example(examples / 'sandcrab-build-test.sh')
         probe.session_cleanup_failure()
