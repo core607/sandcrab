@@ -47,7 +47,7 @@ class OverlayProbe(TemplateProbe):
 
     def start(self):
         if not getattr(self, 'deny_overlay', False):
-            return super().start()
+            return super().start('-p', 'UMask=0077')
         call('systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
              '-p', 'Delegate=yes', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=infinity',
              '-p', 'Environment=PATH=/usr/bin:/bin', '-p', 'KillMode=control-group',

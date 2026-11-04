@@ -24,7 +24,10 @@ use std::{
     fs::{self, File},
     io::{self, IoSlice, IoSliceMut},
     mem::MaybeUninit,
-    os::unix::{fs::MetadataExt, net::UnixDatagram},
+    os::unix::{
+        fs::{MetadataExt, PermissionsExt},
+        net::UnixDatagram,
+    },
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -237,6 +240,8 @@ pub fn create(
             attached = true;
             drop(fd);
             protected_directory(target)?;
+            // The mounted wrapper replaces a 0711 directory. The workload must traverse it to bind data/.
+            fs::set_permissions(target, fs::Permissions::from_mode(0o711))?;
             let metadata = fs::symlink_metadata(target)?;
             socket.send(b"x")?;
             Ok(Mount {
