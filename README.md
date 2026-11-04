@@ -64,5 +64,11 @@ and the helper's notices and source. The [conformance runner](crates/sandcrab/RE
 exercises real Linux sandboxes. [Inspect evals](evals/README.md) test agent use of the API.
 The [density benchmark](benchmarks/density/README.md) measures a reproducible workload.
 
+Maintainers can test a released ZIP against a reviewed commit on a public consumer's own
+branch. Add the repository to the JSON array in the `SANDCRAB_DOWNSTREAM_REPOSITORIES`
+Actions variable. The consumer provides `.github/ci/sandcrab-release-check.sh`, receives
+the ZIP in `SANDCRAB_BUNDLE`, and writes test output under `SANDCRAB_EVIDENCE`. The receipt
+records the tested commit, archive digest and result. [Downstream release check](.github/workflows/downstream-release.yml)
+
 Sandcrab is licensed under [Apache 2.0](LICENSE). The separate bundled helper and
 its dependencies retain their [upstream licenses and corresponding source](crates/sandcrab-launch/bwrap/README.md).
