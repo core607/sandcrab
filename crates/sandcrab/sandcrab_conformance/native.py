@@ -122,13 +122,14 @@ network = "none"
                         'probeSha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                         'checks': [], 'cleanup': 'NOT_RUN'}
 
-    def start(self):
+    def start(self, *unit_options):
         command = [str(self.binary), 'serve', '--config', str(self.config)]
         if getattr(self, 'inherited_fd_probe', False):
             command = ['/bin/bash', '-c', 'exec 77<"$1"; shift; exec "$@"',
                        'sandcrab-fixture', str(self.secret), *command]
         policy = ['-p', 'SystemCallFilter=~clone3', '-p', 'SystemCallErrorNumber=ENOSYS'] if getattr(self, 'deny_clone3', False) else []
         call('systemd-run', '--quiet', '--collect', '--unit', self.unit, '--slice', self.slice,
+             *unit_options,
              '-p', 'Delegate=yes', '-p', 'MemorySwapMax=0', '-p', 'TasksMax=infinity',
              '-p', 'Environment=PATH=' + getattr(self, 'launch_path', '/usr/bin:/bin'),
              '-p', 'KillMode=control-group', *policy, *command)

@@ -8,11 +8,11 @@ checksum-verified bubblewrap helper. The host needs cgroup v2 and user namespace
 ## Quickstart
 
 On Ubuntu 22.04, Ubuntu 24.04 or Debian 12, download the ZIP from the
-[v0.1.0 release](https://github.com/core607/sandcrab/releases/tag/v0.1.0) using an
+[v0.1.1 release](https://github.com/core607/sandcrab/releases/tag/v0.1.1) using an
 account with repository access. An authenticated GitHub CLI can download it directly:
 
 ```sh
-gh release download v0.1.0 --repo core607/sandcrab --pattern sandcrab-linux-x86_64.zip
+gh release download v0.1.1 --repo core607/sandcrab --pattern sandcrab-linux-x86_64.zip
 ```
 
 From a root shell on the systemd host, run the last two commands below in the
