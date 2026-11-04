@@ -1,0 +1,159 @@
+{
+  "scope": "Ten native API cases and six published Python SDK programming tasks, with three trials per case on the H2 binary. Independent native sandboxes graded the programming submissions.",
+  "revision": "25a733bb9dc8e118666de47733ad40fc4f5cc96b",
+  "binarySha256": "12e41da3447014132e07ac68ec4eac16adc8f1e7a3949496e6b72131f274516e",
+  "workflow": "https://github.com/core607/poketto/actions/runs/41760763976",
+  "workflowAttempt": 1,
+  "workflowConclusion": "success",
+  "inspectStatus": "success",
+  "artifact": {
+    "url": "https://github.com/core607/poketto/actions/runs/41760763976/artifacts/13290608023",
+    "sha256": "6da619781423f81eabf81c0d8659c71cf3232a64a285eb6b931305d4361adf73"
+  },
+  "model": "bounded-deepseek/deepseek-flash",
+  "servedModels": [
+    "deepseek-flash"
+  ],
+  "systemFingerprints": [
+    "bc19ba97cbe016479903222bb1578db6"
+  ],
+  "corporaSha256": {
+    "native": "0579a577fe231bf1aa6008f038580c9df2c50dbfbc1a7f231c29d3ff6707aad0",
+    "workspace": "a5b70937f1055831bd2f64fed89401d36fcf68752b8146b2de69e8a688e86c95"
+  },
+  "clientPackages": {
+    "inspect-ai": "0.3.285",
+    "httpx": "0.28.1",
+    "PyYAML": "6.0.3",
+    "opensandbox": "1.1.0"
+  },
+  "plannedTrials": 48,
+  "epochs": 3,
+  "caseCounts": {
+    "native": 10,
+    "workspaceSdk": 6
+  },
+  "attempted": 48,
+  "passed": 48,
+  "perCase": {
+    "arithmetic": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "cancel": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "forget": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "output-limit": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "profile-recovery": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "replay": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "stderr": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "timeout": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "unicode": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-binary-index": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-csv-report": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-inventory": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-log-repair": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-multi-file-build": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    },
+    "workspace-range-repair": {
+      "attempts": 3,
+      "passed": 3,
+      "failedEpochs": []
+    }
+  },
+  "failures": [],
+  "confirmedTrialCleanup": 48,
+  "verifiedProgrammingExports": 18,
+  "controllerCleanup": "PASS",
+  "nativePreflight": "PASS",
+  "nativePreflightSuites": 7,
+  "providerUsage": {
+    "dispatchedRequests": 251,
+    "settledRequests": 251,
+    "unresolvedRequests": 0,
+    "inputTokensIncludingCache": 757206,
+    "outputTokens": 47000
+  },
+  "budget": {
+    "basis": "Peak catalog rates in USD. All input is priced as uncached and each request is rounded up. The result is an upper estimate.",
+    "pricingSource": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "priceCheckedOn": "2026-11-04",
+    "peakUsdPerMillion": {
+      "inputCacheMiss": "0.30",
+      "output": "1.20"
+    },
+    "advertisedRelease": "DeepSeek-V4.1-Flash-1017",
+    "planningEstimateUsd": "0.293080",
+    "planningBasis": {
+      "workflow": "https://github.com/core607/poketto/actions/runs/41177406466",
+      "priorWorkspaceSdkTrials": 18,
+      "inputTokens": 262458,
+      "outputTokens": 25933,
+      "knownUpperEstimateUsd": "0.109905",
+      "method": "Scale the prior SDK cost per trial to 48 trials. Native tasks have a different workload."
+    },
+    "perRequestReservationUsd": "0.332458",
+    "limitUsd": "1.000000",
+    "knownUpperEstimateUsd": "0.283672",
+    "unresolvedReservationUsd": "0.000000",
+    "maximumAccountedUsd": "0.283672",
+    "stopped": null,
+    "plannedAt": "2026-11-04T02:26:27.366712+00:00"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "scope": "Documentation-only change. The H3 final observation and this focused repeat use the same executable, tools, host and one-item footprint protocol. Slice memory deltas include kernel and cache variability.",
+  "before": {
+    "sourceCommit": "dbb9e11be36a344dec78f8da02c900d00a215b04",
+    "binarySha256": "12e41da3447014132e07ac68ec4eac16adc8f1e7a3949496e6b72131f274516e",
+    "staticBinaryBytes": 4694944,
+    "daemonIdleMedianRssBytes": 3678208,
+    "daemonIdleMedianTasks": 2,
+    "oneIdleSessionDeltaBytes": 1269760.0,
+    "oneFiniteRunDeltaBytes": 2617344.0,
+    "oneIdleSessionAdditionalTasks": 5.0,
+    "oneFiniteRunAdditionalTasks": 4.0,
+    "runtimeExecutables": 9,
+    "runtimeExecutablesWithoutQuota": 6,
+    "cleanup": "PASS"
+  },
+  "after": {
+    "sourceCommit": "05fab779424b7379db5027f2d20dcd2e7409f02e",
+    "binarySha256": "12e41da3447014132e07ac68ec4eac16adc8f1e7a3949496e6b72131f274516e",
+    "staticBinaryBytes": 4694944,
+    "daemonIdleMedianRssBytes": 3678208,
+    "daemonIdleMedianTasks": 2,
+    "oneIdleSessionDeltaBytes": 2850816.0,
+    "oneFiniteRunDeltaBytes": 2572288.0,
+    "oneIdleSessionAdditionalTasks": 5.0,
+    "oneFiniteRunAdditionalTasks": 4.0,
+    "runtimeExecutables": 9,
+    "runtimeExecutablesWithoutQuota": 6,
+    "cleanup": "PASS"
+  }
+}

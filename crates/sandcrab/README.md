@@ -6,6 +6,8 @@ signing key or compiled extension. The service uses a Unix socket or optional
 authenticated loopback TCP. An optional [OpenSandbox adapter](opensandbox.md)
 implements the documented OpenSandbox 1.1.0 subset, verified through
 [published Python and Kotlin clients](../../../evals/sdk/README.md).
+The [threat model](THREAT-MODEL.md) describes the shared-kernel boundary, client
+authority and resource-exhaustion risks.
 Consumer adoption and extraction remain under the
 [service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
 
@@ -147,7 +149,7 @@ IP-address requests, BIND and UDP association are refused.
 
 Each workload has a private loopback-only network. The trusted launcher creates
 its proxy listener and transfers the socket to the daemon before credential
-drop and the unchanged seccomp filter. It requires a positive acknowledgement;
+drop and guest seccomp enforcement. It requires a positive acknowledgement;
 setup failure runs no workload. No veth, external route or host DNS socket enters
 the workload. Unsetting proxy variables gives no direct egress. The daemon must
 itself have outbound access; a container started with `--network none` cannot
