@@ -134,6 +134,7 @@ pub fn events(endpoint: &Endpoint, id: &str, after: Option<&str>) -> io::Result<
                                     "timed_out",
                                     "output_limit",
                                     "resource_limit",
+                                    "refused",
                                 ]
                                 .contains(&s)
                             })

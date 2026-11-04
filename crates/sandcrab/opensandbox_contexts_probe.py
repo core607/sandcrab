@@ -37,7 +37,13 @@ class Contexts(Contract):
                             {'command': 'touch /workspace/foreign'}, headers=foreign)[0] == 404
         connection, response, command = self.stream(first, headers, 'sleep 30', context=one)
         try:
-            assert self.request('POST', path + '/run', {'command': 'touch /workspace/busy'}, headers=headers)[0] == 409
+            waiting_connection, waiting_response, waiting = self.stream(first, headers, 'touch /workspace/busy', context=one)
+            try:
+                self.terminal(waiting_response, 'QUEUE_TIMEOUT')
+            finally:
+                waiting_response.close()
+                waiting_connection.close()
+            self.cleanup_run(waiting)
             self.complete(first, headers, two, 'VALUE=sibling; printf kept > artifact; printf available', 'available')
             assert self.request('DELETE', path, headers=headers)[0] == 200
             self.terminal(response, 'COMMAND_CANCELLED')

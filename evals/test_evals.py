@@ -1,15 +1,35 @@
 """Check case rejection, independent grading, and complete failed-attempt reporting offline."""
 import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from inspect_ai import eval
 
 from cases import load
 from report import summarize
-from sandcrab import CASES, grade, sandcrab_native
+from sandcrab import CASES, grade, native_api, sandcrab_native
+from workspace import action
+
+
+class ModelToolBounds(unittest.IsolatedAsyncioTestCase):
+    async def test_tool_encoding_preserves_discovery_that_spacing_would_truncate(self):
+        body = {'schemas': [{'a': 1, 'b': 2, 'c': 3, 'd': 4} for _ in range(650)]}
+        self.assertGreater(len(json.dumps(body)), 20000)
+        observations = []
+        with patch('sandcrab.request', return_value=(200, body)), \
+                patch('sandcrab.store', return_value=SimpleNamespace(get=lambda key: observations)):
+            encoded = await native_api('fixture', 'run-id')('GET', '/v1/openapi?capability=runs')
+        self.assertLess(len(encoded), 20000)
+        self.assertEqual(json.loads(encoded), {'status': 200, 'body': body})
+        self.assertEqual(len(observations), 1)
+        with patch('workspace.current', return_value=SimpleNamespace(discover=lambda: body)):
+            encoded = await action('discover')
+        self.assertLess(len(encoded), 20000)
+        self.assertEqual(json.loads(encoded), body)
 
 
 class CasesAndGrades(unittest.TestCase):

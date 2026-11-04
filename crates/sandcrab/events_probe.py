@@ -75,7 +75,7 @@ class Events:
         assert list(map(int, offsets)) == self.offsets
         if kind == 'result':
             assert [data['stdoutBytes'], data['stderrBytes']] == self.offsets
-            assert data['state'] not in ('running', 'closing')
+            assert data['state'] not in ('queued', 'running', 'closing')
             assert 'stdout' not in data['result'] and 'stderr' not in data['result']
         self.cursor = fields['id']
         return fields
@@ -305,7 +305,9 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         assert http(self.socket, 'POST', f'/v1/runs/{run["id"]}/forget', {})[1]['error']['code'] == 'RUN_ACTIVE'
         other = self.submit('import time; time.sleep(60)')
         rejected = {**other, 'id': str(uuid.uuid4())}
-        assert http(self.socket, 'POST', '/v1/runs', rejected)[1]['error']['code'] == 'RUN_CAPACITY'
+        assert http(self.socket, 'POST', '/v1/runs', rejected)[0] == 202
+        assert http(self.socket, 'GET', '/v1/info')[1]['admission']['activeSandboxes'] == 2
+        self.cancel_queued(rejected)
         self.cancel(other)
         self.wait(other)
         self.forget(other)

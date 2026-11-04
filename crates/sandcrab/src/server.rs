@@ -651,7 +651,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
     println!("{{\"ready\":true,\"apiVersion\":1}}");
     let result = (|| {
         while !service.stopped.load(Ordering::SeqCst) {
-            service.registry.lock().unwrap().expire_sessions();
+            service.dispatch_queue();
             if Instant::now() >= maintenance {
                 let ttl = Duration::from_millis(service.runtime.config.service.result_ttl_millis);
                 service

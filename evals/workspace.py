@@ -28,7 +28,7 @@ def current():
 async def action(method, *args):
     try:
         result = await asyncio.to_thread(getattr(current(), method), *args)
-        return json.dumps(result, ensure_ascii=False, allow_nan=False)
+        return json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
     except Rejected as error:
         raise ToolError(str(error)) from None
 

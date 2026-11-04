@@ -148,7 +148,7 @@ fn next(
     }
     for index in [*stream, 1 - *stream] {
         let available = run.output[index].len() - cursor.offsets[index];
-        if available == 0 || (available < BLOCK && !flush && run.state == "running") {
+        if available == 0 || (available < BLOCK && !flush && run.in_progress()) {
             continue;
         }
         let start = cursor.offsets[index];
@@ -162,7 +162,7 @@ fn next(
             terminal: false,
         }));
     }
-    if (0..2).any(|i| cursor.offsets[i] != run.output[i].len()) || run.state == "running" {
+    if (0..2).any(|i| cursor.offsets[i] != run.output[i].len()) || run.in_progress() {
         return Ok(None);
     }
     if run.state == "closing" {

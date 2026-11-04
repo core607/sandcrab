@@ -179,7 +179,7 @@ network = "none"
         while time.monotonic() < deadline:
             status, response = http(self.socket, 'GET', '/v1/runs/' + request['id'])
             assert status == 200, response
-            if response['state'] != 'running':
+            if response['state'] not in ('queued', 'running'):
                 assert response['state'] != 'closing', response
                 return response
             time.sleep(.05)
@@ -187,6 +187,14 @@ network = "none"
 
     def forget(self, request):
         assert http(self.socket, 'POST', '/v1/runs/' + request['id'] + '/forget', {}) == (200, {'forgotten': True})
+
+    def cancel_queued(self, request):
+        route = '/v1/runs/' + request['id']
+        assert http(self.socket, 'GET', route)[1]['state'] == 'queued'
+        status, value = http(self.socket, 'POST', route + '/cancel', {})
+        assert status == 200 and value['state'] == 'cancelled', value
+        assert value['result'] == {'code': 'COMMAND_CANCELLED', 'executed': False}, value
+        self.forget(request)
 
     def done(self, label):
         self.receipt['checks'].append({'name': label, 'result': 'PASS'})
@@ -321,7 +329,8 @@ network = "none"
         two = self.submit('import time; time.sleep(8)')
         assert http(self.socket, 'POST', '/v1/runs/' + one['id'] + '/cancel', {'uid': 0})[1]['error']['code'] == 'INVALID_REQUEST'
         overflow = {**one, 'id': str(uuid.uuid4())}
-        assert http(self.socket, 'POST', '/v1/runs', overflow)[1]['error']['code'] == 'RUN_CAPACITY'
+        assert http(self.socket, 'POST', '/v1/runs', overflow)[0] == 202
+        self.cancel_queued(overflow)
         assert http(self.socket, 'POST', '/v1/runs/' + one['id'] + '/forget', {})[1]['error']['code'] == 'RUN_ACTIVE'
         for request in [one, two]:
             assert http(self.socket, 'POST', '/v1/runs/' + request['id'] + '/cancel', {})[0] == 200
@@ -537,7 +546,8 @@ network = "none"
         rejected = {**one, 'id': str(uuid.uuid4())}
         assert http(self.socket, 'POST', '/v1/sessions', rejected)[1]['error']['code'] == 'SESSION_CAPACITY'
         finite = {**rejected, 'command': ['true']}
-        assert http(self.socket, 'POST', '/v1/runs', finite)[1]['error']['code'] == 'RUN_CAPACITY'
+        assert http(self.socket, 'POST', '/v1/runs', finite)[0] == 202
+        self.cancel_queued(finite)
         request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'],
                    'command': 'printf x >> replay-count; sleep 1; cat replay-count'}
         command_route = '/v1/sessions/' + one['id'] + '/commands'
@@ -550,7 +560,9 @@ network = "none"
             # Discard the response; reconnect with the original ID rather than resubmitting work.
 
         assert http(self.socket, 'POST', command_route, request)[0] in (200, 202)
-        assert http(self.socket, 'POST', command_route, {**request, 'id': str(uuid.uuid4())})[1]['error']['code'] == 'SESSION_NOT_READY'
+        queued = {**request, 'id': str(uuid.uuid4())}
+        assert http(self.socket, 'POST', command_route, queued)[0] == 202
+        self.cancel_queued(queued)
         assert http(self.socket, 'POST', command_route, {**request, 'command': 'false'})[1]['error']['code'] == 'ID_CONFLICT'
         assert http(self.socket, 'POST', '/v1/sessions/' + two['id'] + '/commands', request)[1]['error']['code'] == 'ID_CONFLICT'
         result = self.wait(request)
@@ -562,7 +574,7 @@ network = "none"
         self.forget(request)
         self.session_close(two)
         self.session_forget(two)
-        self.done('session-shared-admission-exclusive-command-and-replay')
+        self.done('session-shared-admission-queued-cancellation-and-replay')
 
         session = self.session_open()
         records = [self.session_exec(session, 'true')[0] for _ in range(7)]

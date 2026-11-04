@@ -128,6 +128,37 @@ class ConsumerLifecycle(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.client = Workspace('fixture', Path(self.temporary.name), {'observations': []})
 
+    def test_grading_waits_for_accounting_before_submitting_its_only_command(self):
+        self.client.phase, self.client.epoch = 'grading', 'epoch'
+        session = {'id': 'session', 'serverId': 'epoch', 'state': 'ready'}
+        terminal = {'state': 'succeeded', 'result': {'exitCode': 0}}
+        replies = [(200, session | {'storageUsage': {'state': 'unavailable'}}),
+                   (200, session | {'storageUsage': {'state': 'complete'}}), (202, {})]
+        with patch.object(self.client, 'api', side_effect=replies) as api, \
+                patch.object(self.client, 'poll', return_value=terminal), \
+                patch.object(self.client, 'forget', return_value=True), patch('workspace_client.time.sleep'):
+            self.assertEqual(self.client.execute('session', 'verify once'), terminal)
+        self.assertEqual([call.args[0] for call in api.call_args_list], ['GET', 'GET', 'POST'])
+
+    def test_grading_timeout_and_storage_limit_never_dispatch_a_mutation(self):
+        self.client.phase, self.client.epoch = 'grading', 'epoch'
+        for state in ('unavailable', 'exceeded'):
+            response = {'id': 'session', 'serverId': 'epoch', 'state': 'ready', 'storageUsage': {'state': state}}
+            with self.subTest(state=state), patch.object(self.client, 'api', return_value=(200, response)) as api, \
+                    patch('workspace_client.time.monotonic', side_effect=[0, 6]):
+                with self.assertRaises(RuntimeError):
+                    self.client.execute('session', 'must not run')
+            self.assertEqual([call.args[0] for call in api.call_args_list], ['GET'])
+            self.assertEqual(self.client.state['runs'], [])
+
+    def test_agent_receives_storage_refusals_without_grading_wait_or_replay(self):
+        self.client.phase = 'agent'
+        with patch.object(self.client, 'api', return_value=(409, {'error': {'code': 'STORAGE_USAGE_UNAVAILABLE'}})) as api:
+            with self.assertRaises(Rejected):
+                self.client.execute('session', 'write once')
+        self.assertEqual([call.args[0] for call in api.call_args_list], ['POST'])
+        self.assertEqual(self.client.state['runs'], [])
+
     def test_unanswered_create_cannot_be_cleared_by_an_early_404(self):
         with patch.object(self.client, 'api', side_effect=RuntimeError('lost response')):
             with self.assertRaises(RuntimeError):

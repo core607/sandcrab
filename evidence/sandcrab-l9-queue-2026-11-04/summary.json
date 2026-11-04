@@ -1,0 +1,84 @@
+{
+  "milestone": "L9 bounded command admission",
+  "scope": "Real Linux daemon, CLI, output and host-call streams, and published Python/Kotlin SDKs on Docker Desktop; functional acceptance before the full L9 checkpoint",
+  "baseRevision": "dbfeb13f1c5fbf56b9f3c8bbb52147f7e582011e",
+  "binarySha256": "10c54a0ef5d8361fb5bcfcf2b113912f249fbb5e1d3444d122b5c6422d6b9331",
+  "binaryBytes": 4686752,
+  "queueProbeSha256": "f5d9695acfa06db1e144130540143112dcbca51c3698089f2583df2f39370b51",
+  "queueSdkClientSha256": "92b8cfeed8a327fd6faf0f4a5ce6073a51190944bb860ff0e901062a6681b6f0",
+  "rustTestsPassed": 158,
+  "workerTestsPassed": 176,
+  "javaTests": {
+    "total": 1053,
+    "passed": 980,
+    "platformSkipped": 73,
+    "failed": 0
+  },
+  "linuxCollectorTestsPassed": 41,
+  "evalUnitTestsPassed": 52,
+  "nativeChecksPassed": {
+    "queue": 11,
+    "isolation": 48,
+    "events": 9,
+    "hostCalls": 18,
+    "publishedSdk": 21
+  },
+  "nativeCleanup": "PASS",
+  "queueCoverage": [
+    "Finite-slot and per-shell FIFO with one bounded waiting count",
+    "Queue timeout retains no-execution refusal and never starts when capacity recovers",
+    "Queued cancellation preserves active work; forget and ID reuse never dispatch stale payloads",
+    "Commands queue during startup; expiry and parent closure cancel pending child work",
+    "Shutdown contains active work; new epochs never replay old payloads",
+    "Terminal retention starts after queue completion; kept refusals remain available",
+    "CLI, output events and host-call final streams observe queued outcomes",
+    "Published Python SDK default and named contexts wait, expire and cancel queued work; both published SDK conformance flows pass"
+  ],
+  "modelTokens": 0,
+  "capacityMeasured": false,
+  "earlierFailures": [
+    {
+      "kind": "Queue SDK fixture read ExecutionInit.text instead of the published id field",
+      "attempts": 1,
+      "resolution": "Read ExecutionInit.id; repeat the real default and named-context interruption cases",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "Existing SDK context probe expected immediate busy HTTP 409 and parsed the new SSE response as JSON",
+      "attempts": 1,
+      "resolution": "Observe the admitted stream through QUEUE_TIMEOUT, verify no workspace effect and retain independent-context/deletion checks",
+      "cleanup": "PASS"
+    },
+    {
+      "kind": "CI discovery envelope exceeded the 20000-character model tool limit with formatting spaces",
+      "attempts": 1,
+      "resolution": "Compact both model tool serializers and measure that same encoding in the real discovery probe; retain the 20000-character limit",
+      "cleanup": "PASS",
+      "ciRun": 41685866089
+    },
+    {
+      "kind": "Independent grading command met a transient periodic-storage refusal",
+      "attempts": 1,
+      "sourceRevision": "caf7d9119953bebf21ce29c4e970553a40f6fbc0",
+      "passedSamples": 65,
+      "samples": 66,
+      "resolution": "The grader observes storage readiness before its first mutation; agent-visible refusals and no-replay behavior remain intact",
+      "cleanup": "PASS"
+    }
+  ],
+  "schemaBudget": "Sessions view allows 19000 bytes for queue fields and lifecycle constraints; other capability views remain below 18000 bytes.",
+  "ciArtifacts": "https://github.com/core607/poketto/actions/workflows/ci.yml?query=branch%3Acodex%2Fsandcrab-queue-l9",
+  "scriptedEvaluation": {
+    "sourceRevision": "cfd41f3548ab669731b81c31e94998ab2caca36b",
+    "model": "mockllm/model",
+    "cases": 22,
+    "epochs": 3,
+    "samplesPassed": 66,
+    "cleanupPassed": 66,
+    "modelTokens": 0,
+    "workspaceClients": [
+      "native",
+      "sdk"
+    ]
+  }
+}

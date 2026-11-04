@@ -88,6 +88,7 @@ async def stage(engine, metrics, base, agents, repetition, settings, files, publ
         while not stop.is_set():
             try:
                 sample = metrics.sample(sum(state == 'running' for state in engine.executing.values()))
+                sample['queuedCommands'] = sum(state == 'queued' for state in engine.executing.values())
                 sample['sinceStartNs'] = sample.pop('monotonicNs') - started
                 result['samples'].append(sample)
                 # The incremental ledger retains observations without serializing

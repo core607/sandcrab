@@ -144,7 +144,17 @@ mod tests {
                 document["paths"].get("/v1/sessions/{id}/files").is_some(),
                 capability == "files"
             );
-            assert!(serde_json::to_vec(&document).unwrap().len() < 18000);
+            // Sessions include admission states, queue timing and no-execution receipts.
+            let bound = if capability == "sessions" {
+                19000
+            } else {
+                18000
+            };
+            let bytes = serde_json::to_vec(&document).unwrap().len();
+            assert!(
+                bytes < bound,
+                "{capability} view: {bytes} bytes exceeds {bound}"
+            );
             let info = &document["components"]["schemas"]["Info"];
             assert_eq!(info["additionalProperties"], true);
             for (name, schema) in info["properties"].as_object().unwrap() {

@@ -142,9 +142,12 @@ processes. Its initial environment comes from sandbox creation. A literal
 working-directory override persists for subsequent commands; that directory must
 exist. Contexts share `/workspace` and the parent's aggregate resource limits,
 while each has its own `/tmp`. Different contexts may execute concurrently;
-another command in a busy context is refused.
+commands in one busy context share its bounded FIFO. Default command contexts
+use the same [queue](README.md#command-queue). Queue timeout produces an execution
+error named `QUEUE_TIMEOUT` without running the command; its status stays terminal.
+Interrupting a queued command preserves the active command and its context.
 
-Deleting, exiting, cancelling or timing out a named context preserves shared
+Deleting, exiting, cancelling a dispatched command or timing out a named context preserves shared
 files and other contexts. An ended named context never silently restarts; delete
 its retained identity and create a new context. Sandbox expiry or deletion closes
 every context. Context identities count against native `max_records`; their

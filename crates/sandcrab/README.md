@@ -366,19 +366,42 @@ request returns the existing run; changed arguments give `ID_CONFLICT`. A stale
 epoch gives `SERVER_CHANGED`. After restart old outcomes are unknown, not proof of
 nonexecution. Forgetting or result expiry ends replay protection; never reuse that ID.
 
-States are `running`, `succeeded`, `failed`, `cancelled`, `timed_out`, `output_limit`,
-`resource_limit` and `closing`. Terminal results include exit code, stdout, stderr
+States are `queued`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out`, `output_limit`,
+`resource_limit`, `refused` and `closing`. Terminal results include exit code, stdout, stderr
 and truncation, or a failure code. Output bounds apply to combined raw stdout and
 stderr; invalid UTF-8 becomes replacement characters. Runs continue after HTTP
 disconnect and remain bounded by their timeout. Cancellation does not undo work.
 
 `max_sandboxes` accepts 1 through 512 and bounds live runs and workspace-owning sessions together; child
-shells share their parent's reservation. It replaces `max_runs` in
-native TOML configurations. `RUN_CAPACITY` or `SESSION_CAPACITY` refuses before execution. `RESULT_CAPACITY` means retained records
+shells share their parent's reservation. Commands wait when execution is busy;
+session creation still refuses with `SESSION_CAPACITY`. `RESULT_CAPACITY` means retained records
 or output reservations must be forgotten. Session records and command results share
 `max_records`; command output remains reserved until its result is forgotten. `max_output_bytes` bounds reserved raw
 output, not total process memory; the slice bounds runtime, tmpfs and overhead.
 Reserve enough supervisor memory for encoded responses and retained output.
+
+## Command queue
+
+`service.max_queued` defaults to 256 (range 1–4096) across finite runs and session
+commands. `queue_timeout_millis` defaults to 2000 (range 1–30000). Finite runs use
+one FIFO; each shell has its own FIFO. Independent shells can progress while
+finite runs wait for a sandbox slot. Waiting reserves the ID, record and output
+budget, so those bounds can reduce available queue capacity. A full queue returns
+429 `QUEUE_CAPACITY` without creating a run.
+
+Accepted work returns 202 with `queued` or `running`. Queue expiry retains
+`state: refused` and `result: {"code":"QUEUE_TIMEOUT","executed":false}`. It never
+starts that command, even when capacity later recovers. Execution timeout starts
+after dispatch. Cancelling a queued command retains `cancelled` with
+`COMMAND_CANCELLED` and `executed:false`; the active command and shell continue.
+Closing or expiring its session cancels pending commands. Dispatched cancellation
+keeps the usual containment behavior. Retained outcomes remain replayable until
+forget or result expiry; clients never automatically resubmit work.
+
+Runs and events expose `queueWaitMillis`, fixed when waiting ends. Info publishes
+`limits.maxQueued`, `limits.queueTimeoutMillis` and an `admission` snapshot of
+`activeSandboxes` and `queuedCommands`. CLI polling and streaming wait through
+queued states and return a nonzero status for refusal.
 
 Run and session inventories include active and terminal IDs, without command output.
 Use `sandcrab list --socket PATH` or `sandcrab session list --socket PATH`, with
@@ -464,7 +487,7 @@ uses ordinary Python files and shell state across separate client connections.
 A session preserves its working directory, environment, shell functions, files,
 `/tmp` and background processes. Only one command may run at a time. A nonzero
 command exit preserves the session while its shell remains alive. A shell exit,
-command cancellation, timeout, output overflow or runtime failure ends the session.
+dispatched-command cancellation, timeout, output overflow or runtime failure ends the session.
 A kernel OOM kill ends the whole session and reports `resource_limit`, even when
 the shell catches a child's failure. Exit code 137 alone is not OOM evidence.
 The daemon never silently resets its state. Closing or expiry also stops background
@@ -512,8 +535,8 @@ its storage and sandbox reservation until restart cleanup.
 
 Use `/v1/runs/RUN_ID` to inspect, cancel or forget a session command. Exact command
 replays return their retained record even after the session ends or is forgotten;
-changed commands or another session using the ID conflict. `SESSION_NOT_READY`
-refuses commands while starting, busy or ended. A record's `sessionId` identifies
+changed commands or another session using the ID conflict. Starting or busy shells
+queue commands; `SESSION_NOT_READY` refuses ended shells. A record's `sessionId` identifies
 its session; names, profiles and IDs confer no authority beyond the socket's peer.
 
 Session states are `starting`, `ready`, `busy`, `stopping`, `closed`, `expired`,

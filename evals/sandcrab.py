@@ -34,7 +34,7 @@ def grade(expected: dict, readback: tuple[int, dict], observations: list[dict], 
             failures.append('record was not forgotten')
         terminal_reads = [o['response'] for o in observations
                           if o['method'] == 'GET' and o['path'] == '/v1/runs/' + run_id
-                          and o['status'] == 200 and o['response'].get('state') not in {'running', 'closing'}]
+                          and o['status'] == 200 and o['response'].get('state') not in {'queued', 'running', 'closing'}]
         actual = terminal_reads[-1] if terminal_reads else {}
     elif status != 200:
         failures.append('terminal record missing')
@@ -90,8 +90,8 @@ def native_api(endpoint: str, run_id: str):
             status, result = await asyncio.to_thread(request, endpoint, method, path, value)
             store().get('native_observations').append({'method': method, 'path': path, 'status': status, 'response': result})
             if not (wait_for_terminal and method == 'GET' and path == '/v1/runs/' + run_id
-                    and status == 200 and result.get('state') == 'running' and time.monotonic() < deadline):
-                return json.dumps({'status': status, 'body': result})
+                    and status == 200 and result.get('state') in {'queued', 'running'} and time.monotonic() < deadline):
+                return json.dumps({'status': status, 'body': result}, separators=(',', ':'))
             await asyncio.sleep(.05)
     return execute
 
@@ -185,10 +185,10 @@ def cleanup(endpoint: str):
             return
         if status != 200:
             raise RuntimeError('Cleanup could not read the run')
-        if value.get('state') == 'running':
+        if value.get('state') in {'queued', 'running'}:
             await asyncio.to_thread(request, endpoint, 'POST', f'/v1/runs/{run_id}/cancel', {})
             status, value = await asyncio.to_thread(wait, endpoint, run_id)
-        if status != 200 or value.get('state') in {'running', 'closing'}:
+        if status != 200 or value.get('state') in {'queued', 'running', 'closing'}:
             raise RuntimeError('Sample containment was not confirmed')
         status, _ = await asyncio.to_thread(request, endpoint, 'POST', f'/v1/runs/{run_id}/forget', {})
         if status != 200:

@@ -170,11 +170,11 @@ class Engine:
             _, initial = await self.call('POST', route, body, (202,))
             accepted = True
             self.executing[identity] = initial.get('state', 'unknown')
-            value = await self.observe('/v1/runs/' + identity, ('running', 'closing'), timeout=timeout_ms / 1000 + 15,
+            value = await self.observe('/v1/runs/' + identity, ('queued', 'running', 'closing'), timeout=timeout_ms / 1000 + 15,
                                        callback=lambda value: self.executing.__setitem__(identity, value.get('state', 'unknown')))
             row['elapsedNs'] = time.monotonic_ns() - started
             result = value.get('result') or {}
-            if value.get('state') not in ('succeeded', 'failed', 'cancelled', 'timed_out', 'output_limit', 'resource_limit'):
+            if value.get('state') not in ('succeeded', 'failed', 'cancelled', 'timed_out', 'output_limit', 'resource_limit', 'refused'):
                 raise ProtocolError('Unknown terminal run state')
             output = {}
             if 'exitCode' in result:
@@ -183,8 +183,15 @@ class Engine:
                 output = {key: result[key] for key in ('stdout', 'stderr')}
             elif not isinstance(result.get('code'), str) or value['state'] == 'succeeded':
                 raise ProtocolError('Missing terminal run result')
+            refused = value['state'] == 'refused'
+            if refused and (result.get('executed') is not False or 'exitCode' in result):
+                raise ProtocolError('Refused run did not confirm no execution')
+            if 'queueWaitMillis' in value:
+                if type(value['queueWaitMillis']) is not int or value['queueWaitMillis'] < 0:
+                    raise ProtocolError('Invalid queue wait measurement')
+                row['queueWaitMillis'] = value['queueWaitMillis']
             row.update(state=value.get('state'), exitCode=result.get('exitCode'),
-                       outcome='OK' if value.get('state') == 'succeeded' and result.get('exitCode') == 0 else 'COMMAND_FAILED',
+                       outcome='REFUSED' if refused else ('OK' if value.get('state') == 'succeeded' and result.get('exitCode') == 0 else 'COMMAND_FAILED'),
                        code=result.get('code'), **output)
         except NativeFailure as error:
             refused = not accepted and 400 <= error.status < 500
@@ -233,9 +240,9 @@ class Engine:
             try:
                 status, value = await self.call('GET', '/v1/runs/' + identity, allowed=(200, 404))
                 if status != 404:
-                    if value['state'] in ('running', 'closing'):
+                    if value['state'] in ('queued', 'running', 'closing'):
                         await self.call('POST', '/v1/runs/' + identity + '/cancel', {})
-                        value = await self.observe('/v1/runs/' + identity, ('running', 'closing'))
+                        value = await self.observe('/v1/runs/' + identity, ('queued', 'running', 'closing'))
                     await self.call('POST', '/v1/runs/' + identity + '/forget', {})
                 self.runs.remove(identity)
                 self.executing.pop(identity, None)

@@ -269,7 +269,7 @@
     "/v1/sessions": {
       "post": {
         "operationId": "createSession",
-        "description": "Create an isolated bash session; wait for ready before commands. Repeated ID/body returns retained state, even terminal. Changed arguments conflict.",
+        "description": "Create an isolated bash session. Commands may queue during startup. Same ID/body returns retained state, including terminal; changed arguments conflict.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -391,7 +391,7 @@
       ],
       "post": {
         "operationId": "executeSessionCommand",
-        "description": "Run one command in a ready session; reject concurrent commands. State/files persist. Read/cancel/forget at /v1/runs/{id}. Cancellation, timeout, output overflow or shell exit closes the session without reset.",
+        "description": "Execute bash source or enter the shell FIFO while starting/busy. State/files persist. Read/cancel/forget at /v1/runs/{id}. Cancelling queued work preserves the active command. Dispatched cancellation, timeout, output overflow or shell exit closes the session without reset.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Run200"
@@ -1987,7 +1987,8 @@
           "files",
           "limits",
           "events",
-          "hostCalls"
+          "hostCalls",
+          "admission"
         ],
         "properties": {
           "apiVersion": {
@@ -2040,17 +2041,24 @@
                 },
                 "network": {
                   "oneOf": [
-                    { "const": "none" },
+                    {
+                      "const": "none"
+                    },
                     {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": ["allow"],
+                      "required": [
+                        "allow"
+                      ],
                       "properties": {
                         "allow": {
                           "type": "array",
                           "minItems": 1,
                           "maxItems": 256,
-                          "items": { "type": "string", "maxLength": 254 }
+                          "items": {
+                            "type": "string",
+                            "maxLength": 254
+                          }
                         }
                       }
                     }
@@ -2179,7 +2187,9 @@
               "maxOutputBytes",
               "maxConnections",
               "maxEventStreams",
-              "resultTtlMillis"
+              "resultTtlMillis",
+              "maxQueued",
+              "queueTimeoutMillis"
             ],
             "properties": {
               "maxSandboxes": {
@@ -2212,6 +2222,18 @@
                 "minimum": 1000,
                 "maximum": 86400000,
                 "description": "Terminal retention; maintenance preserves active or uncontained work."
+              },
+              "maxQueued": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096,
+                "default": 256
+              },
+              "queueTimeoutMillis": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 30000,
+                "default": 2000
               }
             }
           },
@@ -2259,6 +2281,25 @@
               },
               "frameBytes": {
                 "const": 131072
+              }
+            }
+          },
+          "admission": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "activeSandboxes",
+              "queuedCommands"
+            ],
+            "description": "Concurrent snapshots; waiting commands reserve records and output capacity, but no sandbox slot.",
+            "properties": {
+              "activeSandboxes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "queuedCommands": {
+                "type": "integer",
+                "minimum": 0
               }
             }
           }
@@ -2337,7 +2378,8 @@
           "profile",
           "state",
           "result",
-          "keepResult"
+          "keepResult",
+          "queueWaitMillis"
         ],
         "properties": {
           "id": {
@@ -2354,6 +2396,7 @@
           "state": {
             "type": "string",
             "enum": [
+              "queued",
               "running",
               "closing",
               "succeeded",
@@ -2361,7 +2404,8 @@
               "cancelled",
               "timed_out",
               "output_limit",
-              "resource_limit"
+              "resource_limit",
+              "refused"
             ]
           },
           "result": {
@@ -2384,8 +2428,18 @@
           },
           "keepResult": {
             "type": "boolean"
+          },
+          "queueWaitMillis": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Elapsed admission wait while queued, fixed on dispatch or refusal; zero for immediate admission."
           }
-        }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RunLifecycle"
+          }
+        ]
       },
       "Output": {
         "type": "object",
@@ -2421,10 +2475,12 @@
         ],
         "properties": {
           "code": {
-            "enum": [
-              "RUN_FAILED",
-              "CONTAINMENT_UNCONFIRMED"
-            ]
+            "type": "string",
+            "pattern": "^[A-Z_]{1,64}$"
+          },
+          "executed": {
+            "const": false,
+            "description": "Confirms that the command was never executed."
           }
         }
       },
@@ -3029,7 +3085,8 @@
           "serverId",
           "profile",
           "state",
-          "result"
+          "result",
+          "queueWaitMillis"
         ],
         "properties": {
           "id": {
@@ -3046,6 +3103,7 @@
           "state": {
             "type": "string",
             "enum": [
+              "queued",
               "running",
               "closing",
               "succeeded",
@@ -3053,7 +3111,8 @@
               "cancelled",
               "timed_out",
               "output_limit",
-              "resource_limit"
+              "resource_limit",
+              "refused"
             ]
           },
           "result": {
@@ -3073,8 +3132,31 @@
             "type": "string",
             "format": "uuid",
             "description": "Present for session commands."
+          },
+          "queueWaitMillis": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Elapsed admission wait while queued, fixed on dispatch or refusal; zero for immediate admission."
+          },
+          "keepResult": {
+            "type": "boolean"
+          },
+          "stdoutBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
+          },
+          "stderrBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576
           }
-        }
+        },
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RunLifecycle"
+          }
+        ]
       },
       "EventResult": {
         "type": "object",
@@ -3702,6 +3784,55 @@
         ],
         "pattern": "^[0-9a-f]{64}$",
         "description": "Immutable template for the session overlay. Requires matching profile UID/GID; mutually exclusive with volumeId."
+      },
+      "RunLifecycle": {
+        "description": "Queued/running results are absent. A refusal confirms no execution.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "refused"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "result": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "executed"
+                  ],
+                  "properties": {
+                    "executed": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "enum": [
+                    "queued",
+                    "running"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "result": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "responses": {

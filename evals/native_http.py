@@ -74,7 +74,7 @@ def wait(path: str, run_id: str, timeout: float = 25) -> tuple[int, dict]:
     deadline = time.monotonic() + timeout
     while True:
         status, value = request(path, 'GET', '/v1/runs/' + run_id)
-        if status != 200 or value.get('state') != 'running':
+        if status != 200 or value.get('state') not in {'queued', 'running'}:
             return status, value
         if time.monotonic() >= deadline:
             raise TimeoutError('Run did not reach a terminal state')

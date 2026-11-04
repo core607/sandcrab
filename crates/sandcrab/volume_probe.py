@@ -109,7 +109,7 @@ max_records = 12
         for capability in ('runs', 'sessions', 'volumes'):
             status, schema = http(self.socket, 'GET', '/v1/openapi?capability=' + capability)
             assert status == 200 and '/v1/' + capability in schema['paths']
-            assert len(json.dumps({'status': status, 'body': schema})) < 20000, 'Model tool response would be truncated'
+            assert len(json.dumps({'status': status, 'body': schema}, separators=(',', ':'))) < 20000, 'Model tool response would be truncated'
         self.done('volume-capability-discovery-fits-model-tool-output')
         volume, result = self.volume()
         assert result['state'] == 'ready', result

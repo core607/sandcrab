@@ -108,6 +108,7 @@ async def measure(fixture, receipt, counts, report, ledger, workspace_mode='ephe
         values = []
         for _ in range(SAMPLES):
             value = metrics.sample(sum(state == 'running' for state in engine.executing.values()))
+            value['queuedCommands'] = sum(state == 'queued' for state in engine.executing.values())
             if (value['liveKernelSessions'], value['liveKernelFiniteRuns']) != (sessions, finite):
                 raise RuntimeError('The requested idle/finite cohort is not alive')
             if value['oomKills'] or value['hostAvailableBytes'] < 256 * 1024**2:

@@ -149,11 +149,31 @@ class Workspace:
         self.finished('sessions', identity)
         self.forget('sessions', identity, strict=True)
 
+    def await_grading_storage(self, session):
+        if self.phase != 'grading':
+            return
+        # The grader owns this quiet session. Its imports and resets can race a
+        # periodic scan; observe recovery before the first mutation, never replay it.
+        deadline = time.monotonic() + 5
+        while True:
+            value = self.require(*self.api('GET', '/v1/sessions/' + session))
+            if value.get('id') != session or value.get('serverId') != self.epoch or value.get('state') != 'ready':
+                raise RuntimeError('Grading session is no longer ready in its original epoch')
+            states = [value[key]['state'] for key in ('storageUsage', 'storagePoolUsage') if value.get(key) is not None]
+            if all(state == 'complete' for state in states):
+                return
+            if any(state not in {'complete', 'pending', 'unavailable'} for state in states):
+                raise RuntimeError('Grading storage limit or state refuses growth')
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Grading storage accounting did not become ready')
+            time.sleep(.05)
+
     def execute(self, session, command):
+        self.await_grading_storage(session)
         identity = str(uuid.uuid4())
         self.create('runs', identity, f'/v1/sessions/{session}/commands', {
             'id': identity, 'serverId': self.epoch, 'command': command, 'timeoutMillis': 10000, 'outputLimitBytes': 4096}, (202,))
-        result = self.poll('runs', identity, {'running'})
+        result = self.poll('runs', identity, {'queued', 'running'})
         if result['state'] == 'closing':
             raise RuntimeError('Command containment was not confirmed')
         self.finished('runs', identity)
@@ -165,6 +185,7 @@ class Workspace:
         return result | ({} if forgotten else {'retainedRecord': identity})
 
     def put(self, session, name, data, replace=False):
+        self.await_grading_storage(session)
         identity = str(uuid.uuid4())
         plan = {'id': identity, 'serverId': self.epoch, 'sessionId': session, 'path': name, 'format': 'raw',
                 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'replace': replace}
@@ -368,7 +389,7 @@ class Workspace:
         with self.exclusive('cleanup'):
             for identity in self.state['sessions'][:]:
                 self.close_session(identity)
-            for collection, active in [('runs', {'running'}), ('uploads', {'waiting', 'receiving', 'publishing', 'published'})]:
+            for collection, active in [('runs', {'queued', 'running'}), ('uploads', {'waiting', 'receiving', 'publishing', 'published'})]:
                 for identity in self.state[collection][:]:
                     status, result = self.api('GET', f'/v1/{collection}/{identity}')
                     if status == 404:

@@ -8,7 +8,7 @@ use sandcrab_core::job;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io,
     sync::{
         Arc, Mutex,
@@ -70,6 +70,8 @@ pub(crate) struct Run {
     pub stream_id: String,
     pub calls: Option<Arc<crate::host_calls::Calls>>,
     pub completed_at: Option<Instant>,
+    pub waiting: Option<crate::queue::Waiting>,
+    pub queue_wait_millis: u64,
 }
 impl Run {
     pub(crate) fn new(
@@ -90,10 +92,15 @@ impl Run {
             output: [Vec::new(), Vec::new()],
             stream_id: sandcrab_core::new_uuid()?,
             completed_at: None,
+            waiting: None,
+            queue_wait_millis: 0,
         })
     }
     pub(crate) fn terminal(&self) -> bool {
-        self.state != "running" && self.state != "closing"
+        !self.in_progress() && self.state != "closing"
+    }
+    pub(crate) fn in_progress(&self) -> bool {
+        matches!(self.state.as_str(), "queued" | "running")
     }
     pub(crate) fn value(&self) -> Value {
         let mut value = self.summary();
@@ -107,7 +114,8 @@ impl Run {
     }
     pub(crate) fn summary(&self) -> Value {
         let mut value = json!({"id":self.request["id"],"serverId":self.request["serverId"],"profile":self.profile,
-            "state":self.state,"result":self.result,"keepResult":self.request["keepResult"] == true});
+            "state":self.state,"result":self.result,"keepResult":self.request["keepResult"] == true,
+            "queueWaitMillis":self.waiting.map_or(self.queue_wait_millis, |waiting|waiting.elapsed(Instant::now()))});
         if let Some(id) = self.request.get("sessionId") {
             value["sessionId"] = id.clone();
         }
@@ -119,6 +127,8 @@ pub(crate) struct Registry {
     pub sessions: BTreeMap<String, crate::sessions::Session>,
     pub active: usize,
     pub reserved: usize,
+    pub finite_queue: VecDeque<crate::queue::Finite>,
+    pub queue_completed: Vec<String>,
 }
 impl Registry {
     pub(crate) fn expire_results(&mut self, ttl: Duration, now: Instant) {
@@ -135,6 +145,7 @@ impl Registry {
             !expired
         });
         self.reserved -= released;
+        self.queue_completed.retain(|id| self.runs.contains_key(id));
         self.sessions
             .retain(|_, session| !session.result_expired(ttl, now));
     }
@@ -144,6 +155,8 @@ impl Registry {
             sessions: BTreeMap::new(),
             active: 0,
             reserved: 0,
+            finite_queue: VecDeque::new(),
+            queue_completed: Vec::new(),
         }
     }
     pub(crate) fn forget(&mut self, id: &str) -> Result<(), &'static str> {
@@ -154,6 +167,7 @@ impl Registry {
         let reservation = run.reservation;
         self.runs.remove(id);
         self.reserved -= reservation;
+        self.queue_completed.retain(|queued| queued != id);
         Ok(())
     }
 }
@@ -212,6 +226,10 @@ impl Service {
             return (200, crate::spec::document(capability));
         }
         if method == "GET" && path == "/v1/info" {
+            let (active, queued) = {
+                let registry = self.registry.lock().unwrap();
+                (registry.active, registry.queued())
+            };
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network,"hostCalls":p.host_calls,
                     "memoryBytes":p.memory_bytes,"minimumMemoryBytes":p.minimum_memory(),"cpuQuotaPercent":p.cpu_quota_percent})))
@@ -237,8 +255,10 @@ impl Service {
                 json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
                     "limits":{"maxSandboxes":self.runtime.config.service.max_sandboxes,"maxRecords":self.runtime.config.service.max_records,
                         "resultTtlMillis":self.runtime.config.service.result_ttl_millis,
+                        "maxQueued":self.runtime.config.service.max_queued,"queueTimeoutMillis":self.runtime.config.service.queue_timeout_millis,
                         "maxOutputBytes":self.runtime.config.service.max_output_bytes,"maxConnections":self.runtime.config.service.max_connections,
                         "maxEventStreams":self.runtime.config.service.max_event_streams},
+                    "admission":{"activeSandboxes":active,"queuedCommands":queued},
                     "events":{"blockBytes":crate::events::BLOCK,"streamTimeoutMillis":crate::events::TIMEOUT.as_millis(),
                         "activeStreams":self.event_count.load(Ordering::SeqCst)},
                     "hostCalls":{"payloadBytes":crate::host_calls::BYTES,"maxCallsPerRun":crate::host_calls::COUNT,"maxPendingCalls":4,"frameBytes":crate::host_calls::FRAME},
@@ -310,6 +330,10 @@ impl Service {
             return error(404, "RUN_NOT_FOUND");
         };
         if method == "POST" && action == "cancel" {
+            if run.waiting.is_some() {
+                registry.finish_queued(id, "COMMAND_CANCELLED", true, Instant::now());
+                return (200, registry.runs[id].value());
+            }
             let session = (!run.terminal())
                 .then(|| run.request["sessionId"].as_str().map(str::to_owned))
                 .flatten();
@@ -346,6 +370,7 @@ impl Service {
         let cancelled = Arc::new(AtomicBool::new(false));
         let id = request.id.clone();
         let mut registry = self.registry.lock().unwrap();
+        registry.expire_queue(self.stopped.load(Ordering::SeqCst));
         if let Some(run) = registry.runs.get(&id) {
             return if run.request == serde_json::to_value(&request).unwrap() {
                 (200, run.value())
@@ -360,15 +385,16 @@ impl Service {
             return error(503, "STOPPING");
         }
         let limits = &self.runtime.config.service;
-        if registry.active >= limits.max_sandboxes {
-            return error(429, "RUN_CAPACITY");
+        let queued = registry.active >= limits.max_sandboxes || !registry.finite_queue.is_empty();
+        if queued && registry.queued() >= limits.max_queued {
+            return error(429, "QUEUE_CAPACITY");
         }
         if registry.runs.len() + registry.sessions.len() >= limits.max_records
             || registry.reserved + limit > limits.max_output_bytes
         {
             return error(429, "RESULT_CAPACITY");
         }
-        let run = match Run::new(
+        let mut run = match Run::new(
             serde_json::to_value(&request).unwrap(),
             request.profile.clone(),
             cancelled.clone(),
@@ -378,35 +404,52 @@ impl Service {
             Ok(run) => run,
             Err(_) => return error(503, "RUN_UNAVAILABLE"),
         };
-        registry.active += 1;
+        if queued {
+            run.enqueue(limits.queue_timeout_millis);
+        } else {
+            registry.active += 1;
+        }
         registry.reserved += limit;
-        let calls = run.calls.clone();
+        let work = crate::queue::Finite {
+            request,
+            profile,
+            timeout,
+            limit,
+            cancelled,
+            calls: run.calls.clone(),
+            incarnation: run.stream_id.clone(),
+        };
         let accepted = run.value();
         registry.runs.insert(id.clone(), run);
-        let service = self.clone();
-        if thread::Builder::new()
-            .spawn(move || {
-                let (finished, cleanup) = service.runtime.run(
-                    &request.id,
-                    &profile,
-                    &request.command,
-                    (timeout, limit),
-                    crate::runtime::Control {
-                        cancelled: &cancelled,
-                        calls,
-                    },
-                    |stream, bytes| service.output(&request.id, stream, bytes),
-                );
-                service.complete(&request.id, finished, cleanup, true);
-            })
-            .is_err()
-        {
+        if queued {
+            registry.finite_queue.push_back(work);
+        } else if self.spawn_finite(work).is_err() {
             registry.runs.remove(&id);
             registry.active -= 1;
             registry.reserved -= limit;
             return error(503, "RUN_UNAVAILABLE");
         }
         (202, accepted)
+    }
+
+    pub(crate) fn spawn_finite(self: &Arc<Self>, work: crate::queue::Finite) -> io::Result<()> {
+        let service = self.clone();
+        thread::Builder::new()
+            .spawn(move || {
+                let (finished, cleanup) = service.runtime.run(
+                    &work.request.id,
+                    &work.profile,
+                    &work.request.command,
+                    (work.timeout, work.limit),
+                    crate::runtime::Control {
+                        cancelled: &work.cancelled,
+                        calls: work.calls,
+                    },
+                    |stream, bytes| service.output(&work.request.id, stream, bytes),
+                );
+                service.complete(&work.request.id, finished, cleanup, true);
+            })
+            .map(|_| ())
     }
 
     pub(crate) fn complete(
@@ -497,10 +540,11 @@ impl Service {
         for flag in self.file_cancellations.lock().unwrap().values() {
             flag.store(true, Ordering::SeqCst);
         }
+        self.reap_queue();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(75);
         loop {
             let registry = self.registry.lock().unwrap();
-            if registry.runs.values().all(|r| r.state != "running")
+            if registry.runs.values().all(|r| !r.in_progress())
                 && self.runtime.storage.as_ref().is_none_or(|s| s.finished())
                 && registry
                     .sessions
@@ -587,6 +631,8 @@ mod tests {
                 output: [Vec::new(), Vec::new()],
                 stream_id: sandcrab_core::new_uuid().unwrap(),
                 completed_at: None,
+                waiting: None,
+                queue_wait_millis: 0,
             },
         );
         assert_eq!(registry.forget(&id), Err("RUN_ACTIVE"));

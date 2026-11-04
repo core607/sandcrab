@@ -178,6 +178,7 @@ pub fn observe(
                                     "timed_out",
                                     "output_limit",
                                     "resource_limit",
+                                    "refused",
                                 ]
                                 .contains(&s)
                             })

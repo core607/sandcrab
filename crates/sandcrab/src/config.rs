@@ -60,6 +60,10 @@ pub struct Service {
     pub max_event_streams: usize,
     #[serde(default = "proxy_connections")]
     pub max_proxy_connections: usize,
+    #[serde(default = "queued")]
+    pub max_queued: usize,
+    #[serde(default = "queue_timeout")]
+    pub queue_timeout_millis: u64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -153,6 +157,12 @@ fn connections() -> usize {
 }
 fn proxy_connections() -> usize {
     16
+}
+fn queued() -> usize {
+    256
+}
+fn queue_timeout() -> u64 {
+    2000
 }
 fn event_streams() -> usize {
     16
@@ -333,6 +343,13 @@ impl Config {
                 "Use 1..512 max_sandboxes, max_sandboxes..1024 max_records and 1..32 profiles",
             ));
         }
+        if !(1..=4096).contains(&service.max_queued)
+            || !(1..=30_000).contains(&service.queue_timeout_millis)
+        {
+            return Err(invalid(
+                "Use 1..4096 max_queued and 1..30000 queue_timeout_millis",
+            ));
+        }
         if let Some(storage) = &self.storage
             && (!normal(&storage.root)
                 || storage.root.starts_with(&service.runtime_root)
@@ -477,6 +494,13 @@ mod tests {
     #[test]
     fn unknown_fields_unsafe_mounts_and_unbounded_resources_fail() {
         for input in [
+            EXAMPLE.replace("max_queued = 256", "max_queued = 0"),
+            EXAMPLE.replace("max_queued = 256", "max_queued = 4097"),
+            EXAMPLE.replace("queue_timeout_millis = 2000", "queue_timeout_millis = 0"),
+            EXAMPLE.replace(
+                "queue_timeout_millis = 2000",
+                "queue_timeout_millis = 30001",
+            ),
             EXAMPLE.replace("network = \"none\"", "network = \"host\""),
             EXAMPLE.replace("memory_bytes = 134217728", "memory_bytes = 0"),
             EXAMPLE.replace("max_sandboxes = 2", "max_sandboxes = 0"),

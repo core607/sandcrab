@@ -279,7 +279,7 @@ fn submit_run(
             }
             return Ok(if state["state"] == "succeeded" { 0 } else { 1 });
         }
-        let deadline = Instant::now() + Duration::from_secs(340);
+        let deadline = Instant::now() + Duration::from_secs(370);
         let mut cancelled = false;
         loop {
             if stopped.load(Ordering::SeqCst) && !cancelled {
@@ -288,7 +288,7 @@ fn submit_run(
             }
             let state = client.request("GET", &path, None)?;
             match state["state"].as_str() {
-                Some("running") => {}
+                Some("queued" | "running") => {}
                 Some("closing") => {
                     return Err(invalid(format!(
                         "Run {} requires daemon cleanup; result retained",

@@ -7,6 +7,7 @@ use sandcrab_core::job;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
+    collections::VecDeque,
     io,
     sync::{
         Arc, Mutex,
@@ -87,6 +88,7 @@ struct Work {
     timeout: u64,
     output: usize,
     cancelled: Arc<AtomicBool>,
+    incarnation: String,
 }
 pub(crate) struct Session {
     pub(crate) completed_at: Option<Instant>,
@@ -97,7 +99,7 @@ pub(crate) struct Session {
     pub expires_at: u64,
     cancelled: Arc<AtomicBool>,
     reason: String,
-    pending: Option<Work>,
+    pending: VecDeque<Work>,
     pub active_run: Option<String>,
     code: Option<String>,
     pub files: Option<Arc<crate::file_access::Access>>,
@@ -138,8 +140,34 @@ impl Session {
     }
 }
 impl Registry {
+    pub(crate) fn remove_waiting_command(&mut self, session: &str, id: &str, incarnation: &str) {
+        if let Some(session) = self.sessions.get_mut(session) {
+            session
+                .pending
+                .retain(|work| work.request.id != id || work.incarnation != incarnation);
+        }
+    }
+
     pub(crate) fn stop_session(&mut self, id: &str, reason: &str) {
         self.stop_shells(id, reason);
+        let queued: Vec<_> = self
+            .runs
+            .iter()
+            .filter(|(_, run)| run.waiting.is_some() && run.request["sessionId"] == id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for run in queued {
+            self.finish_queued(
+                &run,
+                if reason == "expired" {
+                    "SESSION_EXPIRED"
+                } else {
+                    "SESSION_CLOSED"
+                },
+                true,
+                Instant::now(),
+            );
+        }
         let Some(session) = self.sessions.get_mut(id) else {
             return;
         };
@@ -393,7 +421,7 @@ impl Service {
             expires_at: expires_at(lifetime),
             cancelled: cancelled.clone(),
             reason: "closed".into(),
-            pending: None,
+            pending: VecDeque::new(),
             active_run: None,
             code: None,
             files: None,
@@ -492,7 +520,7 @@ impl Service {
             expires_at: parent.expires_at,
             cancelled: cancelled.clone(),
             reason: "closed".into(),
-            pending: None,
+            pending: VecDeque::new(),
             active_run: None,
             code: None,
             files: None,
@@ -531,6 +559,7 @@ impl Service {
         let input = request.identity(id);
         let mut registry = self.registry.lock().unwrap();
         registry.expire_sessions();
+        registry.expire_queue(self.stopped.load(Ordering::SeqCst));
         if incarnation.is_some_and(|value| {
             registry
                 .sessions
@@ -562,22 +591,27 @@ impl Service {
             Ok(v) => v,
             Err(code) => return error(400, code),
         };
-        if session.state != "ready" {
+        if !["ready", "busy", "starting"].contains(&session.state.as_str()) {
             return error(409, "SESSION_NOT_READY");
         }
-        if let Some(files) = &session.files
+        let queued = session.state != "ready" || !session.pending.is_empty();
+        if !queued
+            && let Some(files) = &session.files
             && let Err(code) = files.allow_growth()
         {
             return error(409, code);
         }
         let limits = &self.runtime.config.service;
+        if queued && registry.queued() >= limits.max_queued {
+            return error(429, "QUEUE_CAPACITY");
+        }
         if registry.runs.len() + registry.sessions.len() >= limits.max_records
             || registry.reserved + output > limits.max_output_bytes
         {
             return error(429, "RESULT_CAPACITY");
         }
         let cancelled = Arc::new(AtomicBool::new(false));
-        let run = match Run::new(
+        let mut run = match Run::new(
             input,
             profile_name,
             cancelled.clone(),
@@ -587,17 +621,24 @@ impl Service {
             Ok(run) => run,
             Err(_) => return error(503, "RUN_UNAVAILABLE"),
         };
+        if queued {
+            run.enqueue(limits.queue_timeout_millis);
+        }
+        let incarnation = run.stream_id.clone();
         let accepted = run.value();
         registry.reserved += output;
         registry.runs.insert(request.id.clone(), run);
         let session = registry.sessions.get_mut(id).unwrap();
-        session.state = "busy".into();
-        session.active_run = Some(request.id.clone());
-        session.pending = Some(Work {
+        if !queued {
+            session.state = "busy".into();
+            session.active_run = Some(request.id.clone());
+        }
+        session.pending.push_back(Work {
             request,
             timeout,
             output,
             cancelled,
+            incarnation,
         });
         (202, accepted)
     }
@@ -646,7 +687,51 @@ impl Service {
             let work = {
                 let mut registry = self.registry.lock().unwrap();
                 registry.expire_sessions();
-                registry.sessions.get_mut(id).unwrap().pending.take()
+                registry.expire_queue(self.stopped.load(Ordering::SeqCst));
+                let available = ["ready", "busy"].contains(&registry.sessions[id].state.as_str());
+                let work = available
+                    .then(|| registry.sessions.get_mut(id).unwrap().pending.pop_front())
+                    .flatten();
+                work.and_then(|work| {
+                    let current = registry
+                        .runs
+                        .get(&work.request.id)
+                        .is_some_and(|run| run.stream_id == work.incarnation && run.in_progress());
+                    if !current {
+                        return None;
+                    }
+                    if let Some(code) = registry.sessions[id]
+                        .files
+                        .as_ref()
+                        .and_then(|files| files.allow_growth().err())
+                    {
+                        registry.runs.get_mut(&work.request.id).unwrap().unexecuted(
+                            code,
+                            false,
+                            Instant::now(),
+                        );
+                        registry.queue_completed.push(work.request.id.clone());
+                        let session = registry.sessions.get_mut(id).unwrap();
+                        session.active_run = None;
+                        session.state = "ready".into();
+                        return None;
+                    }
+                    let now = Instant::now();
+                    let run = &registry.runs[&work.request.id];
+                    if run.waiting.is_some_and(|waiting| waiting.expired(now)) {
+                        registry.finish_queued(&work.request.id, "QUEUE_TIMEOUT", false, now);
+                        return None;
+                    }
+                    registry
+                        .runs
+                        .get_mut(&work.request.id)
+                        .unwrap()
+                        .dispatch(now);
+                    let session = registry.sessions.get_mut(id).unwrap();
+                    session.active_run = Some(work.request.id.clone());
+                    session.state = "busy".into();
+                    Some(work)
+                })
             };
             if let Some(work) = work {
                 let calls = self.registry.lock().unwrap().runs[&work.request.id]
@@ -709,16 +794,26 @@ impl Service {
     }
 
     fn end_session(&self, id: &str, fallback: &str, contained: bool, code: Option<&str>) {
-        let pending = self
-            .registry
-            .lock()
-            .unwrap()
-            .sessions
-            .get_mut(id)
-            .unwrap()
-            .pending
-            .take();
-        if let Some(work) = pending {
+        let pending = {
+            let mut registry = self.registry.lock().unwrap();
+            let pending = std::mem::take(&mut registry.sessions.get_mut(id).unwrap().pending);
+            let now = Instant::now();
+            for work in &pending {
+                registry.finish_queued(&work.request.id, "SESSION_NOT_READY", true, now);
+            }
+            pending
+        };
+        for work in pending {
+            let running = self
+                .registry
+                .lock()
+                .unwrap()
+                .runs
+                .get(&work.request.id)
+                .is_some_and(|run| run.stream_id == work.incarnation && run.state == "running");
+            if !running {
+                continue;
+            }
             self.complete(
                 &work.request.id,
                 Err(io::ErrorKind::Interrupted.into()),

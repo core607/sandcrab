@@ -95,6 +95,32 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row['outcome'], 'OK')
         self.assertEqual(engine.runs, set())
 
+    async def test_queued_refusal_is_measured_and_forgotten_without_resubmission(self):
+        engine, _, requests = self.engine([
+            (202, {'state': 'queued'}), (200, {'state': 'queued'}),
+            (200, {'state': 'refused', 'queueWaitMillis': 2002,
+                   'result': {'code': 'QUEUE_TIMEOUT', 'executed': False}}), (200, {}),
+        ])
+        row = await engine.execute('session', 'touch once')
+        self.assertEqual((row['outcome'], row['code'], row['queueWaitMillis']), ('REFUSED', 'QUEUE_TIMEOUT', 2002))
+        self.assertNotIn('fatal', row)
+        self.assertEqual(engine.executing, {})
+        self.assertEqual(engine.runs, set())
+        self.assertEqual([method for method, _, _ in requests], ['POST', 'GET', 'GET', 'POST'])
+        self.assertTrue(requests[-1][1].endswith('/forget'))
+
+    async def test_refused_state_without_no_execution_receipt_is_fatal(self):
+        for result in ({'code': 'QUEUE_TIMEOUT'}, {'code': 'QUEUE_TIMEOUT', 'executed': True},
+                       {'exitCode': 0, 'stdout': '', 'stderr': '', 'executed': False}):
+            engine, _, requests = self.engine([
+                (202, {'state': 'queued'}), (200, {'state': 'refused', 'result': result}),
+            ])
+            row = await engine.execute('session', 'touch once')
+            self.assertEqual((row['outcome'], row['code']), ('TRANSPORT', 'ProtocolError'))
+            self.assertTrue(row['fatal'])
+            self.assertIn(row['id'], engine.runs)
+            self.assertEqual(len(requests), 2)
+
     async def test_cancelled_observation_retains_attempt_and_resource_identity(self):
         engine, events, _ = self.engine([asyncio.CancelledError()])
         with self.assertRaises(asyncio.CancelledError):

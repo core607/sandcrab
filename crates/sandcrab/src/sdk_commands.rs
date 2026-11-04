@@ -229,7 +229,11 @@ impl Service {
                     {
                         return Err((409, "CONTEXT_CHANGED"));
                     }
-                    registry.stop_session(&command.context.id, "closed");
+                    if run.waiting.is_some() {
+                        registry.finish_queued(id, "COMMAND_CANCELLED", true, Instant::now());
+                    } else {
+                        registry.stop_session(&command.context.id, "closed");
+                    }
                 }
             } else if command.outcome.lock().unwrap().is_none() {
                 return Err((503, "COMMAND_OUTCOME_UNKNOWN"));
@@ -369,7 +373,7 @@ impl Observer {
         }
         for index in [*stream, 1 - *stream] {
             let available = run.output[index].len().saturating_sub(offsets[index]);
-            if available == 0 || (available < events::BLOCK && !flush && run.state == "running") {
+            if available == 0 || (available < events::BLOCK && !flush && run.in_progress()) {
                 continue;
             }
             let start = offsets[index];
