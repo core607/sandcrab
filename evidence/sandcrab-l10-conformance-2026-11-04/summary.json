@@ -1,0 +1,42 @@
+{
+  "scope": "Unified native conformance with published Python and JVM SDK clients on a disposable Linux systemd host",
+  "binarySha256": "10c54a0ef5d8361fb5bcfcf2b113912f249fbb5e1d3444d122b5c6422d6b9331",
+  "runnerSha256": "b5986dc95c4707129615a1d1670a0b493dd4b33fcfd0fda6ed72463eb107351f",
+  "attempts": [
+    {
+      "result": "FAIL",
+      "passedSuites": 17,
+      "failedSuite": "delegation",
+      "completedChecksInFailedSuite": 10,
+      "cleanup": "FAIL",
+      "cause": "Direct cleanup accepted only /var/lib despite the protected fixture parent override. The original failed receipt was retained and its identified directory reclaimed."
+    },
+    {
+      "result": "PASS",
+      "passedSuites": 19,
+      "checks": 254,
+      "allCleanup": "PASS"
+    }
+  ],
+  "suites": {
+    "native": 49,
+    "tcp": 9,
+    "resources": 6,
+    "volumes": 17,
+    "plain-storage": 12,
+    "files": 26,
+    "templates": 9,
+    "contexts": 10,
+    "overlays": 7,
+    "rootfs": 8,
+    "diff": 8,
+    "egress": 12,
+    "queue": 11,
+    "retention": 6,
+    "streaming": 6,
+    "events": 9,
+    "host-calls": 18,
+    "delegation": 10,
+    "sdk": 21
+  }
+}

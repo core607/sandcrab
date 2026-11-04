@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Template-owned programs, protected rootfs anchors and native file operations."""
-import argparse
 import base64
 import hashlib
 from http.client import HTTPResponse
@@ -15,12 +14,12 @@ import subprocess
 import tarfile
 import time
 
-import native_probe
-from native_probe import call, connect, http
-from file_probe import archive, binary_http
-from overlay_probe import OverlayProbe
-from host_calls_probe import Calls
-from streaming_file_probe import header
+from . import native as native_probe
+from .native import call, connect, http
+from .file import archive, binary_http
+from .overlay import OverlayProbe
+from .host_calls import Calls
+from .streaming_file import header
 
 
 class RootfsProbe(OverlayProbe):
@@ -181,40 +180,3 @@ class RootfsProbe(OverlayProbe):
             assert (self.socket.parent / 'templates/objects' / tree['id'] / 'lower/data/opt/base').read_bytes() == b'template environment'
             self.receipt[label+'Sdk'] = receipt
             self.done(label+'-published-sdk-creates-a-template-rootfs-and-cleans-its-native-records')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ['binary', 'tools', 'report']:
-        parser.add_argument('--'+name, type=Path, required=True)
-    for name in ['python', 'python-client', 'java', 'jvm-libs']:
-        parser.add_argument('--'+name, type=Path)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = RootfsProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    sdk = [args.python, args.python_client, args.java, args.jvm_libs]
-    assert not any(sdk) or all(sdk)
-    if all(sdk):
-        probe.sdk = args
-        probe.config.write_text(probe.config.read_text().replace('[service]', '[service]\nopensandbox = true', 1))
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n'+(error.stdout or '')+'\n'+(error.stderr or '')
-        detail += '\n'+call('journalctl', '-u', probe.unit, '--no-pager', '-n', '60', check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

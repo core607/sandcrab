@@ -5,7 +5,7 @@ from pathlib import Path
 import socket
 import time
 
-from native_probe import call, http
+from .native import call, http
 
 
 class Contract:

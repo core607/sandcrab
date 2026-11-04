@@ -28,29 +28,29 @@ artifacts before running the JVM client:
 | `sandbox-1.1.0.jar` | `cb96348a273124a899586e23abe9b5aeafcc98b1d6055532a62ecc8a2a22a392` |
 | `sandbox-api-1.1.0.jar` | `4cc5236a3c69d4328a8e80754fe0ccf47bddea10a0eaecd5dd01ba299bb87e45` |
 
-On a prepared Linux host, run
-[opensandbox_probe.py](../../executor-service/rust/sandcrab/opensandbox_probe.py)
-as root with `--binary`, `--tools`, `--python`, `--java`, `--jvm-libs` and a fresh
-`--report` path. Pass absolute paths; `--jvm-libs` selects the generated
+On a prepared Linux host, select `--suite sdk` in the
+[conformance runner](../../executor-service/rust/sandcrab/conformance.py).
+Pass `--binary`, `--tools`, `--python`, `--java`, `--jvm-libs` and a fresh
+`--output` directory. Use absolute paths; `--jvm-libs` selects the generated
 `evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib` directory. Keep the
-Python environment readable and executable by the fixture's ordinary client
-account. The controller creates its own bounded units and temporary credentials,
-runs both clients without root, checks effective kernel limits and native record
-cleanup, and verifies containment before removing its fixture.
+Python environment readable and executable by the fixture's ordinary client.
+The controller creates bounded units and temporary credentials, runs both
+clients without root, checks effective kernel limits and native record cleanup,
+and confirms containment before removing its fixture.
 
-[rootfs_probe.py](../../executor-service/rust/sandcrab/rootfs_probe.py) uses the
-same arguments with `--python-client evals/sdk/rootfs_client.py` to package a
-minimal template and run [rootfs_client.py](rootfs_client.py) and
-[SdkRootfs.java](jvm/src/main/java/example/sandcrab/SdkRootfs.java). Both published
-clients select `PROFILE@sha256:TEMPLATE_ID`, execute template programs, round-trip
-files and release their native records. The probe also checks native rootfs
-isolation and lifecycle; its raw receipt stays in the CI artifact.
+`--suite rootfs` uses the same arguments to package a minimal template and run
+[rootfs_client.py](rootfs_client.py) and
+[SdkRootfs.java](jvm/src/main/java/example/sandcrab/SdkRootfs.java). Both select
+`PROFILE@sha256:TEMPLATE_ID`, execute template programs, round-trip files and
+release native records. `--sdk-clients` selects the directory containing these
+consumers, defaulting to this repository's `evals/sdk`. The raw receipts remain
+in the CI artifact.
 
 The receipt pins the [specification revision](https://github.com/opensandbox-group/OpenSandbox/tree/b1a29cf93a823a95913f7943010febb3f29de05c/specs)
 and records binary, probe and Python-client hashes, JVM artifact hashes, client
 checks and cleanup. Failed attempts keep their receipts and separate
-operator diagnostics. Use a different report path for every attempt. Supplying
-only `--python` runs the Python client alone and cannot establish JVM support.
+operator diagnostics. Use a fresh output directory for every attempt. The `sdk` suite requires both
+client environments; missing JVM coverage fails its preflight.
 The harness also exercises credential scope, reused native identities,
 disconnects, timeout, cancellation, named shell state and generation binding,
 parent expiry, directory management, literal replacement,

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Native command event acceptance. Every sandbox, observer and fault belongs to this fixture."""
-import argparse
 import base64
 import hashlib
 from http.client import HTTPException, HTTPResponse
@@ -16,9 +15,9 @@ import threading
 import time
 import uuid
 
-from file_probe import binary_http
-import native_probe
-from native_probe import Probe, call, connect, http
+from .file import binary_http
+from . import native as native_probe
+from .native import Probe, call, connect, http
 
 
 class Events:
@@ -542,33 +541,3 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         self.cli_repeated_cancel()
         self.daemon_loss()
         self.containment_fault()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = EventProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

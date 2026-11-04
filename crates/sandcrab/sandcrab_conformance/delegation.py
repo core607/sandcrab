@@ -4,17 +4,15 @@
 Use --initialize-container only as PID 1 of a disposable private-cgroup container.
 The ordinary mode uses an already delegated parent on a root Linux host.
 """
-import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import time
 
-from native_probe import call, http
-from resources_probe import ResourcesProbe
+from .native import call, http
+from .resources import ResourcesProbe
 
 
 class DirectProbe(ResourcesProbe):
@@ -151,41 +149,7 @@ class DirectProbe(ResourcesProbe):
             self.unmount_fixture(path)
         assert not any(line.split()[4].startswith(str(self.root) + '/') for line in Path('/proc/self/mountinfo').read_text().splitlines())
         assert self.secret.read_text() == 'host-sentinel-is-not-mounted\n'
-        assert self.root.parent == Path('/var/lib') and self.root.name.startswith('sandcrab-native-') and not self.root.is_symlink()
-        shutil.rmtree(self.root)
+        self.remove_fixture_directory()
         if self.log is not None:
             self.log.close()
         self.receipt['cleanup'] = 'PASS'
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ('binary', 'tools', 'report', 'parent'):
-        parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--initialize-container', action='store_true')
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    if args.initialize_container:
-        assert os.getpid() == 1 and args.parent == Path('/sys/fs/cgroup')
-        assert Path('/proc/self/cgroup').read_text().strip() == '0::/'
-        controller = args.parent / 'sandcrab-probe-controller'
-        controller.mkdir()
-        (controller / 'cgroup.procs').write_text('1')
-        (args.parent / 'cgroup.subtree_control').write_text('+cpu +memory +pids')
-    probe = DirectProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve(), args.parent.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__, failure=str(error))
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

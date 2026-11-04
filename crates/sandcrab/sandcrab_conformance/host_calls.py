@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Opaque host-call acceptance through a disposable native service and its guest CLI."""
-import argparse
 import base64
 from contextlib import ExitStack, closing
 import hashlib
@@ -20,9 +19,9 @@ import time
 import uuid
 import zlib
 
-from native_probe import Probe, call, connect, http
-import native_probe
-from events_probe import Events as OutputEvents
+from .native import Probe, call, connect, http
+from . import native as native_probe
+from .events import Events as OutputEvents
 
 
 class Calls:
@@ -620,35 +619,3 @@ print('protected')
         assert self.records(run)['calls'] == []
         self.forget(run)
         self.done('guest-cannot-modify-mailbox-state-requests-or-host-responses')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    parser.add_argument('--example', type=Path, default=Path(__file__).resolve().parents[3] / 'examples/sandcrab-host-calls.py')
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    assert args.example.is_file()
-    probe = HostCallsProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve(), args.example.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

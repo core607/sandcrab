@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Independent shells, shared workspace ownership and real containment failures."""
-import argparse
 import hashlib
 import json
 import os
@@ -9,9 +8,9 @@ import subprocess
 import time
 import uuid
 
-from native_probe import call, http
-from resources_probe import ResourcesProbe
-from file_probe import binary_http
+from .native import call, http
+from .resources import ResourcesProbe
+from .file import binary_http
 
 
 class ContextsProbe(ResourcesProbe):
@@ -221,35 +220,3 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
             self.session_close(parent)
             self.session_forget(parent)
         self.done('uncertain-child-cleanup-fences-parent-storage-and-admission-until-restart')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0
-    assert not args.report.exists(), 'preserve previous evidence'
-    probe = ContextsProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

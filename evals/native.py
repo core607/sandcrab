@@ -56,26 +56,26 @@ def main():
     source = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     output.mkdir(mode=0o755)  # Never overwrite an earlier attempt.
-    for name, receipt in [('volume', 'volumes'), ('plain_storage', 'plain-storage'), ('file', 'files'), ('events', 'events'), ('tcp', 'tcp'), ('host_calls', 'host-calls'), ('resources', 'resources')]:
-        preflight = subprocess.Popen(['python3', str(source / f'executor-service/rust/sandcrab/{name}_probe.py'),
-                                     '--binary', str(args.binary.resolve()), '--tools', str(args.tools.resolve()),
-                                     '--report', str(output / f'{receipt}.json')])
-        try:
-            if preflight.wait(timeout=300) != 0:
-                raise RuntimeError(f'Native {name} preflight failed; inspect its retained receipt')
-        finally:
-            if preflight.poll() is None:
-                preflight.terminate()
-                try:
-                    preflight.wait(timeout=90)
-                except subprocess.TimeoutExpired:
-                    preflight.kill()
-                    preflight.wait(timeout=10)
+    preflight = subprocess.Popen(['python3', str(source / 'executor-service/rust/sandcrab/conformance.py'),
+        '--suite', 'volumes', 'plain-storage', 'files', 'events', 'tcp', 'host-calls', 'resources',
+        '--binary', str(args.binary.resolve()), '--tools', str(args.tools.resolve()),
+        '--output', str(output / 'preflight')])
+    try:
+        if preflight.wait(timeout=2700) != 0:
+            raise RuntimeError('Native conformance preflight failed; inspect its retained receipts')
+    finally:
+        if preflight.poll() is None:
+            preflight.terminate()
+            try:
+                preflight.wait(timeout=100)
+            except subprocess.TimeoutExpired:
+                preflight.kill()
+                preflight.wait(timeout=10)
     client = pwd.getpwnam('daemon')
     os.chown(output, client.pw_uid, client.pw_gid)
     sys.path.insert(0, str(source / 'executor-service/rust/sandcrab'))
-    import native_probe as module
-    from volume_probe import VolumeProbe
+    import sandcrab_conformance.native as module
+    from sandcrab_conformance.volume import VolumeProbe
     fixture_type = module.Probe if args.suite == 'native' else VolumeProbe
     fixture = fixture_type(args.binary.resolve(), args.tools.resolve(), output / 'fixture.json')
     try:

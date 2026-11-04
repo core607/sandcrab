@@ -16,7 +16,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'executor-service/rust/sandcrab'))
-import native_probe
+import sandcrab_conformance.native as native_probe
 
 
 def save(path, receipt):

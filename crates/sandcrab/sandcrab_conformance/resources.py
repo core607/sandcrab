@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Verify caller-lowered resource caps in actual sandbox cgroups."""
-import argparse
 import hashlib
 import json
 import os
@@ -11,7 +10,7 @@ import subprocess
 import time
 import uuid
 
-from native_probe import Probe, call, http
+from .native import Probe, call, http
 
 
 class ResourcesProbe(Probe):
@@ -127,31 +126,3 @@ class ResourcesProbe(Probe):
         self.session_close(session)
         self.session_forget(session)
         self.done('ordinary-cli-run-and-session-options-enforce-lower-kernel-limits')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = ResourcesProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    probe.receipt['resourcesProbeSha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        args.report.with_suffix('.diagnostic.txt').write_text(str(error))
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

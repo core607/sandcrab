@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Ordinary streaming uploads through the real authenticated native API and CLI."""
-import argparse
 import hashlib
 from http.client import HTTPResponse
 import json
@@ -10,8 +9,8 @@ import socket
 import subprocess
 import uuid
 
-from native_probe import Probe, call, connect, http
-from file_probe import binary_http
+from .native import Probe, call, connect, http
+from .file import binary_http
 
 
 def header(stream):
@@ -132,32 +131,3 @@ class StreamingProbe(Probe):
         self.done('session-close-cancels-a-stalled-body-and-releases-transfer-admission')
         self.session_close(parent)
         self.session_forget(parent)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ('binary', 'tools', 'report'):
-        parser.add_argument('--'+name, type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = StreamingProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

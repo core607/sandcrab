@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Result expiry, retained identities and restart cleanup through the real native API."""
-import argparse
 import hashlib
 import json
 import os
@@ -9,8 +8,8 @@ import subprocess
 import time
 import uuid
 
-from native_probe import Probe, call, http
-from file_probe import binary_http
+from .native import Probe, call, http
+from .file import binary_http
 
 
 class RetentionProbe(Probe):
@@ -104,32 +103,3 @@ class RetentionProbe(Probe):
         self.retained('uploads', pinned)
         assert http(self.socket, 'POST', f'/v1/uploads/{pinned["id"]}/forget', {})[0] == 200
         self.done('upload-retention-survives-restart-without-resetting-age')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ('binary', 'tools', 'report'):
-        parser.add_argument('--'+name, type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = RetentionProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

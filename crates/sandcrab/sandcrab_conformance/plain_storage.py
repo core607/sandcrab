@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Ordinary volumes and session workspaces inside owned, bounded ext4 images."""
-import argparse
 import hashlib
 from http.client import HTTPResponse
 import json
@@ -12,8 +11,8 @@ import time
 import traceback
 import uuid
 
-from native_probe import Probe, call, connect, http
-from volume_probe import VolumeProbe
+from .native import Probe, call, connect, http
+from .volume import VolumeProbe
 
 
 class PlainStorageProbe(VolumeProbe):
@@ -303,32 +302,3 @@ class PlainStorageProbe(VolumeProbe):
             call('umount', str(mount))
         else:
             Probe.unmount_fixture(self, mount)
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('binary', 'tools', 'report'):
-        parser.add_argument('--' + name, type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists(), 'Root and a fresh receipt are required'
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt('Plain storage probe interrupted')
-    signal.signal(signal.SIGTERM, interrupted)
-    probe = PlainStorageProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        args.report.with_suffix('.diagnostic.txt').write_text(traceback.format_exc())
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

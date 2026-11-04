@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Template import, deduplication and restart through the real native API and CLI."""
-import argparse
 import hashlib
 from http.client import HTTPResponse
 import json
@@ -10,9 +9,9 @@ import socket
 import subprocess
 import tarfile
 
-from native_probe import call, connect, http
-from file_probe import FileProbe, archive, binary_http
-from streaming_file_probe import StreamingProbe, header
+from .native import call, connect, http
+from .file import FileProbe, archive, binary_http
+from .streaming_file import StreamingProbe, header
 
 
 class TemplateProbe(StreamingProbe):
@@ -172,33 +171,3 @@ class TemplateProbe(StreamingProbe):
             assert http(self.socket, 'GET', '/v1/templates')[1]['pool']['available']
             self.done('template-cleanup-uncertainty-retains-admission-until-recovery' if uncertain_cleanup
                       else 'template-publication-fence-releases-a-fully-cleaned-transfer-slot')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ('binary', 'tools', 'report'):
-        parser.add_argument('--'+name, type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = TemplateProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n'+(error.stdout or '')+'\n'+(error.stderr or '')
-        detail += '\n'+call('journalctl', '-u', probe.unit, '--no-pager', '-n', '60', check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

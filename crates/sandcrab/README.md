@@ -753,57 +753,55 @@ request-scoped and leave no retained artifact; consumers own downloaded copies.
 
 ## Verification
 
-`executorRustCheck` checks the binary and its configuration/request tests.
-`native_probe.py --binary FILE --tools DIRECTORY --report FILE`, run as root on
-Linux, creates its own bounded slice and service and exercises real CLI/HTTP,
-containment, cancellation, replay, capacity, session build/repair, renewal, expiry, restart and cleanup. It uses no
-model API and reports deterministic evidence only. It does not establish agent
-usability, OpenSandbox compatibility or Poketto adoption. Injected cleanup failure
-must retain session admission, and a launcher stopped before workload setup must
-remain cancellable in its leaf. The external `fault_probe.py` controller uses kernel fork/exec/exit
-stops on this fixture's daemon; it is not installed with the service.
-Probe directories default to `/var/lib`. `SANDCRAB_PROBE_ROOT` selects a protected,
-root-owned parent on an overlay-capable filesystem. Container fixtures need a data
-volume for that parent; the Docker writable layer may reject overlay uppers.
-`delegation_probe.py` also takes `--parent CGROUP`, an existing parent delegating
-cpu, memory and pids. It starts the daemon directly, without service-manager calls,
-and checks limits, private temporary storage, recovery and ownership refusal.
-For its disposable container mode, run the probe as PID 1 with
-`--initialize-container --parent /sys/fs/cgroup`. The tested Docker bounds are
-`--privileged --cgroupns private --memory 512m --memory-swap 512m --cpus 2
---pids-limit 512 --network none --mount type=volume,destination=/var/lib`, with
-`/run` and `/tmp` as 64 MiB tmpfs mounts.
-Copy the probe sources, binary and prepared tools into root-owned container paths;
-no host cgroup bind mount is used. This acceptance fixture is separate from the
-release installer/container workstream.
-`volume_probe.py` takes the same binary/tools/report arguments and additionally
-requires `xfsprogs`. It owns a disposable 512 MiB XFS image, verifies file readback,
-reflinks, quotas, durable replay and failure recovery, and unmounts it only after
-its fixture's processes stop.
-`plain_storage_probe.py` uses those arguments with `mkfs.ext4` and disposable
-512 MiB volume/64 MiB runtime images. It checks ordinary-copy fallback, periodic
-overage/recovery, session directory sharing and ownership-checked restart cleanup.
-`file_probe.py` uses the same arguments and an independent XFS fixture for raw/tar
-readback, safe local CLI installation, quotas, cancellation and publication recovery.
-`events_probe.py` uses those arguments for live command output, binary resume,
-observer admission, CLI cancellation and containment faults in a disposable native fixture.
-`tcp_probe.py` additionally exercises authentication, private credential files,
-both IP families, TCP CLI/files/events and data retention through token rotation.
-`host_calls_probe.py` uses the same arguments from a repository checkout, or an
-explicit `--example FILE` for the build-signing caller. It checks opaque calls,
-ordinary caller/guest CLI use, isolation, bounded admission and failure recovery.
-`resources_probe.py` checks caller-lowered memory and CPU caps in actual cgroups,
-request refusal before admission, and the ordinary run/session CLI options.
-`contexts_probe.py` uses those arguments to verify independent shell state,
-shared budgets, parent expiry and child containment faults; CI retains its receipt.
-`template_probe.py` checks immutable imports, publication faults and admission
-recovery. `overlay_probe.py` adds an owned XFS fixture for shared views, template
-pins, CLI attachment, unsupported mount syscalls and crash recovery; it requires
-`xfsprogs`. Both use the same binary/tools/report arguments.
-`rootfs_probe.py` additionally packages host bash and its libraries as a minimal
-fixture, then checks template execution, protected mount anchors, atomic file
-operations, context sharing and contained recovery. It also needs `ldd`.
-`diff_probe.py` applies exported whiteouts and entries to their template and
-compares the result with the live workspace/rootfs, including bounded cleanup.
-Independent agent tasks and their budgeted runner live in the
+`executorRustCheck` covers the Rust programs and their configuration/request
+contracts. The [conformance runner](conformance.py) exercises real Linux
+sandboxes through CLI, native HTTP and published SDK clients:
+
+```sh
+python3 executor-service/rust/sandcrab/conformance.py --list
+sudo python3 executor-service/rust/sandcrab/conformance.py \
+  --suite native queue --binary build/executor-service/bin/sandcrab \
+  --tools /prepared/tools --output /var/lib/sandcrab-results
+```
+
+Run on a disposable root Linux/systemd host with the workload tools prepared by
+`executor-service/prepare-tools.sh`. The binary and verified bwrap must remain
+beside each other. Fixtures own bounded slices, services, storage and credentials.
+`SANDCRAB_PROBE_ROOT` selects a protected root-owned parent on an overlay-capable
+filesystem, default `/var/lib`; container fixtures need a data volume for it.
+XFS suites need `xfsprogs`, plain-storage needs `mkfs.ext4`, rootfs needs `ldd`,
+and egress needs OpenSSL. The fault controller uses kernel fork/exec/exit stops
+only on its fixture's daemon; it is absent from the installed service.
+
+Omit `--suite` or select `all` to run every suite. This requires both published
+SDK environments described in the [SDK reference](../../../evals/sdk/README.md):
+
+```sh
+sudo python3 executor-service/rust/sandcrab/conformance.py \
+  --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
+  --python /prepared/sdk-python/bin/python --java /prepared/jdk/bin/java \
+  --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \
+  --output /var/lib/sandcrab-all-results
+```
+
+Selected native suites can run without SDK environments. `sdk` requires both;
+`rootfs` requires both when SDK coverage is enabled. Passing `--python` also
+exercises published Python clients in `egress` and `queue`. `--sdk-clients` and
+`--examples` override the repository's consumer/example directories.
+
+Each suite has its own process so network-namespace changes stay isolated.
+The new output directory retains per-suite receipts, logs, failure diagnostics
+and `summary.json`. A test or unconfirmed cleanup makes the command fail; no
+later suite starts. Earlier attempts are never overwritten. No suite calls a
+model API. Independent agent tasks and their budgeted runner live in the
 [Inspect suite](../../../evals/README.md).
+
+`delegation` takes `--parent CGROUP`, an existing parent delegating cpu, memory
+and pids, and runs the daemon directly without a service manager. In a disposable
+container, run only that suite as PID 1 with `--initialize-container --parent
+/sys/fs/cgroup`. Its tested Docker bounds are `--privileged --cgroupns private
+--memory 512m --memory-swap 512m --cpus 2 --pids-limit 512 --network none
+--mount type=volume,destination=/var/lib`, with `/run` and `/tmp` as 64 MiB tmpfs
+mounts. Copy the runner package, binary and tools into protected container paths;
+no host cgroup bind mount is used. The [release container](install/README.md#standalone-container)
+is a separate operator entrance.

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Disposable SDK endpoint with ordinary published clients and kernel-side checks."""
-import argparse
 import hashlib
 import json
 import os
@@ -13,11 +12,11 @@ import socket
 import subprocess
 import time
 
-import native_probe
-from native_probe import call, http
-import opensandbox_contract_probe
-import opensandbox_contexts_probe
-from resources_probe import ResourcesProbe
+from . import native as native_probe
+from .native import call, http
+from . import opensandbox_contract as opensandbox_contract_probe
+from . import opensandbox_contexts as opensandbox_contexts_probe
+from .resources import ResourcesProbe
 
 
 class SdkProbe(ResourcesProbe):
@@ -25,21 +24,8 @@ class SdkProbe(ResourcesProbe):
         super().__init__(binary, tools, report)
         self.python = python
         self.client = self.root / 'python-client.py'
-        shutil.copyfile(client, self.client)
-        self.client.chmod(0o644)
-        self.java, self.jvm_libs = java, None
-        if jvm_libs:
-            self.jvm_libs = self.root / 'jvm-lib'
-            shutil.copytree(jvm_libs, self.jvm_libs)
-            self.jvm_libs.chmod(0o755)
-            for item in self.jvm_libs.iterdir():
-                assert item.is_file() and item.suffix == '.jar'
-                item.chmod(0o644)
-            self.receipt['jvmArtifactsSha256'] = {
-                item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in sorted(self.jvm_libs.iterdir())}
-            for name, digest in [('sandbox-1.1.0.jar', 'cb96348a273124a899586e23abe9b5aeafcc98b1d6055532a62ecc8a2a22a392'),
-                                 ('sandbox-api-1.1.0.jar', '4cc5236a3c69d4328a8e80754fe0ccf47bddea10a0eaecd5dd01ba299bb87e45')]:
-                assert hashlib.sha256((self.jvm_libs / name).read_bytes()).hexdigest() == digest
+        self.client_source = client
+        self.java, self.library_source, self.jvm_libs = java, jvm_libs, None
         self.token = secrets.token_hex(32)
         server, self.key = self.root / 'server.token', self.root / 'client.token'
         for path in [server, self.key]:
@@ -80,6 +66,23 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
                             contractProbeSha256=hashlib.sha256(Path(opensandbox_contract_probe.__file__).read_bytes()).hexdigest(),
                             contextsProbeSha256=hashlib.sha256(Path(opensandbox_contexts_probe.__file__).read_bytes()).hexdigest(),
                             pythonClientSha256=hashlib.sha256(client.read_bytes()).hexdigest())
+
+    def setup(self):
+        shutil.copyfile(self.client_source, self.client)
+        self.client.chmod(0o644)
+        if self.library_source:
+            self.jvm_libs = self.root / 'jvm-lib'
+            shutil.copytree(self.library_source, self.jvm_libs)
+            self.jvm_libs.chmod(0o755)
+            for item in self.jvm_libs.iterdir():
+                assert item.is_file() and item.suffix == '.jar'
+                item.chmod(0o644)
+            self.receipt['jvmArtifactsSha256'] = {
+                item.name: hashlib.sha256(item.read_bytes()).hexdigest() for item in sorted(self.jvm_libs.iterdir())}
+            for name, digest in [('sandbox-1.1.0.jar', 'cb96348a273124a899586e23abe9b5aeafcc98b1d6055532a62ecc8a2a22a392'),
+                                 ('sandbox-api-1.1.0.jar', '4cc5236a3c69d4328a8e80754fe0ccf47bddea10a0eaecd5dd01ba299bb87e45')]:
+                assert hashlib.sha256((self.jvm_libs / name).read_bytes()).hexdigest() == digest
+        super().setup()
 
     def client_flow(self, command, label):
         process = subprocess.Popen(command,
@@ -130,36 +133,3 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
                               self.endpoint, str(self.key), 'barrier'], 'kotlin')
         opensandbox_contract_probe.Contract(self).tests()
         opensandbox_contexts_probe.Contexts(self).tests()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    parser.add_argument('--python', type=Path, required=True)
-    parser.add_argument('--python-client', type=Path, default=Path(__file__).resolve().parents[3] / 'evals/sdk/python_client.py')
-    parser.add_argument('--java', type=Path)
-    parser.add_argument('--jvm-libs', type=Path)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    assert bool(args.java) == bool(args.jvm_libs)
-    probe = SdkProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve(), args.python.absolute(),
-                     args.python_client.resolve(), args.java, args.jvm_libs)
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        args.report.with_suffix('.diagnostic.txt').write_text(str(error))
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Bounded native Sandcrab acceptance. Owns only its temporary slice, unit and directory."""
-import argparse
 import hashlib
 from http.client import HTTPException, HTTPResponse
 import json
@@ -15,7 +14,7 @@ import tempfile
 import threading
 import time
 import uuid
-from fault_probe import LaunchFaults
+from .fault import LaunchFaults
 
 CLIENT = (0, 0)
 
@@ -737,9 +736,12 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
         call('systemctl', 'reset-failed', self.unit, self.slice, check=False)
         self.slice_file.unlink(missing_ok=True)
         call('systemctl', 'daemon-reload')
+        self.remove_fixture_directory()
+        self.receipt['cleanup'] = 'PASS'
+
+    def remove_fixture_directory(self):
         assert self.root.parent == self.fixture_parent and self.root.name.startswith('sandcrab-native-') and not self.root.is_symlink()
         shutil.rmtree(self.root)
-        self.receipt['cleanup'] = 'PASS'
 
     def unmount_fixture(self, mount):
         root = mount.parent if mount.name == 'tmp' else mount
@@ -1058,46 +1060,3 @@ os.execv('/usr/bin/umount', ['umount', *sys.argv[1:]])
                 assert 'forgetting its record failed' in result.stderr and 'do not rerun' in result.stderr, result
             endpoint.unlink()
         self.done('cli-outcome-survives-forget-failure')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    parser.add_argument('--example', type=Path)
-    args = parser.parse_args()
-    assert os.geteuid() == 0, 'native probe requires root'
-    assert not args.report.exists(), 'preserve the previous receipt; use a fresh output file'
-    probe = Probe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    probe.inherited_fd_probe = True
-    try:
-        probe.setup()
-        probe.tests()
-        probe.session_tests()
-        if args.example:
-            probe.example(args.example)
-        probe.session_cleanup_failure()
-        probe.startup_cancellation()
-        probe.startup_cancellation(session=True)
-        probe.failed_exec()
-        probe.rejected_clone()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        # Operator paths and command diagnostics are private, separate from the portable receipt.
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

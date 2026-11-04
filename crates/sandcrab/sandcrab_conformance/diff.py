@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Apply native upper changesets to their bases and compare the resulting trees."""
-import argparse
 import hashlib
 from http.client import HTTPResponse, IncompleteRead
 import io
@@ -14,11 +13,11 @@ import stat
 import subprocess
 import tarfile
 
-import native_probe
-from native_probe import call, connect, http
-from file_probe import archive, binary_http
-from rootfs_probe import RootfsProbe
-from streaming_file_probe import header
+from . import native as native_probe
+from .native import call, connect, http
+from .file import archive, binary_http
+from .rootfs import RootfsProbe
+from .streaming_file import header
 
 
 def remove(path):
@@ -274,33 +273,3 @@ os.symlink('/outside/sentinel', 'symbolic')
         self.session_forget(parent)
         assert http(self.socket, 'DELETE', '/v1/templates/'+tree['id'])[0] == 200
         self.done('rootfs-diff-reconstructs-the-full-root-and-excludes-runtime-mount-contents')
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ['binary', 'tools', 'report']:
-        parser.add_argument('--'+name, type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = DiffProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        detail = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail += '\n'+(error.stdout or '')+'\n'+(error.stderr or '')
-        detail += '\n'+call('journalctl', '-u', probe.unit, '--no-pager', '-n', '60', check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(detail)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

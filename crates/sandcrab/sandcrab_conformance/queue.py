@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Real bounded admission, FIFO, no-execution receipts and queued identity lifecycle."""
-import argparse
 import hashlib
 import json
 import os
@@ -10,8 +9,8 @@ import subprocess
 import time
 import uuid
 
-from native_probe import Probe, call, http
-from events_probe import Events
+from .native import Probe, call, http
+from .events import Events
 
 
 class QueueProbe(Probe):
@@ -276,39 +275,3 @@ class QueueProbe(Probe):
         for test in (self.finite_fifo, self.finite_timeout, self.session_fifo, self.session_timeout,
                      self.starting_and_expiry, self.parent_close, self.sdk, self.restart):
             test()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    for name in ('binary', 'tools', 'report'):
-        parser.add_argument('--' + name, required=True, type=Path)
-    parser.add_argument('--python', type=Path)
-    parser.add_argument('--python-client', type=Path)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = QueueProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    assert bool(args.python) == bool(args.python_client)
-    if args.python:
-        probe.sdk_python, probe.sdk_client = args.python.absolute(), args.python_client.resolve()
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        details += '\n' + call('journalctl', '-u', probe.unit, '--no-pager', '-o', 'cat', check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

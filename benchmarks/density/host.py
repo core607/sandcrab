@@ -9,8 +9,8 @@ import sys
 
 NATIVE = Path(__file__).resolve().parents[2] / 'executor-service/rust/sandcrab'
 sys.path.insert(0, str(NATIVE))
-import native_probe
-from native_probe import Probe, call
+import sandcrab_conformance.native as native_probe
+from sandcrab_conformance.native import Probe, call
 
 
 def fields(path):

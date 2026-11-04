@@ -10,7 +10,7 @@ import ssl
 import struct
 import threading
 
-from native_probe import call
+from .native import call
 
 ADDRESS = '93.184.216.34'
 

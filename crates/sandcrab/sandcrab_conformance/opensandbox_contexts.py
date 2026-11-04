@@ -1,8 +1,8 @@
 """SDK context authority, concurrent execution and generation-bound deletion."""
 import uuid
 
-from native_probe import call, http
-from opensandbox_contract_probe import Contract
+from .native import call, http
+from .opensandbox_contract import Contract
 
 
 class Contexts(Contract):

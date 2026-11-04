@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Real CONNECT/SOCKS5 egress, isolated peers and owned-lifecycle acceptance."""
-import argparse
 import hashlib
 import json
 import os
@@ -13,9 +12,9 @@ import tarfile
 import time
 import uuid
 
-from native_probe import Probe, call, http
-from egress_fixture import ADDRESS, Internet
-from file_probe import archive, binary_http
+from .native import Probe, call, http
+from .egress_fixture import ADDRESS, Internet
+from .file import archive, binary_http
 
 TUNNEL = '''import os,socket,ssl,struct,time,urllib.request
 def connect(name,port,socks=False):
@@ -224,40 +223,3 @@ print('isolated')
         except BaseException:
             self.receipt['cleanup'] = 'FAIL'
             raise
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', required=True, type=Path)
-    parser.add_argument('--tools', required=True, type=Path)
-    parser.add_argument('--report', required=True, type=Path)
-    parser.add_argument('--python', type=Path)
-    parser.add_argument('--python-client', type=Path)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = EgressProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    assert bool(args.python) == bool(args.python_client)
-    if args.python:
-        probe.sdk_python, probe.sdk_client = args.python.absolute(), args.python_client.resolve()
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        details += '\n' + call('journalctl', '-u', probe.unit, '--no-pager', '-o', 'cat', check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

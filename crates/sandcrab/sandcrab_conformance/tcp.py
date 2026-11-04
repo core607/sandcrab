@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Authenticated native TCP acceptance in a disposable service and XFS fixture."""
-import argparse
 from contextlib import closing
 import hashlib
 from http.client import HTTPConnection, HTTPResponse
@@ -17,10 +16,10 @@ import time
 import tomllib
 import uuid
 
-from events_probe import Events
-from file_probe import FileProbe
-import native_probe
-from native_probe import call, http
+from .events import Events
+from .file import FileProbe
+from . import native as native_probe
+from .native import call, http
 
 
 def free_address(ip='127.0.0.1'):
@@ -338,33 +337,3 @@ class TcpProbe(FileProbe):
         self.cli_cancel()
         self.protected_credentials()
         self.listener_lifecycle()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0 and not args.report.exists()
-    probe = TcpProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt.update(result='FAIL', failureType=type(error).__name__)
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

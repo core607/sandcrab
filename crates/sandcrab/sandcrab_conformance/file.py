@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Native file transfer acceptance; fixture data and every attempt remain independently inspectable."""
-import argparse
 import hashlib
 from http.client import HTTPResponse
 import io
@@ -15,9 +14,9 @@ import threading
 import time
 import uuid
 
-import native_probe
-from native_probe import call, connect, http
-from volume_probe import VolumeProbe
+from . import native as native_probe
+from .native import call, connect, http
+from .volume import VolumeProbe
 
 
 def binary_http(endpoint, method, path, body):
@@ -665,43 +664,3 @@ class FileProbe(VolumeProbe):
         self.restart()
         self.volume_delete(volume)
         self.volume_forget(volume)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0
-    assert not args.report.exists(), 'Use a fresh receipt for every attempt'
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt('File probe interrupted')
-    signal.signal(signal.SIGTERM, interrupted)
-    probe = FileProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        except BaseException as error:
-            probe.receipt['cleanup'] = 'FAIL'
-            probe.receipt['cleanupFailureType'] = type(error).__name__
-            args.report.with_suffix('.cleanup-diagnostic.txt').write_text(str(error))
-            raise
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()

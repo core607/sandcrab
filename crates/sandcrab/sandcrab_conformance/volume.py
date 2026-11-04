@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Native volume acceptance in one disposable, bounded XFS filesystem."""
-import argparse
 import hashlib
 import json
 import os
@@ -11,7 +10,7 @@ import subprocess
 import time
 import uuid
 
-from native_probe import Probe, call, http
+from .native import Probe, call, http
 
 
 class VolumeProbe(Probe):
@@ -433,42 +432,3 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
             call('umount', str(mount))
         else:
             super().unmount_fixture(mount)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--binary', type=Path, required=True)
-    parser.add_argument('--tools', type=Path, required=True)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
-    assert os.geteuid() == 0
-    def interrupted(signum, frame):
-        raise KeyboardInterrupt('Volume probe interrupted')
-    signal.signal(signal.SIGTERM, interrupted)
-    assert not args.report.exists(), 'Preserve earlier attempts'
-    probe = VolumeProbe(args.binary.resolve(), args.tools.resolve(), args.report.resolve())
-    try:
-        probe.setup()
-        probe.tests()
-        probe.receipt['result'] = 'PASS'
-    except BaseException as error:
-        probe.receipt['result'] = 'FAIL'
-        probe.receipt['failureType'] = type(error).__name__
-        details = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            details += '\n' + (error.stdout or '') + '\n' + (error.stderr or '')
-        details += '\n' + call('journalctl', '-u', probe.unit, '--no-pager', '-n', '60', check=False).stdout
-        if os.path.ismount(probe.data):
-            details += '\n' + call('xfs_quota', '-x', '-c', 'quota -p -b -N -v 1', str(probe.data), check=False).stdout
-            details += '\n' + call('xfs_quota', '-x', '-c', 'quota -p -i -N -v 1', str(probe.data), check=False).stdout
-        args.report.with_suffix('.diagnostic.txt').write_text(details)
-        raise
-    finally:
-        try:
-            probe.cleanup()
-        finally:
-            probe.save()
-
-
-if __name__ == '__main__':
-    main()
