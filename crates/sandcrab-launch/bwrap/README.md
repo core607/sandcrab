@@ -23,7 +23,6 @@ The patch replaces musl's AF_UNIX-based loopback-index lookup with an AF_INET
 ioctl socket in the new network namespace. The inherited seccomp filter keeps
 denying AF_UNIX socket creation before bubblewrap starts.
 
-On hosts enforcing AppArmor user-namespace restrictions, the policy must cover
-the helper beside the resolved launcher. For managed Poketto worker releases,
-include `sourceDirectory/releases/*/bwrap` before rollout; the old tools-directory
-attachment does not cover it. Tool preparation does not change host policy.
+On hosts that restrict user namespaces with AppArmor, the profile must cover
+the helper beside the resolved launcher. The [installer](../../sandcrab/install/README.md)
+loads the native service profile on supported systemd hosts.

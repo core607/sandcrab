@@ -8,8 +8,8 @@ transcript viewer. The application has no dependency on it. Install the pinned
 
 The **Evaluation preflight** workflow runs ten native API cases and the same six programming
 tasks through both native and published OpenSandbox Python clients, three times each
-(66 attempts). It is available from GitHub Actions' Run workflow button and is also
-required by the code-change CI matrix. It builds the requested checkout, starts a
+(66 attempts). It runs on changes to the runtime or evaluation inputs and can
+also be started manually from GitHub Actions. It builds the requested checkout, starts a
 disposable native service and runs Inspect as an ordinary client. No production
 endpoint, product account, model key or model API is used. The root controller
 owns only its fixture's units, slice and temporary directory; cleanup verifies
@@ -30,13 +30,16 @@ job summary does not host the viewer.
 
 These scripted results establish that the harness can drive and score the API.
 The **Agent evaluations** workflow runs a selected suite with a plain tool-calling
-DeepSeek Flash agent. Start it on `main`, choose `workspace` (the default), `native`
+DeepSeek Flash agent. Set the repository secret `DEEPSEEK_EVAL_API_KEY` for the
+unprivileged evaluator. Start the workflow on trusted `main`, choose `workspace` (the default), `native`
 or `all`, the programming client (`sdk` by default), repeat count and batch budget,
 then read the workflow summary. The native-only suite selects the `native` client automatically.
 Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
-The [latest SDK model receipt](evidence/2026-10-31-workspace-sdk-model-post-fix.json)
+The [mixed native and SDK batch](evidence/2026-11-04-sandcrab-hardening/summary.json)
+records all 48 real-model trials, 18 independently verified programming exports and
+the reconciled cost upper bound. The [October 31 SDK-only batch](evidence/2026-10-31-workspace-sdk-model-post-fix.json)
 records 18 independently graded successes, including recovery after missing-parent
 upload refusals, with complete exports and confirmed cleanup. The
 [first SDK batch](evidence/2026-10-30-workspace-sdk-model.json) and
@@ -46,14 +49,6 @@ general programming ability or isolate a causal effect. The
 [native-client receipt](evidence/2026-10-29-workspace-model.json) separately retains
 original scores and a controlled regrade after correcting an unstated exit-status
 requirement.
-
-Configure `DEEPSEEK_EVAL_API_KEY` as a repository secret. The workflow can reuse
-`AI_REVIEW_API_KEY` when review uses the standard DeepSeek endpoint. Only the
-unprivileged evaluator receives the key; the daemon and sandbox commands do not.
-Rerunning an existing paid workflow fails validation before the evaluator starts:
-inspect its ledger and start a new run explicitly. Non-main refs, other providers,
-automatic baseline comparison, scheduled runs, Poketto MCP tasks and creator QA remain under the
-[evaluation proposal](../notes/proposed/2026-10-28-agent-evaluation-entrance.md).
 
 ## Native API cases
 
@@ -91,7 +86,7 @@ repairs, binary file indexing, a multi-file program and a persistent inventory C
 The agent receives the task, initial files and required artifact paths. It writes
 and tests Python using an ordinary consumer client with five tools: shell, text
 upload, session restart, receipt inspection and tar export. The native client owns
-a volume and sessions; the SDK client owns a sandbox and named shells. Neither requires a Poketto account, repository or
+a volume and sessions; the SDK client owns a sandbox and named shells. Neither requires an application account, repository or
 content semantics. These results measure this client and corpus, not an agent's
 ability to discover the raw HTTP API or general programming ability.
 
@@ -203,11 +198,11 @@ python -m venv .gradle/eval-python
 Windows uses `.gradle/eval-python/Scripts/python.exe`. Offline checks exercise
 the real Inspect engine's failure retention and the scorer's rejection paths.
 They do not prove Linux containment. On a disposable Linux host meeting the
-[native requirements](../executor-service/rust/sandcrab/README.md), build with
-`./gradlew buildExecutorRust`, prepare the tools, then run:
+[native requirements](../crates/sandcrab/README.md), build with
+`docker build --target release --output type=local,dest=build/bin .`, prepare the tools, then run:
 
 ```sh
-sudo python3 evals/native.py --binary build/executor-service/bin/sandcrab \
+sudo python3 evals/native.py --binary build/bin/sandcrab \
   --tools /var/lib/sandcrab-evals/tools --python /absolute/path/to/venv/bin/python \
   --output /var/lib/sandcrab-evals/results --workspace-client both
 ```

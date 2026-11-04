@@ -53,4 +53,4 @@ jobs:
       repeats: ${{ fromJSON(inputs.repeats) }}
       budget_usd: ${{ inputs.budget_usd }}
     secrets:
-      model_key: ${{ secrets.DEEPSEEK_EVAL_API_KEY || ((vars.AI_REVIEW_BASE_URL == '' || vars.AI_REVIEW_BASE_URL == 'https://api.deepseek.com') && secrets.AI_REVIEW_API_KEY) || '' }}
+      model_key: ${{ secrets.DEEPSEEK_EVAL_API_KEY }}

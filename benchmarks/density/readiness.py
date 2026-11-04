@@ -15,7 +15,7 @@ import sys
 import time
 import uuid
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'executor-service/rust/sandcrab'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'crates/sandcrab'))
 import sandcrab_conformance.native as native_probe
 
 
@@ -71,7 +71,7 @@ class Recipe:
                                    'programs': {name: shutil.which(name) is not None for name in
                                                 ('curl', 'python3', 'node', 'npm', 'bwrap', 'git')}},
             'inputSha256': {'binary': hashlib.sha256(self.binary.read_bytes()).hexdigest(),
-                            'readme': hashlib.sha256((self.source / 'executor-service/rust/sandcrab/README.md').read_bytes()).hexdigest(),
+                            'readme': hashlib.sha256((self.source / 'crates/sandcrab/README.md').read_bytes()).hexdigest(),
                             'recipe': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             'steps': [], 'measurementStatus': 'STARTING', 'cleanup': 'NOT_RUN',
             'modelTokens': 0, 'containsProductionContent': False,
@@ -148,11 +148,11 @@ class Recipe:
                      ['install', '-m', '644', self.binary.with_name('bwrap-notices.txt'),
                       self.binary.with_name('bwrap-source.tar.xz'), self.root])
         self.command('prepare pinned sandbox toolchain',
-                     ['bash', self.source / 'executor-service/prepare-tools.sh', self.root / 'tools'])
+                     ['bash', self.source / 'scripts/prepare-tools.sh', self.root / 'tools'])
         self.created_user = True
         self.command('create separate execution account',
                      ['useradd', '--system', '--no-create-home', '--shell', '/usr/sbin/nologin', self.user])
-        text = (self.source / 'executor-service/rust/sandcrab/config.example.toml').read_text()
+        text = (self.source / 'crates/sandcrab/config.example.toml').read_text()
         values = {'runtime_root': str(self.root / 'runtime'), 'socket': str(self.root / 'runtime/control.sock'),
                   'client_uid': 0, 'client_gid': 0,
                   'cgroup_root': str(native_probe.service_cgroup(self.slice, self.unit)),

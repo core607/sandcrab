@@ -1,0 +1,6 @@
+.git
+.gradle
+**/.gradle
+**/build
+**/target
+**/__pycache__

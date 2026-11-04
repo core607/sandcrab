@@ -1,63 +1,15 @@
-# Sandcrab native service
+# Native service reference
 
-`sandcrab` is a standalone Linux daemon and CLI for finite commands, persistent
-bash sessions, durable volumes, streamed files, live command output and opaque host calls. It needs no Poketto account, workspace, repository,
-signing key or compiled extension. The service uses a Unix socket or optional
-authenticated loopback TCP. An optional [OpenSandbox adapter](opensandbox.md)
-implements the documented OpenSandbox 1.1.0 subset, verified through
-[published Python and Kotlin clients](../../../evals/sdk/README.md).
-The [threat model](THREAT-MODEL.md) describes the shared-kernel boundary, client
-authority and resource-exhaustion risks.
-Consumer adoption and extraction remain under the
-[service proposal](../../../notes/proposed/2026-10-26-sandcrab-sandbox-service.md).
-
-## Get started
-
-On x86-64 Ubuntu 22.04, Ubuntu 24.04 or Debian 12, use a root shell on a systemd host
-with curl, bash and Python 3. Set `SANDCRAB_BUNDLE_URL` to the download URL for the
-chosen release ZIP. Development builds provide `sandcrab-linux-x86_64.zip` in the
-[installer workflow](../../../.github/workflows/sandcrab-readiness.yml). You can also download
-that artifact in a signed-in browser and start at the second command.
-
-<!-- sandcrab-quickstart -->
-```sh
-curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "$SANDCRAB_BUNDLE_URL"
-python3 -I sandcrab-linux-x86_64.zip
-/var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
-```
-
-The last command prints a terminal JSON record with `state` equal to `succeeded` and
-`42` in `result.stdout`. The installer provisions the service, execution account and
-private loopback token. The [installation reference](install/README.md) covers dry run,
-doctor and the [container quickstart](install/README.md#standalone-container).
-
-## Try the clients
-
-Read the installed service's profiles with curl over its Unix socket:
-
-```sh
-curl --fail --unix-socket /var/lib/sandcrab/runtime/control.sock http://localhost/v1/info
-```
-
-The [build-and-test agent](../../../examples/sandcrab-build-test.sh) creates a Python
-project and runs its unit tests in a retained shell. The [batch runner](../../../examples/sandcrab-batch.py)
-runs each input file in a fresh sandbox and emits one JSON result per file. Run these
-in an account with access to the socket. The [SDK examples](opensandbox.md#connection-and-ownership)
-use the published Python and Kotlin clients with a private loopback token.
-
-```sh
-bash examples/sandcrab-build-test.sh
-python3 examples/sandcrab-batch.py first.py second.py
-```
+Sandcrab provides finite commands, persistent bash sessions, files, templates, network profiles and optional host calls through its native API. See the [quickstart](../../README.md#quickstart) and [threat model](../../THREAT-MODEL.md).
 
 ## Custom installation
 
-Build with `./gradlew buildExecutorRust`. In `build/executor-service/bin`,
+Build with the [release target](../../README.md#build-and-test). In `build/bin`,
 `sandcrab` and `bwrap` are static executables; install both with mode 0755 in
 the same root-owned directory with protected ancestors. Keep `bwrap-notices.txt`
 and `bwrap-source.tar.xz` alongside them with mode 0644. The
 [helper build](../sandcrab-launch/bwrap/README.md) owns its version, source and
-reproduction instructions. The native daemon is excluded from the Poketto worker bundle.
+reproduction instructions.
 
 Startup and every launch verify the helper beside the resolved executable,
 including its protected path and pinned SHA-256. A missing, modified or mismatched
@@ -66,7 +18,7 @@ unprivileged user namespaces, Linux 5.11+ and `mount`/`umount`.
 Startup tests overlay mounting and copy-up on `runtime_root` storage before
 serving clients; use a supported local filesystem such as ext4 or XFS. Unsupported
 mount syscalls, helpers or backing storage refuse startup. There is no copy fallback.
-[Tool preparation](../../prepare-tools.sh) supplies optional workload utilities; the helper
+[Tool preparation](../../scripts/prepare-tools.sh) supplies optional workload utilities; the helper
 comes from the release. The seccomp filter is compiled into Sandcrab, which needs
 no Node.js, npm or SRT runtime.
 
@@ -516,7 +468,7 @@ sandcrab session forget --socket /var/lib/sandcrab-demo/runtime/control.sock SES
 accepts one quoted bash source argument, prints a run recovery ID, waits for its
 outcome and forgets that command result. `close` waits for confirmed termination
 and also succeeds for an already expired or failed session whose cleanup finished.
-`get` reads state without waiting. The [build/test example](../../../examples/sandcrab-build-test.sh)
+`get` reads state without waiting. The [build/test example](../../examples/sandcrab-build-test.sh)
 uses ordinary Python files and shell state across separate client connections.
 
 A session preserves its working directory, environment, shell functions, files,
@@ -790,19 +742,19 @@ request-scoped and leave no retained artifact; consumers own downloaded copies.
 
 ## Verification
 
-`executorRustCheck` covers the Rust programs and their configuration/request
+The Rust check target covers the Rust programs and their configuration/request
 contracts. The [conformance runner](conformance.py) exercises real Linux
 sandboxes through CLI, native HTTP and published SDK clients:
 
 ```sh
-python3 executor-service/rust/sandcrab/conformance.py --list
-sudo python3 executor-service/rust/sandcrab/conformance.py \
-  --suite native queue --binary build/executor-service/bin/sandcrab \
+python3 crates/sandcrab/conformance.py --list
+sudo python3 crates/sandcrab/conformance.py \
+  --suite native queue --binary build/bin/sandcrab \
   --tools /prepared/tools --output /var/lib/sandcrab-results
 ```
 
 Run on a disposable root Linux/systemd host with the workload tools prepared by
-`executor-service/prepare-tools.sh`. The binary and verified bwrap must remain
+`scripts/prepare-tools.sh`. The binary and verified bwrap must remain
 beside each other. Fixtures own bounded slices, services, storage and credentials.
 `SANDCRAB_PROBE_ROOT` selects a protected root-owned parent on an overlay-capable
 filesystem, default `/var/lib`; container fixtures need a data volume for it.
@@ -811,11 +763,11 @@ and egress needs OpenSSL. The fault controller uses kernel fork/exec/exit stops
 only on its fixture's daemon; it is absent from the installed service.
 
 Omit `--suite` or select `all` to run every suite. This requires both published
-SDK environments described in the [SDK reference](../../../evals/sdk/README.md):
+SDK environments described in the [SDK reference](../../evals/sdk/README.md):
 
 ```sh
-sudo python3 executor-service/rust/sandcrab/conformance.py \
-  --binary build/executor-service/bin/sandcrab --tools /prepared/tools \
+sudo python3 crates/sandcrab/conformance.py \
+  --binary build/bin/sandcrab --tools /prepared/tools \
   --python /prepared/sdk-python/bin/python --java /prepared/jdk/bin/java \
   --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \
   --output /var/lib/sandcrab-all-results
@@ -831,7 +783,7 @@ The new output directory retains per-suite receipts, logs, failure diagnostics
 and `summary.json`. A test or unconfirmed cleanup makes the command fail; no
 later suite starts. Earlier attempts are never overwritten. No suite calls a
 model API. Independent agent tasks and their budgeted runner live in the
-[Inspect suite](../../../evals/README.md).
+[Inspect suite](../../evals/README.md).
 
 `delegation` takes `--parent CGROUP`, an existing parent delegating cpu, memory
 and pids, and runs the daemon directly without a service manager. In a disposable

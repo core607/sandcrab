@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 
-NATIVE = Path(__file__).resolve().parents[2] / 'executor-service/rust/sandcrab'
+NATIVE = Path(__file__).resolve().parents[2] / 'crates/sandcrab'
 sys.path.insert(0, str(NATIVE))
 import sandcrab_conformance.native as native_probe
 from sandcrab_conformance.native import Probe, call
@@ -30,6 +30,9 @@ def host_memory():
 
 
 def other_loads():
+    suffixes = (b'/benchmarks/density/density.py', b'/benchmarks/density/footprint.py',
+                b'/benchmarks/density/page_cache.py', b'/benchmarks/density/cold_start.py',
+                b'/agent-load.py', b'/load-suite.py')
     count = 0
     for process in Path('/proc').iterdir():
         if not process.name.isdecimal() or int(process.name) in (os.getpid(), os.getppid()):
@@ -38,10 +41,7 @@ def other_loads():
             arguments = (process / 'cmdline').read_bytes().split(b'\0')[:3]
         except OSError:
             continue
-        if any(argument.endswith((b'/sandcrab-density/density.py', b'/sandcrab-density/footprint.py',
-                                  b'/sandcrab-density/page_cache.py', b'/sandcrab-density/cold_start.py',
-                                  b'/agent-load.py', b'/load-suite.py'))
-               for argument in arguments):
+        if any((b'/' + argument.lstrip(b'/')).endswith(suffixes) for argument in arguments):
             count += 1
     return count
 

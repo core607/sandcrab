@@ -1,0 +1,24 @@
+name: Rust and benchmark checks
+
+on:
+  pull_request:
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
+  push:
+    branches: [main]
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - run: docker build --target check .
+      - name: Test the benchmark protocol and collectors
+        run: |
+          command -v rg || { sudo apt-get update && sudo apt-get install -y ripgrep; }
+          python3 -m unittest discover -s benchmarks/density -p 'test_*.py' -v

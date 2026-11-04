@@ -14,6 +14,7 @@ from probe import disposable_machine, run
 
 
 SOURCE = Path(__file__).resolve().parent.parent
+README = SOURCE.parent.parent / 'README.md'
 RELEASE = Path('/var/lib/sandcrab-release')
 ARCHIVE = 'sandcrab-linux-x86_64.zip'
 LIMIT = 300
@@ -71,7 +72,7 @@ def fresh():
 
 def measure(output, expected, receipt):
     fresh()
-    commands = recipe((SOURCE / 'README.md').read_text(encoding='utf-8'))
+    commands = recipe(README.read_text(encoding='utf-8'))
     url = download_url()
     environment = {'PATH': os.defpath + ':/usr/sbin:/sbin', 'LANG': 'C.UTF-8', 'SANDCRAB_BUNDLE_URL': url}
     receipt.update(commands=commands, issued=0, manualConfigEdits=0, targetSeconds=LIMIT)
@@ -128,9 +129,10 @@ def verify(output, digest):
 def in_distribution(image, output, digest):
     # The guest gets only the signed artifact URL. The repository token stays on the controller.
     with disposable_machine(image, print, systemd=True, network='bridge') as machine:
-        base = '/root/quickstart/executor-service/rust/sandcrab'
+        base = '/root/quickstart/crates/sandcrab'
         run(['docker', 'exec', machine, 'mkdir', '-p', base + '/install'])
-        for path in ('README.md', 'conformance.py', 'sandcrab_conformance', 'install/probe.py', 'install/quickstart.py'):
+        run(['docker', 'cp', README, machine + ':/root/quickstart/README.md'])
+        for path in ('conformance.py', 'sandcrab_conformance', 'install/probe.py', 'install/quickstart.py'):
             run(['docker', 'cp', SOURCE / path, machine + ':' + base + '/' + path])
         env = {**os.environ, 'SANDCRAB_BUNDLE_URL': download_url()}
         try:

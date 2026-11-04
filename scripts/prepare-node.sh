@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Optional Poketto/game workload interpreter; Sandcrab itself does not execute Node.
+# Optional pinned interpreter for consumer workloads and conformance.
 if [[ $EUID -ne 0 ]]; then
     printf 'Run as root on the workload host.\n' >&2
     exit 1
