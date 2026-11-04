@@ -37,7 +37,9 @@ then read the workflow summary. The native-only suite selects the `native` clien
 Incorrect task results are measurements; missing
 usage, infrastructure errors and incomplete cleanup fail the run. Every trial
 remains in the artifact. Paid work never runs automatically on a pull request.
-The [latest SDK model receipt](evidence/2026-10-31-workspace-sdk-model-post-fix.json)
+The [mixed native and SDK batch](evidence/2026-11-04-sandcrab-hardening/summary.json)
+records all 48 real-model trials, 18 independently verified programming exports and
+the reconciled cost upper bound. The [October 31 SDK-only batch](evidence/2026-10-31-workspace-sdk-model-post-fix.json)
 records 18 independently graded successes, including recovery after missing-parent
 upload refusals, with complete exports and confirmed cleanup. The
 [first SDK batch](evidence/2026-10-30-workspace-sdk-model.json) and

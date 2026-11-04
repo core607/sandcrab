@@ -51,7 +51,20 @@ jobs:
           tag="$GITHUB_REF_NAME"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
           test "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse "$GITHUB_SHA^{commit}")"
+          python3 -c 'import os, tomllib; assert "v" + tomllib.load(open("crates/sandcrab/Cargo.toml", "rb"))["package"]["version"] == os.environ["GITHUB_REF_NAME"]'
           (cd dist && sha256sum -c SHA256SUMS)
+          private=$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)
+          package=${GITHUB_REPOSITORY,,}
+          owner_kind=$(gh api "repos/$GITHUB_REPOSITORY" --jq .owner.type)
+          case "$owner_kind" in User) scope=users ;; Organization) scope=orgs ;; *) exit 1 ;; esac
+          package_api="$scope/$GITHUB_REPOSITORY_OWNER/packages/container/${package#*/}"
+          if [[ "$private" == true ]]; then
+            if visibility=$(gh api "$package_api" --jq .visibility 2>"$RUNNER_TEMP/package-error"); then
+              test "$visibility" = private
+            else
+              grep -q 'HTTP 404' "$RUNNER_TEMP/package-error" || { cat "$RUNNER_TEMP/package-error" >&2; exit 1; }
+            fi
+          fi
           if gh release view "$tag" --json isDraft > "$RUNNER_TEMP/release.json" 2>/dev/null; then
             jq -e '.isDraft' "$RUNNER_TEMP/release.json" >/dev/null
           else
@@ -66,6 +79,13 @@ jobs:
           docker push "$target"
           digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$target")"
           case "$digest" in "ghcr.io/${GITHUB_REPOSITORY,,}@sha256:"*) ;; *) exit 1 ;; esac
+          docker pull "$digest"
+          test "$(docker inspect --format '{{.Id}}' "$digest")" = "$(docker inspect --format '{{.Id}}' "$source")"
+          if [[ "$private" == true ]]; then
+            python3 scripts/check_private_image.py "$package" "$tag"
+          fi
           gh release view "$tag" --json body --jq .body > "$RUNNER_TEMP/notes.md"
           printf '\nContainer image: `%s`\n' "$digest" >> "$RUNNER_TEMP/notes.md"
           gh release edit "$tag" --notes-file "$RUNNER_TEMP/notes.md" --draft=false
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern sandcrab-linux-x86_64.zip --dir "$RUNNER_TEMP/release-readback"
+          cmp "dist/sandcrab-linux-x86_64.zip" "$RUNNER_TEMP/release-readback/sandcrab-linux-x86_64.zip"
