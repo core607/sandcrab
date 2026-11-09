@@ -90,6 +90,8 @@ pub struct Profile {
     pub temporary_inodes: u64,
     pub tasks_max: u64,
     pub cpu_quota_percent: u64,
+    #[serde(default = "cpu_weight")]
+    pub cpu_weight: u64,
     pub timeout_millis: u64,
     pub session_ttl_millis: u64,
     pub output_limit_bytes: usize,
@@ -136,6 +138,9 @@ impl Profile {
 }
 fn file_records() -> usize {
     256
+}
+fn cpu_weight() -> u64 {
+    100
 }
 fn result_ttl() -> u64 {
     300_000
@@ -412,6 +417,7 @@ impl Config {
                 || !(32..=1_000_000).contains(&profile.temporary_inodes)
                 || !(16..=4096).contains(&profile.tasks_max)
                 || !(1..=10000).contains(&profile.cpu_quota_percent)
+                || !(1..=10000).contains(&profile.cpu_weight)
                 || !(1..=300_000).contains(&profile.timeout_millis)
                 || !(100..=86_400_000).contains(&profile.session_ttl_millis)
                 || !(1..=MAX_OUTPUT.min(service.max_output_bytes))
@@ -438,7 +444,11 @@ mod tests {
     }
     #[test]
     fn requested_resources_preserve_operator_mounts_identity_and_hard_caps() {
-        let config = Config::parse(EXAMPLE).unwrap();
+        let config = Config::parse(&EXAMPLE.replace(
+            "cpu_quota_percent = 50",
+            "cpu_quota_percent = 50\ncpu_weight = 10",
+        ))
+        .unwrap();
         let profile = &config.profiles["python"];
         let limited = profile
             .with_resources(Some(&Resources {
@@ -448,6 +458,7 @@ mod tests {
             .unwrap();
         assert_eq!(limited.memory_bytes, 32 * 1024 * 1024);
         assert_eq!(limited.cpu_quota_percent, 25);
+        assert_eq!(limited.cpu_weight, 10);
         assert_eq!(limited.exec_user, profile.exec_user);
         assert_eq!(limited.read_only, profile.read_only);
         assert_eq!(limited.tasks_max, profile.tasks_max);
@@ -476,6 +487,21 @@ mod tests {
             ));
         }
         assert!(serde_json::from_str::<Resources>(r#"{"memoryBytes":33554432,"uid":0}"#).is_err());
+        assert!(serde_json::from_str::<Resources>(r#"{"cpuWeight":10000}"#).is_err());
+    }
+    #[test]
+    fn cpu_weights_default_to_equal_service_and_require_bounded_operator_configuration() {
+        assert_eq!(
+            Config::parse(EXAMPLE).unwrap().profiles["python"].cpu_weight,
+            100
+        );
+        for weight in [0, 1, 10, 10000, 10001] {
+            let input = EXAMPLE.replace(
+                "cpu_quota_percent = 50",
+                &format!("cpu_quota_percent = 50\ncpu_weight = {weight}"),
+            );
+            assert_eq!(Config::parse(&input).is_ok(), (1..=10000).contains(&weight));
+        }
     }
     #[test]
     fn large_operator_cohorts_still_require_bounded_record_capacity() {

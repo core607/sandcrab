@@ -442,6 +442,17 @@ request returns the existing run; changed arguments give `ID_CONFLICT`. A stale
 epoch gives `SERVER_CHANGED`. After restart old outcomes are unknown, not proof of
 nonexecution. Forgetting or result expiry ends replay protection; never reuse that ID.
 
+An operator may set `cpu_weight = 10` in a background profile to give runnable
+peer workloads a smaller CPU share under contention. The range is 1..10000;
+omitting it keeps the equal-weight default of 100. `cpuWeight` in info is read-only:
+callers select an operator-defined profile and cannot override its weight. A
+session's parent cgroup bounds all its named shells together. Finite runs and
+bounded profile helpers also use the profile weight. The daemon verifies each
+weight before execution; failure refuses startup. Weights do not reserve CPU or
+relax CPU, memory, task or zero-swap limits. See the [measured service-class
+comparison](../../evidence/sandcrab-service-classes-2026-11-09/summary.json) for its
+synthetic workload and the separate startup/execution-bound decision.
+
 States are `queued`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out`, `output_limit`,
 `resource_limit`, `refused` and `closing`. Terminal results include exit code, stdout, stderr
 and truncation, or a failure code. Output bounds apply to combined raw stdout and

@@ -58,6 +58,7 @@ impl Group {
             memory_bytes: profile.memory_bytes,
             tasks_max: profile.tasks_max,
             cpu_quota_percent: profile.cpu_quota_percent,
+            cpu_weight: profile.cpu_weight,
             oom_group: false,
         })?;
         group.enable_children()

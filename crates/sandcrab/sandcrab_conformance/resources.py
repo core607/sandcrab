@@ -20,7 +20,7 @@ from pathlib import Path
 fields = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
 caps = {key: int(fields[key], 16) for key in ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb')}
 controls = {}
-for name in ('memory.max', 'memory.swap.max', 'cpu.max', 'pids.max', 'cgroup.procs', 'cgroup.subtree_control'):
+for name in ('memory.max', 'memory.swap.max', 'cpu.max', 'cpu.weight', 'pids.max', 'cgroup.procs', 'cgroup.subtree_control'):
     try:
         fd = os.open('/sys/fs/cgroup/' + name, os.O_WRONLY)
     except OSError as error:
@@ -46,8 +46,14 @@ print(json.dumps({'uids': fields['Uid'].split(), 'gids': fields['Gid'].split(), 
 
 
 class ResourcesProbe(Probe):
+    def __init__(self, binary, tools, report):
+        super().__init__(binary, tools, report)
+        profile = self.config.read_text().split('[profiles.python]', 1)[1]
+        with self.config.open('a') as config:
+            config.write('\n[profiles.background]' + profile.replace('cpu_quota_percent = 50', 'cpu_quota_percent = 50\ncpu_weight = 10'))
+
     def authority(self, session, group):
-        controls = ('memory.max', 'memory.swap.max', 'cpu.max', 'pids.max')
+        controls = ('memory.max', 'memory.swap.max', 'cpu.max', 'cpu.weight', 'pids.max')
         def host_limits():
             return {name: (group / name).read_text().strip() for name in controls}
         before = host_limits()
@@ -69,7 +75,7 @@ class ResourcesProbe(Probe):
         self.done('finite-and-shell-credentials-capabilities-no-new-privileges-and-hard-limits')
         self.done('guest-cgroup-controls-deny-write-open-and-host-resource-caps-survive')
 
-    def limits(self, identity, memory=33554432, cpu=25, session=False):
+    def limits(self, identity, memory=33554432, cpu=25, session=False, weight=100):
         deadline = time.monotonic() + 8
         root = self.workloads_group / ('run-' + identity)
         if session:
@@ -85,8 +91,10 @@ class ResourcesProbe(Probe):
                     assert memory // page * page <= int((root / 'memory.max').read_text()) <= (memory + page - 1) // page * page
                     quota, period = (root / 'cpu.max').read_text().split()
                     assert int(quota) * 100 == cpu * int(period)
+                    assert int((root / 'cpu.weight').read_text()) == weight
                     if session:
                         parent = root.parent
+                        assert int((parent / 'cpu.weight').read_text()) == weight
                         assert parent.name == 'session-' + parent_identity and parent.parent == self.workloads_group
                         assert int((parent / 'memory.max').read_text()) == memory // page * page
                         assert (parent / 'memory.swap.max').read_text().strip() == '0'
@@ -109,6 +117,7 @@ class ResourcesProbe(Probe):
         assert profile['memoryBytes'] == 67108864
         assert profile['minimumMemoryBytes'] == 16777216
         assert profile['cpuQuotaPercent'] == 50
+        assert profile['cpuWeight'] == 100 and self.info['profiles']['background']['cpuWeight'] == 10
         resources = {'memoryBytes': 33554432, 'cpuQuotaPercent': 25}
         self.done('profile-resource-caps-and-memory-floor-are-discoverable')
 
@@ -142,6 +151,7 @@ class ResourcesProbe(Probe):
                               ({'cpuQuotaPercent': 51}, 'PROFILE_LIMIT'),
                               ({'cpuQuotaPercent': 0}, 'PROFILE_LIMIT'),
                               ({'cpuQuotaPercent': 0.5}, 'INVALID_REQUEST'),
+                              ({'cpuWeight': 10000}, 'INVALID_REQUEST'),
                               ({'uid': 0}, 'INVALID_REQUEST')]:
             for endpoint in ['runs', 'sessions']:
                 identity = str(uuid.uuid4())
@@ -182,3 +192,21 @@ class ResourcesProbe(Probe):
         self.session_close(session)
         self.session_forget(session)
         self.done('ordinary-cli-run-and-session-options-enforce-lower-kernel-limits')
+
+        run = self.submit('import time; time.sleep(30)', profile='background', resources=resources)
+        self.limits(run['id'], weight=10)
+        self.cancel(run)
+        session = self.session_open(profile='background', resources=resources)
+        group = self.limits(session['id'], session=True, weight=10).parent
+        child = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId']}
+        status, result = http(self.socket, 'POST', f'/v1/sessions/{session["id"]}/shells', child)
+        assert status == 202, result
+        assert self.session_wait(child)['state'] == 'ready'
+        self.limits(child['id'], session=True, weight=10)
+        self.authority(session, group)
+        self.session_close(session)
+        assert not group.exists()
+        self.session_forget(session)
+        self.receipt['cpuWeights'] = {'default': 100, 'background': 10, 'namedShellParent': 10,
+                                     'callerOverride': 'DENIED', 'cleanup': 'PASS'}
+        self.done('operator-cpu-weights-reach-finite-session-and-named-shell-cgroups')

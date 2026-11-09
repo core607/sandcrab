@@ -95,7 +95,13 @@ targeted comparison and uploads every attempt. It runs on collector changes or
 manual dispatch, separately from the L2/L7/L9 full-density checkpoints. These
 synthetic results make no production-capacity or general latency claim.
 
-## Native measurement
+The [retained comparison summary](../../evidence/sandcrab-preparation-reuse-2026-11-09/summary.json)
+records both complete attempts. Across 50 distinct workspaces, recipes reduce
+imported data from 202.15 MiB to 4.52 MiB and shared dependency cache from 200 MiB
+to 4 MiB. Writing into all dependency files still copies up 200 MiB in either
+mode. Preparation improves in both repetitions; write-tail improvement varies.
+
+## Service-class comparison
 
 `service_classes.py` is a separate targeted experiment for possible operator
 service classes. Four CPU compilation loops run beside 60 fixed interactive
@@ -103,7 +109,7 @@ commands and a burst of eight session starts. The five conditions keep defaults,
 reduce the background groups' CPU weight, bound caller-side background execution,
 bound concurrent starts, or combine weights with the startup bound. Two
 repetitions reverse their order. The controller
-changes only its owned fixture cgroups; the runtime gains no scheduling control.
+changes only its owned fixture cgroups to isolate the weight mechanism.
 Every fixture retains a 1 GiB aggregate memory bound, two CPUs of quota, finite
 task limits and zero swap. No physical-core or SMT isolation is claimed.
 
@@ -127,6 +133,17 @@ runs on collector changes or manual dispatch and retains raw attempts in CI.
 The [execution-cost breakdown](https://github.com/core607/poketto/blob/64e73e4edeba4a136d48436ec5ae80a514c41295/executor-native/evidence/2026-11-09-native-phase-measurements/summary.json)
 provides separate serial consumer observations; this experiment measures an
 explicit concurrent workload before choosing controls for it.
+
+The [comparison summary](../../evidence/sandcrab-service-classes-2026-11-09/summary.json)
+selects optional [operator profile weights](../../crates/sandcrab/README.md).
+Weights alone meet every threshold in both repetitions. Separate startup bounds
+provide no demonstrated additional benefit; the execution-bound condition exceeds
+the caller-wait threshold. The default weight remains 100, with no new queue or
+topology control. The [conditional investigation summary](../../evidence/sandcrab-conditional-performance-2026-11-09/summary.json)
+records why large-environment EROFS/lazy loading and idle reclamation remain
+deferred, including the historical L9 idle-memory trigger values.
+
+## Native measurement
 
 Use an isolated root-capable systemd host with cgroup v2, XFS utilities, Git,
 Python 3.10+, bash, ripgrep and the [prepared toolchain](../../scripts/prepare-tools.sh).
