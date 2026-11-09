@@ -1,4 +1,6 @@
 inspect-ai==0.3.285
+# Inspect imports acp.helpers; ACP 1.0 removed that module.
+agent-client-protocol==0.12.1
 PyYAML==6.0.3
 httpx==0.28.1
 -r sdk/requirements.txt

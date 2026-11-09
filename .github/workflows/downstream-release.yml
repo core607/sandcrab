@@ -19,6 +19,10 @@ on:
       request_id:
         description: Unique 32-character lowercase hex request identifier
         required: true
+      check:
+        description: Consumer check name selecting .github/ci/sandcrab-NAME-check.sh
+        default: release
+        required: false
 
 permissions: {}
 
@@ -28,6 +32,7 @@ env:
   REVISION: ${{ inputs.revision }}
   RELEASE: ${{ inputs.release }}
   REQUEST_ID: ${{ inputs.request_id }}
+  DOWNSTREAM_CHECK: ${{ inputs.check || 'release' }}
 
 jobs:
   bundle:
@@ -49,6 +54,7 @@ jobs:
           [[ "$CONSUMER" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]
           [[ "$REVISION" =~ ^[0-9a-f]{40}$ && "$REQUEST_ID" =~ ^[0-9a-f]{32}$ ]]
           [[ "$RELEASE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$DOWNSTREAM_CHECK" =~ ^[a-z][a-z0-9-]{0,31}$ ]]
           git check-ref-format "refs/heads/$BRANCH"
           python3 -I -c 'import json, os, sys
           approved = json.loads(os.environ["ALLOWED"] or "[]")
@@ -72,6 +78,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: inputs.check != '' && inputs.check != 'release'
+        with:
+          node-version: '24.19.0'
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: inputs.check != '' && inputs.check != 'release'
+        with:
+          python-version: '3.12.14'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-input
@@ -88,7 +102,7 @@ jobs:
           GIT_TERMINAL_PROMPT=0 git fetch --no-tags --depth=1 "https://github.com/$CONSUMER.git" "refs/heads/$BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$REVISION"
           git checkout --quiet --detach "$REVISION"
-          entry=.github/ci/sandcrab-release-check.sh
+          entry=".github/ci/sandcrab-$DOWNSTREAM_CHECK-check.sh"
           [[ -f "$entry" && ! -L "$entry" && "$(realpath "$entry")" == "$PWD/$entry" ]]
           export SANDCRAB_EVIDENCE="$RUNNER_TEMP/downstream-results"
           mkdir -m 700 "$SANDCRAB_EVIDENCE"
@@ -113,7 +127,8 @@ jobs:
           RESULT: ${{ needs.test.result }}
         run: |
           jq -n '{request:env.REQUEST_ID, consumer:env.CONSUMER, revision:env.REVISION,
-            release:env.RELEASE, bundleSha256:env.DIGEST, result:env.RESULT}' > summary.json
+            release:env.RELEASE, bundleSha256:env.DIGEST, result:env.RESULT}
+            + (if env.DOWNSTREAM_CHECK == "release" then {} else {check:env.DOWNSTREAM_CHECK} end)' > summary.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: downstream-receipt

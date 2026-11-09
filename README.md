@@ -69,6 +69,10 @@ branch. Add the repository to the JSON array in the `SANDCRAB_DOWNSTREAM_REPOSIT
 Actions variable. The consumer provides `.github/ci/sandcrab-release-check.sh`, receives
 the ZIP in `SANDCRAB_BUNDLE`, and writes test output under `SANDCRAB_EVIDENCE`. The receipt
 records the tested commit, archive digest and result. [Downstream release check](.github/workflows/downstream-release.yml)
+also accepts a bounded `check` name to select `.github/ci/sandcrab-NAME-check.sh`.
+Additional checks receive Node.js 24.19.0 and Python 3.12.14; their receipt names the
+check so a different acceptance cannot satisfy it. The default `release` entry
+and receipt remain the standard release check.
 
 Sandcrab is licensed under [Apache 2.0](LICENSE). The separate bundled helper and
 its dependencies retain their [upstream licenses and corresponding source](crates/sandcrab-launch/bwrap/README.md).
