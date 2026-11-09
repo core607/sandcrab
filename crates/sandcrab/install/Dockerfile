@@ -4,7 +4,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/sandcrab
 COPY --chmod=0755 sandcrab bwrap ./
-COPY --chmod=0644 bwrap-notices.txt bwrap-source.tar.xz ./
+COPY --chmod=0644 bwrap-notices.txt bwrap-source.tar.xz LICENSE THREAT-MODEL.md ./
 RUN ln -s /opt/sandcrab/sandcrab /usr/local/bin/sandcrab
 ENTRYPOINT ["/opt/sandcrab/sandcrab"]
 CMD ["serve", "--container"]

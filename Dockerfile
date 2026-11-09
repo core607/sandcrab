@@ -21,6 +21,7 @@ FROM helper AS package
 COPY --from=binary /source/target/x86_64-unknown-linux-musl/release/sandcrab /bundle/sandcrab
 COPY crates/sandcrab/install/__main__.py /recipe/__main__.py
 COPY THREAT-MODEL.md /bundle/THREAT-MODEL.md
+COPY LICENSE /bundle/LICENSE
 COPY scripts/package.py /recipe/package.py
 RUN python3 /recipe/package.py /bundle /recipe/__main__.py
 

@@ -6,6 +6,9 @@ uses its executable. Replaying the same bundle reuses matching protected files.
 For a different bundle in an existing installation, use the
 [custom installation](../README.md#custom-installation) and manage the service unit explicitly.
 
+Source-built ZIPs also install the project's `LICENSE` and `THREAT-MODEL.md` beside
+the executables. Container builds retain the same documents under `/opt/sandcrab`.
+
 `sandcrab install --dry-run` prints directory modes, the account, configuration,
 units and activation commands without changing the machine or generating a
 credential. Run `sudo sandcrab install` to apply them. Installation preserves an

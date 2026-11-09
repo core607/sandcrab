@@ -4,6 +4,8 @@ import importlib.util
 from io import BytesIO
 import os
 from pathlib import Path
+import hashlib
+import shutil
 import stat
 import tempfile
 import unittest
@@ -52,6 +54,29 @@ class BundleFiles(unittest.TestCase):
             self.entry.install_files(self.archive, self.release)
         self.assertEqual(binary.read_bytes(), b'operator-owned')
 
+    def test_real_packager_delivers_the_project_license_and_threat_model_offline(self):
+        repository = Path(__file__).resolve().parents[3]
+        spec = importlib.util.spec_from_file_location('release_package', repository / 'scripts/package.py')
+        package = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(package)
+        payload = self.root / 'payload'
+        payload.mkdir()
+        for name in ('sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz'):
+            (payload / name).write_bytes(name.encode())
+        for name in ('LICENSE', 'THREAT-MODEL.md'):
+            shutil.copyfile(repository / name, payload / name)
+        package.package(payload, Path(__file__).with_name('__main__.py'))
+        with ZipFile(payload / 'sandcrab-linux-x86_64.zip') as archive:
+            self.entry.install_files(archive, self.release)
+        for name in ('LICENSE', 'THREAT-MODEL.md'):
+            self.assertEqual((self.release / name).read_bytes(), (repository / name).read_bytes())
+            self.assertEqual(stat.S_IMODE((self.release / name).stat().st_mode), 0o644)
+        rows = [line.split('  ', 1) for line in (payload / 'SHA256SUMS').read_text().splitlines()]
+        self.assertEqual(len(rows), len({name for _, name in rows}))
+        self.assertEqual({name for _, name in rows}, {*self.entry.FILES, 'sandcrab-linux-x86_64.zip'})
+        for expected, name in rows:
+            self.assertEqual(expected, hashlib.sha256((payload / name).read_bytes()).hexdigest())
+
     def test_foreign_directory_link_and_unexpected_archive_member_are_refused(self):
         other = self.root / 'other'
         other.mkdir()
@@ -64,6 +89,16 @@ class BundleFiles(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.entry.install_files(self.archive, self.release)
         self.assertFalse(self.release.exists())
+
+    def test_a_prior_release_missing_documents_gets_upgrade_guidance_without_replacement(self):
+        self.entry.install_files(self.archive, self.release)
+        binary = self.release / 'sandcrab'
+        original = binary.stat().st_ino
+        (self.release / 'LICENSE').unlink()
+        with self.assertRaisesRegex(RuntimeError, 'custom installation procedure'):
+            self.entry.install_files(self.archive, self.release)
+        self.assertEqual(binary.stat().st_ino, original)
+        self.assertFalse((self.release / 'LICENSE').exists())
 
 
 if __name__ == '__main__':
