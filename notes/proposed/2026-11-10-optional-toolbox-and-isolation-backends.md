@@ -89,19 +89,16 @@ scope, redirects, request/reply size and time, and returns only authorized respo
 data. It rechecks caller grants and keeps credentials out of guest replies and
 diagnostics. The daemon's ordinary egress proxy does not acquire application keys.
 
-### Independent consumer
+### Independent caller example
 
-The first proposed integration is a SillyTavern server plugin using the existing
-Unix socket API and host calls. Example character cards exercise conditional
-discovery and authorized state changes. The plugin owns users, conversations,
-state schemas, tool policy and credentialed handlers; these remain an optional
-consumer package rather than daemon configuration concepts.
+A small standalone caller example uses the existing Unix socket API and host
+calls to demonstrate conditional discovery and authorized state changes. Its
+state schemas, tool policy and credentialed handlers remain caller-owned and do
+not become daemon configuration concepts.
 
-Unix peer credentials authenticate the plugin's server process, not each chat
-user. The plugin maps each request to its authenticated user and conversation,
-authorizes it and binds its sandbox and host-call observer accordingly. A second
-small caller example should use the same toolbox without SillyTavern state or
-character-card semantics, demonstrating the package boundary.
+Unix peer credentials authenticate a caller process, not each application user.
+Applications serving multiple users authorize each request using the authenticated
+user's grants and context, then bind the sandbox and host-call observer accordingly.
 
 ### Optional future isolation backend
 
@@ -152,8 +149,8 @@ their own workload evidence and implementation decision.
 
 ## Verification
 
-Before accepting an implementation, exercise the real plugin and an independent
-caller through the public API. Verify hierarchical help and function discovery,
+Before accepting an implementation, exercise the standalone caller example
+through the public API. Verify hierarchical help and function discovery,
 absence of hidden files and metadata in fresh workspaces, state validation,
 cross-user denial, revoked direct host calls, retained tool copies, session teardown,
 duplicate effects and uncertain outcomes. Use malformed, quoted, multiple and
