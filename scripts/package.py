@@ -6,7 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 
 def package(directory, entrypoint):
-    files = ['sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz']
+    files = ['sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz', 'LICENSE', 'THREAT-MODEL.md']
     archive = directory / 'sandcrab-linux-x86_64.zip'
     with ZipFile(archive, 'x') as bundle:
         for path in [entrypoint, *(directory / name for name in files)]:
@@ -15,7 +15,7 @@ def package(directory, entrypoint):
             entry.external_attr = 0o100644 << 16
             bundle.writestr(entry, path.read_bytes(), compress_type=ZIP_DEFLATED)
     with (directory / 'SHA256SUMS').open('x', encoding='utf-8') as checksums:
-        for name in [*files, archive.name, 'THREAT-MODEL.md']:
+        for name in [*files, archive.name]:
             checksums.write(hashlib.sha256((directory / name).read_bytes()).hexdigest() + '  ' + name + '\n')
 
 
