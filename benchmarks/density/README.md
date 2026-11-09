@@ -71,6 +71,10 @@ drops global caches. Complete-corpus hashes verify successful reads independentl
 Every cohort also writes and syncs one byte in every dependency file. The report
 records application bytes, actual private copy-up files, logical/allocated bytes,
 per-device `io.stat`, anon/file/kernel memory, CPU usage/throttling and pressure.
+Kernel endpoint observations follow 2.1 seconds of quiescence, outside measured
+command and preparation wall time. This allows the [kernel's periodic memory-stat
+flush](https://github.com/torvalds/linux/blob/v7.0/mm/memcontrol.c) to run; endpoint
+counters still do not form an atomic snapshot or a memory peak.
 Allocated blocks do not establish unique physical extent usage, and stacked I/O
 devices must not be added together. Output separates failed/refused commands from
 successful throughput and reports p50/p95/p99. Immutable sources are read back

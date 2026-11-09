@@ -24,6 +24,7 @@ from sandcrab_conformance.runner import execute_fixture
 
 SEED = 20261109
 FILE_BYTES = 65536
+SETTLE_SECONDS = 2.1
 
 
 def corpus(root, files):
@@ -171,6 +172,7 @@ async def exercise(fixture, item, ledger, files, mode, count):
                     raise RuntimeError('Unexpected fixture layer path')
                 roots.append(root)
         item['preparationNs'] = time.monotonic_ns() - started
+        await asyncio.sleep(SETTLE_SECONDS)
         item['afterPreparation'] = sample(fixture)
         _, catalog = await engine.call('GET', '/v1/templates')
         item['templatePool'] = catalog['pool']
@@ -182,6 +184,7 @@ async def exercise(fixture, item, ledger, files, mode, count):
         item['coldResidency'] = residency(roots, files, evict=True)
         if item['coldResidency']['residentPages']:
             raise RuntimeError('File-specific eviction did not establish cold pages')
+        await asyncio.sleep(SETTLE_SECONDS)
         item['beforeReadCopyUp'] = upper_files(fixture, sessions)
         if item['beforeReadCopyUp']['files']:
             raise RuntimeError('Preparation copied immutable corpus data')
@@ -192,6 +195,9 @@ async def exercise(fixture, item, ledger, files, mode, count):
             commands = await asyncio.gather(*(engine.execute(session, writer() if phase == 'write-heavy' else reader('/workspace'),
                 kind=phase, timeout_ms=60000) for session in sessions))
             row['wallNs'] = time.monotonic_ns() - begin
+            # Hierarchical memory.stat batches per-CPU updates. Quiescence stays
+            # outside measured command wall time and precedes the endpoint read.
+            await asyncio.sleep(SETTLE_SECONDS)
             row['after'] = sample(fixture)
             row['latency'] = latency(commands)
             row['successfulPerSecond'] = row['latency']['successful'] * 1_000_000_000 / row['wallNs']
@@ -237,6 +243,7 @@ class ReuseFixture(Fixture):
         super().configure(tools, memory, free)
         self.config.write_text(self.config.read_text().replace('[storage]',
             'max_templates = 128\ntemplate_pool_bytes = 536870912\n[storage]', 1))
+        self.receipt['configSha256'] = hashlib.sha256(self.config.read_bytes()).hexdigest()
 
 
 def main():
@@ -257,6 +264,7 @@ def main():
         'started': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'result': 'RUNNING', 'cases': [],
         'parameters': {'readers': counts, 'repetitions': repetitions, 'files': files, 'bytesPerFile': FILE_BYTES,
                        'memoryMaxBytes': 1024**3, 'cpuQuotaPercent': 200, 'swapBytes': 0,
+                       'kernelObservationSettleSeconds': SETTLE_SECONDS,
                        'cachePolicy': 'Only fixture files: fsync, POSIX_FADV_DONTNEED, root mincore verification'},
         'binaries': {name: {'bytes': path.stat().st_size, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
                      for name, path in [('baseline', args.baseline_binary), ('candidate', args.binary)]},
