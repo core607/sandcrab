@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "scope": "Conditional template publication and independent SDK environment reuse",
+  "result": "PASS",
+  "baselineCommit": "3e36a37660c72c4a4476997db34036553f01f607",
+  "baselineBinary": {
+    "bytes": 4703136,
+    "sha256": "c3ee3d3f6a9851b59f0a07fe69cb3e965dff35d1c9836e009c05c210e7e7835e"
+  },
+  "candidateBinary": {
+    "bytes": 4711328,
+    "sha256": "6242f643787758da97ccd91ed63500bf436014af9ea24c994ffefa0af58e0bf6"
+  },
+  "byteIncrease": 8192,
+  "sourceSha256": {
+    ".github/workflows/evals.yml": "785abd1a5b8789d9d758717bd479eecadb22b19c0d775ccf95309f19bc32a184",
+    ".gitignore": "a3951ddbdbaa8a9fa754c3323a9bd84c5c63f7af388663df1530f2ef1314462f",
+    "README.md": "2d086cd5241976a860bc1e2cbbc679f0ed51831948213946aec64f9b999dfdff",
+    "crates/sandcrab/README.md": "32538c3ea7ab2e240ff1279dde14fd50eb95c95d13d35e72532d1811ea81fb98",
+    "crates/sandcrab/openapi.json": "3c586b50fb9976c088fad5887bee96495b6953788308418d48110cf7147d09f8",
+    "crates/sandcrab/opensandbox.md": "3d4fcfda0e8318cd4adfc0573c9fbcffc45b7770fd05183ebe09589b6921cde5",
+    "crates/sandcrab/sandcrab_conformance/checkpoint.py": "87409146bca4bb103a872d3712a80ae2b36e2447be2567d6c3cac136bf8a0991",
+    "crates/sandcrab/sandcrab_conformance/rootfs.py": "75a382a5471f6a49eadfb34501a8a92160a555186b6db736351216aa3a12b89b",
+    "crates/sandcrab/sandcrab_conformance/runner.py": "23654b6d2648c72c08e71311e74c66bdb0ec4631bea57faf12e3232ed82192d6",
+    "crates/sandcrab/src/file_client.rs": "95ab8886c8210d0270ce83f3f31fd59735372508d1488001fbee76eac4aae13e",
+    "crates/sandcrab/src/file_io.rs": "2077fc4ff686b5c1e4ff5b5242ee1afefb593e690518ac8a9221f7e9a99bde4a",
+    "crates/sandcrab/src/files.rs": "8635b018233062ae259862a4a160e13cdf589f5184efeb75af5a1e68ac3cc514",
+    "crates/sandcrab/src/server.rs": "96475c770aabadbd1ca192cf0bdd2078c631bfb40b0e22470335c60bad62207a",
+    "crates/sandcrab/src/template_api.rs": "ec72870cb4bd48f5c57fddd4e100f55f8af7f87b7a9de58a3f96d2bdc1832e60",
+    "crates/sandcrab/src/template_client.rs": "f8e9a081ee130600767d95c39dd2a087203d933984eeb5dbf7d9ae7efa680c92",
+    "crates/sandcrab/src/template_io.rs": "9fcf2d26802a9860fc495b6c4ade796d0f80b85d89fad2b3a85928705dff6680",
+    "evals/sdk/README.md": "7aff2b76e162c207a95dfd156403440eed3370a97692bb417a05087f61d4a7de",
+    "examples/sandcrab-environment.py": "52f26d0104b0cdf21cb69b76b8c139f89d6d05c6f3ceae8df5fb3b4e12338d5b",
+    "sdk/python/LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "sdk/python/README.md": "5cb539206df55c622ab7789cfae1010a21aaee79bf7a8dad762237915dcb020a",
+    "sdk/python/pyproject.toml": "5ad9910cc06ed483051a0d4c85aad339b8eefd13733ffe53d64eae8e09f9248b",
+    "sdk/python/src/sandcrab_templates/__init__.py": "363a1e07166f3ef457b20ee9a097226c7dd919e4bc685f85718209aacd8185af",
+    "sdk/python/src/sandcrab_templates/client.py": "a6f348386a4fec9c106ee1ffc9a4fa4ac8dfb3043dd23580d63767f4be6c59a2",
+    "sdk/python/tests/test_templates.py": "270275935cd3454f08c0241c293159b27f957257c10b4b03218629e603e2398f"
+  },
+  "checks": {
+    "rustFormat": "PASS",
+    "rustClippy": "PASS",
+    "rustTests": 122,
+    "controllerTests": 5,
+    "pythonSdkUnitTests": {
+      "windows": 8,
+      "linux": 8
+    },
+    "pythonWheelLicense": "PASS",
+    "jvmSdkBuildAndStyle": "PASS",
+    "nativeAndSdkChecks": 15,
+    "pythonPublishedSdk": "1.1.0",
+    "kotlinPublishedSdk": "1.1.0",
+    "cleanup": "PASS"
+  },
+  "attempts": [
+    {
+      "stage": "rust-check1",
+      "result": "FAIL",
+      "cause": "A response parser returns &str; the new CLI wrapper initially omitted its io::Error conversion. Fixed before native execution."
+    },
+    {
+      "stage": "rust-check2",
+      "result": "PASS"
+    },
+    {
+      "stage": "native1",
+      "result": "PASS",
+      "cleanup": "PASS",
+      "receiptSha256": "830100c5dcad180fe515e7e820f794d8318e607b93675f4eb393d6e07891c243",
+      "scope": "Protocol/CLI and predicted-identity proof before final OpenAPI-only update; no SDK requested."
+    },
+    {
+      "stage": "rust-final",
+      "result": "PASS"
+    },
+    {
+      "stage": "sdk1",
+      "result": "PASS",
+      "cleanup": "PASS",
+      "receiptSha256": "11c64bf5f2b522ecf9aa1c880fc35072c1a7a463e1f25a2d1e7cb2a762ff1c26",
+      "scope": "Final binary; real Python/Kotlin SDKs and independent environment example."
+    }
+  ],
+  "environment": {
+    "archiveBytes": 5132800,
+    "independentInstances": 2,
+    "timingsSeconds": {
+      "prepareAndValidateSeconds": 0.6550918139982969,
+      "captureSeconds": 0.05972933501470834,
+      "publishSeconds": 0.07241965702269226,
+      "instance1StartAndTestSeconds": 0.6380378890316933,
+      "instance2StartAndTestSeconds": 0.6442870349856094
+    },
+    "workflow": [
+      "SDK creates builder",
+      "write source and run build/validation",
+      "one capture call returns archive and expected identity",
+      "close builder",
+      "one publish call guards identity and reconciles transport loss by GET",
+      "SDK creates each independent instance from the published ID"
+    ]
+  },
+  "boundaries": [
+    "Disposable Linux native service and real authenticated SDK clients; no model and no production workload.",
+    "The builder and subsequent instances share host caches; one tiny build and two reuse instances do not isolate a cache or throughput gain.",
+    "Recorded wall times include SDK creation, transport and validation; this is not density or a latency-SLO measurement.",
+    "Python transport failure and cancellation cases are separately identified unit fixtures. Native acceptance also discards a real publication reply and reads its expected immutable ID.",
+    "Raw local attempts remain in operator storage; CI produces its own native/SDK/eval artifacts."
+  ]
+}

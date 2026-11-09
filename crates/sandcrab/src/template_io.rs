@@ -34,6 +34,7 @@ struct Scan {
     bytes: u64,
     allocated_bytes: u64,
     entries: usize,
+    normalize: bool,
 }
 
 impl Scan {
@@ -60,7 +61,7 @@ impl Scan {
                 return Err(invalid("FILE_ENTRY_LIMIT"));
             }
             let meta = statat(dir, name, AtFlags::SYMLINK_NOFOLLOW)?;
-            if meta.st_uid != job.uid || meta.st_gid != job.gid {
+            if !self.normalize && (meta.st_uid != job.uid || meta.st_gid != job.gid) {
                 return Err(invalid("UNSUPPORTED_FILE_OWNER"));
             }
             field(&mut self.hash, path.as_bytes());
@@ -133,9 +134,19 @@ impl Scan {
 }
 
 pub fn identify(root: &Path, job: &Job) -> io::Result<Tree> {
+    identify_tree(root, job, false)
+}
+
+/// Predict import identity while the source is frozen; imports normalize owners
+/// and the root mode but preserve supported entry modes and hard-link topology.
+pub fn identify_capture(root: &Path, job: &Job) -> io::Result<Tree> {
+    identify_tree(root, job, true)
+}
+
+fn identify_tree(root: &Path, job: &Job, normalize: bool) -> io::Result<Tree> {
     let directory = crate::file_io::directory(root)?;
     let meta = directory.metadata()?;
-    if meta.uid() != job.uid || meta.gid() != job.gid {
+    if !normalize && (meta.uid() != job.uid || meta.gid() != job.gid) {
         return Err(invalid("UNSUPPORTED_FILE_OWNER"));
     }
     let mut scan = Scan {
@@ -147,11 +158,19 @@ pub fn identify(root: &Path, job: &Job) -> io::Result<Tree> {
             .checked_mul(512)
             .ok_or_else(|| invalid("FILE_LIMIT"))?,
         entries: 0,
+        normalize,
     };
     scan.hash.update(b"sandcrab-template-tree-v1\0");
     scan.hash.update(job.uid.to_le_bytes());
     scan.hash.update(job.gid.to_le_bytes());
-    scan.hash.update((meta.mode() & 0o777).to_le_bytes());
+    scan.hash.update(
+        (if normalize {
+            0o755
+        } else {
+            meta.mode() & 0o777
+        })
+        .to_le_bytes(),
+    );
     scan.visit(&directory, "", job)?;
     Ok(Tree {
         id: format!("{:x}", scan.hash.finalize()),
@@ -219,6 +238,16 @@ mod tests {
         let tree = root.join("tree");
         let first = identify(&tree, &job).unwrap();
         assert_eq!((first.bytes, first.entries), (8, 2));
+        fs::set_permissions(&tree, fs::Permissions::from_mode(0o750)).unwrap();
+        rustix::fs::chown(
+            &tree,
+            Some(rustix::fs::Uid::ROOT),
+            Some(rustix::fs::Gid::ROOT),
+        )
+        .unwrap();
+        assert!(identify(&tree, &job).is_err());
+        assert_eq!(identify_capture(&tree, &job).unwrap().id, first.id);
+        crate::file_io::ownership(&crate::file_io::directory(&tree).unwrap(), &job, 0o755).unwrap();
         fs::remove_file(tree.join("z")).unwrap();
         fs::hard_link(tree.join("a"), tree.join("z")).unwrap();
         let linked = identify(&tree, &job).unwrap();

@@ -13,6 +13,8 @@ Python environment and retains the JSON SDK receipt with the evaluation artifact
 Paid model runs skip SDK conformance and keep their model evidence separate.
 
 Install [requirements.txt](requirements.txt) in a dedicated Python environment.
+Also install the [template extension](../../sdk/python/README.md) from `./sdk/python`
+in that environment for the rootfs publication workflow.
 Build the JVM client from the repository root:
 
 ```sh

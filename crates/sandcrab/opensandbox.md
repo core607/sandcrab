@@ -34,6 +34,10 @@ python3 examples/sandcrab-sdk.py
 kotlin examples/sandcrab-sdk.main.kts
 ```
 
+The [Python template extension](../../sdk/python/README.md) adds native filesystem
+capture, conditional immutable import and publication reconciliation. It composes
+with this SDK for the [independent environment workflow](../../examples/sandcrab-environment.py).
+
 ## Lifecycle
 
 The adapter owns and pins its native session, shell and command records until its

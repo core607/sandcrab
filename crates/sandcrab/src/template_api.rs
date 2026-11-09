@@ -20,12 +20,19 @@ pub fn import_path(path: &str) -> bool {
     path == "/v1/templates" || path.starts_with("/v1/templates?")
 }
 
-fn profile(query: &str) -> Result<String> {
+fn profile(query: &str) -> Result<(String, Option<String>)> {
     let values = crate::sdk_types::query(query)?;
-    match values.as_slice() {
-        [(key, name)] if key == "profile" && crate::config::name(name) => Ok(name.clone()),
-        _ => Err((400, "INVALID_QUERY")),
+    let (mut profile, mut expected) = (None, None);
+    for (key, value) in values {
+        match key.as_str() {
+            "profile" if profile.is_none() && crate::config::name(&value) => profile = Some(value),
+            "expectedId" if expected.is_none() && crate::file_io::digest(&value) => {
+                expected = Some(value)
+            }
+            _ => return Err((400, "INVALID_QUERY")),
+        }
     }
+    Ok((profile.ok_or((400, "INVALID_QUERY"))?, expected))
 }
 
 fn failure(error: &io::Error) -> (u16, &'static str) {
@@ -54,7 +61,7 @@ impl Service {
         if self.stopped.load(Ordering::SeqCst) {
             return Err((503, "STOPPING"));
         }
-        let name = profile(path.split_once('?').map_or("", |(_, query)| query))?;
+        let (name, expected) = profile(path.split_once('?').map_or("", |(_, query)| query))?;
         let profile = self
             .runtime
             .config
@@ -110,6 +117,9 @@ impl Service {
             if !contained || cancelled.load(Ordering::SeqCst) || self.stopped.load(Ordering::SeqCst)
             {
                 return Err((409, "TEMPLATE_CANCELLED"));
+            }
+            if expected.as_ref().is_some_and(|id| id != &tree.id) {
+                return Err((409, "TEMPLATE_ID_MISMATCH"));
             }
             let tree = store.publish(&stage, tree)?;
             serde_json::to_value(tree).map_err(|_| (503, "TEMPLATE_UNAVAILABLE"))
@@ -167,12 +177,19 @@ mod tests {
     use super::*;
     #[test]
     fn template_import_requires_one_explicit_profile() {
-        assert_eq!(profile("profile=python").unwrap(), "python");
+        assert_eq!(profile("profile=python").unwrap(), ("python".into(), None));
+        let id = "a".repeat(64);
+        assert_eq!(
+            profile(&format!("expectedId={id}&profile=python")).unwrap(),
+            ("python".into(), Some(id.clone()))
+        );
+        assert!(profile(&format!("profile=python&expectedId={id}&expectedId={id}")).is_err());
         for query in [
             "",
             "profile=python&profile=other",
             "profile=../escape",
             "profile=python&root=/host",
+            "profile=python&expectedId=invalid",
         ] {
             assert!(profile(query).is_err(), "{query}");
         }

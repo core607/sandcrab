@@ -457,6 +457,13 @@ fn send_snapshot(
 ) -> io::Result<()> {
     let bytes = snapshot.bytes;
     let etag = format!("\"{}\"", snapshot.sha256);
+    let template_id = snapshot.template_id.clone();
+    let profile = snapshot.lease.access.profile_name.clone();
+    let rootfs = if snapshot.lease.access.rootfs {
+        "true"
+    } else {
+        "false"
+    };
     let content_type = if snapshot.text {
         "text/plain; charset=utf-8"
     } else if snapshot.format == crate::file_io::Format::Tar {
@@ -476,6 +483,11 @@ fn send_snapshot(
     let mut headers = Vec::new();
     if !sdk {
         headers.push(("X-Sandcrab-Server-Id", service.id.as_str()));
+        if let Some(id) = &template_id {
+            headers.push(("X-Sandcrab-Template-Id", id.as_str()));
+            headers.push(("X-Sandcrab-Profile", profile.as_str()));
+            headers.push(("X-Sandcrab-Rootfs", rootfs));
+        }
     }
     if let Some(range) = &range {
         headers.push(("Content-Range", range.as_str()));

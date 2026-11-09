@@ -6,9 +6,10 @@ import os
 import socket
 import tarfile
 import threading
+import time
 
 from . import native
-from .native import call, http
+from .native import call, connect, http
 from .file import binary_http
 
 
@@ -20,7 +21,9 @@ def captured(probe, session, destination):
     assert receipt['bytes'] == len(content)
     assert receipt['sha256'] == hashlib.sha256(content).hexdigest()
     assert destination.stat().st_mode & 0o777 == 0o600
-    return content
+    assert len(receipt['template']['id']) == 64
+    assert receipt['template']['profile'] == 'python'
+    return content, receipt
 
 
 def check(probe, rootfs):
@@ -56,7 +59,7 @@ cd working
     observer = threading.Thread(target=observe)
     observer.start()
     try:
-        content = captured(probe, session, folder / 'workspace.tar')
+        content, receipt = captured(probe, session, folder / 'workspace.tar')
     finally:
         ended.set()
         observer.join(timeout=5)
@@ -73,7 +76,8 @@ cd working
         assert archive.getmember('link').issym()
         assert 'deleted' not in archive.getnames()
         assert archive.extractfile('executable').read() == b'#!/bin/sh\necho prepared\n'
-    tree = probe.put(content)
+    assert receipt['template']['rootfs'] is False
+    tree = published(probe, content, receipt, lost_reply=True)
     fresh = probe.session_open(templateId=tree['id'])
     assert probe.execute(fresh, 'test -z "${CHECKPOINT_VARIABLE+x}"; test ! -e deleted; ./executable; pwd') == 'prepared\n/workspace\n'
     probe.execute(fresh, 'printf changed > executable')
@@ -105,7 +109,7 @@ cd working
 
     session = probe.session_open(templateId=rootfs['id'], rootfs=True)
     probe.execute(session, 'mv /opt/base /workspace/moved; printf prepared > /workspace/moved')
-    content = captured(probe, session, folder / 'rootfs.tar')
+    content, receipt = captured(probe, session, folder / 'rootfs.tar')
     with tarfile.open(fileobj=io.BytesIO(content)) as archive:
         assert archive.extractfile('workspace/moved').read() == b'prepared'
         assert 'opt/base' not in archive.getnames()
@@ -113,7 +117,8 @@ cd working
         assert archive.getmember('sandcrab-driver').size == 0
         assert not any(name.startswith(('proc/', 'dev/', 'tmp/')) for name in archive.getnames())
         assert probe.secret.name not in archive.getnames()
-    tree = probe.put(content)
+    assert receipt['template']['rootfs'] is True
+    tree = published(probe, content, receipt, lost_reply=False)
     fresh = probe.session_open(templateId=tree['id'], rootfs=True)
     assert probe.execute(fresh, 'cat /workspace/moved; test ! -e /opt/base; test -z "${CHECKPOINT_VARIABLE+x}"') == 'prepared'
     probe.session_close(fresh)
@@ -171,6 +176,7 @@ def failed_downloads(probe, folder):
                                 digest = '0' * 64 if failure == 'digest' else hashlib.sha256(data).hexdigest()
                                 observed_epoch = identity if failure == 'epoch' else epoch
                                 extra = f'ETag: "{digest}"\r\nX-Sandcrab-Server-Id: {observed_epoch}\r\n'
+                                extra += 'X-Sandcrab-Template-Id: ' + 'a' * 64 + '\r\nX-Sandcrab-Profile: python\r\nX-Sandcrab-Rootfs: false\r\n'
                             head = f'HTTP/1.1 200 OK\r\nContent-Length: {len(data)}\r\nConnection: close\r\n{extra}\r\n'
                             stream.sendall(head.encode() + (data[:-1] if index == 1 and failure == 'truncated' else data))
                 except BaseException as error:
@@ -189,3 +195,35 @@ def failed_downloads(probe, folder):
         else:
             assert not destination.exists()
     probe.done('capture-cli-refuses-epoch-change-partial-digest-and-replacement-without-retry')
+
+
+def published(probe, content, receipt, lost_reply):
+    expected = receipt['template']['id']
+    route = '/v1/templates?profile=python&expectedId=' + expected
+    for query in ('profile=python&expectedId=' + '0' * 64, 'profile=other&expectedId=' + expected):
+        status, _, data = binary_http(probe.socket, 'POST', '/v1/templates?' + query, content)
+        assert status == 409 and json.loads(data)['error']['code'] == 'TEMPLATE_ID_MISMATCH', (status, data)
+        assert http(probe.socket, 'GET', '/v1/templates/' + expected)[0] == 404
+        probe.no_stages()
+    if lost_reply:
+        with socket.socket(socket.AF_UNIX) as stream:
+            stream.settimeout(30)
+            connect(stream, probe.socket)
+            stream.sendall((f'POST {route} HTTP/1.1\r\nHost: sandcrab\r\nContent-Length: {len(content)}\r\nConnection: close\r\n\r\n').encode() + content)
+            stream.shutdown(socket.SHUT_WR)
+            # Discard the reply after the one publication request.
+        deadline = time.monotonic() + 30
+        while http(probe.socket, 'GET', '/v1/templates/' + expected)[0] != 200:
+            assert time.monotonic() < deadline, 'Lost-response import did not become visible'
+            time.sleep(.05)
+        result = call('runuser', '-u', 'daemon', '--', str(probe.binary), 'template', 'get',
+                      '--socket', str(probe.socket), expected)
+    else:
+        result = call('runuser', '-u', 'daemon', '--', str(probe.binary), 'template', 'import',
+                      '--socket', str(probe.socket), '--profile', 'python', '--expected-id', expected,
+                      receipt['destination'], timeout=75)
+    tree = json.loads(result.stdout)
+    assert tree['id'] == expected
+    assert probe.put(content) == tree
+    probe.done('predicted-template-identity-guards-publication-and-reconciles-' + ('lost-reply' if lost_reply else 'rootfs'))
+    return tree

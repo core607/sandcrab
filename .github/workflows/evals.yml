@@ -3,10 +3,10 @@ name: Evaluation preflight
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['crates/**', 'evals/**', 'examples/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
+    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
   push:
     branches: [main]
-    paths: ['crates/**', 'evals/**', 'examples/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
+    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
   workflow_call:
     inputs:
       evidence_mode:
@@ -66,6 +66,9 @@ jobs:
           sudo install -d -m 755 -o "$(id -u)" -g "$(id -g)" /var/lib/sandcrab-evals/sdk-python
           python -m venv /var/lib/sandcrab-evals/sdk-python
           /var/lib/sandcrab-evals/sdk-python/bin/python -m pip install --disable-pip-version-check -r evals/sdk/requirements.txt
+          cmp LICENSE sdk/python/LICENSE
+          /var/lib/sandcrab-evals/sdk-python/bin/python -m pip install --disable-pip-version-check --no-deps ./sdk/python
+          /var/lib/sandcrab-evals/sdk-python/bin/python -m unittest discover -s sdk/python/tests -v
       - name: Check and build the independent JVM SDK consumer
         if: inputs.evidence_mode != 'model'
         run: ./gradlew -p evals/sdk/jvm spotlessCheck checkstyleMain installDist --no-daemon

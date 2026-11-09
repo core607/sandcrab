@@ -319,6 +319,24 @@ fn download(
         .and_then(|s| s.strip_prefix('"')?.strip_suffix('"'))
         .filter(|s| digest(s))
         .ok_or_else(|| invalid("Snapshot has no SHA-256 ETag"))?;
+    let template = if expected_epoch.is_some() {
+        let id = head
+            .header("x-sandcrab-template-id")
+            .filter(|id| digest(id))
+            .ok_or_else(|| invalid("Capture has no expected template ID"))?;
+        let profile = head
+            .header("x-sandcrab-profile")
+            .filter(|name| crate::config::name(name))
+            .ok_or_else(|| invalid("Capture has no publication profile"))?;
+        let rootfs = match head.header("x-sandcrab-rootfs") {
+            Some("true") => true,
+            Some("false") => false,
+            _ => return Err(invalid("Capture has no filesystem kind")),
+        };
+        Some(json!({"id":id,"profile":profile,"rootfs":rootfs}))
+    } else {
+        None
+    };
     if destination == Path::new("-") {
         receive(
             &mut response,
@@ -368,9 +386,10 @@ fn download(
     )?;
     partial.installed = true;
     File::open(parent)?.sync_all()?;
-    println!(
-        "{}",
-        json!({"bytes":head.length,"sha256":expected,"destination":destination})
-    );
+    let mut receipt = json!({"bytes":head.length,"sha256":expected,"destination":destination});
+    if let Some(template) = template {
+        receipt["template"] = template;
+    }
+    println!("{receipt}");
     Ok(0)
 }
