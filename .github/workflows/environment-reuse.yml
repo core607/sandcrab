@@ -1,0 +1,77 @@
+name: Environment reuse comparison
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - benchmarks/density/preparation.py
+      - benchmarks/density/test_preparation.py
+      - .github/workflows/environment-reuse.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: Reuse the checksum-matched published helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.1 --repo "$GITHUB_REPOSITORY" --pattern bwrap --dir "$RUNNER_TEMP/reuse-helper"
+      - name: Preserve and build the unmodified environment-publication baseline
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/sandcrab-reuse-baseline" df755f5c27e6bf768ee97e33437b47ffc96941b2
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          temporary = Path(os.environ['RUNNER_TEMP'])
+          helper = (temporary / 'reuse-helper/bwrap').read_bytes()
+          for root in [Path.cwd(), temporary / 'sandcrab-reuse-baseline']:
+              lock = json.loads((root / 'crates/sandcrab-launch/bwrap/lock.json').read_text())
+              assert hashlib.sha256(helper).hexdigest() == lock['binarySha256']
+              assert len(helper) == lock['binaryBytes']
+          PY
+          build_binary() {
+            docker build --target binary --tag "$1" "$2"
+            container=$(docker create "$1" true)
+            mkdir -p "$3"
+            docker cp "$container:/source/target/x86_64-unknown-linux-musl/release/sandcrab" "$3/sandcrab"
+            docker rm "$container"
+            install -m 755 "$RUNNER_TEMP/reuse-helper/bwrap" "$3/bwrap"
+          }
+          build_binary "reuse-baseline:$GITHUB_RUN_ID" "$RUNNER_TEMP/sandcrab-reuse-baseline" "$RUNNER_TEMP/sandcrab-reuse-baseline-bin"
+          build_binary "reuse-candidate:$GITHUB_RUN_ID" . build/reuse-candidate
+      - name: Prepare the disposable native host
+        run: |
+          command -v mkfs.xfs || { sudo apt-get update && sudo apt-get install --yes --no-install-recommends xfsprogs; }
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo install -d -m 755 /var/lib/sandcrab-reuse
+          sudo bash scripts/prepare-tools.sh /var/lib/sandcrab-reuse/tools
+          printf '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
+      - name: Check collector semantics
+        run: python3 -m unittest discover -s benchmarks/density -p 'test_preparation.py' -v
+      - name: Compare cold and warm readers and private writes
+        run: |
+          sudo env PATH=/var/lib/sandcrab-reuse/tools/extracted/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            python3 benchmarks/density/preparation.py --binary build/reuse-candidate/sandcrab \
+            --baseline-binary "$RUNNER_TEMP/sandcrab-reuse-baseline-bin/sandcrab" \
+            --tools /var/lib/sandcrab-reuse/tools --output /var/lib/sandcrab-reuse/results
+      - name: Make retained attempts readable to the artifact collector
+        if: always()
+        run: |
+          if [ -d /var/lib/sandcrab-reuse/results ]; then
+            sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-reuse/results
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: environment-reuse-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /var/lib/sandcrab-reuse/results/
+          if-no-files-found: warn
+          retention-days: 14

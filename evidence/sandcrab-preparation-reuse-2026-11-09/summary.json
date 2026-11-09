@@ -1,0 +1,280 @@
+{
+  "scope": "D3 collector smoke only; the 1/10/50 comparison is pending CI and is not established by this receipt",
+  "result": "SMOKE_PASS",
+  "linuxCollectorUnitTests": 42,
+  "sourceSha256Lf": {
+    ".github/workflows/environment-reuse.yml": "315c0db7754b31feb9178f79765735bde4dcd9cc8625113a919758728f9249da",
+    "benchmarks/density/README.md": "28342b71e083c4e98aa12d82d75c77a1c30bf102a59b824c40da2b2f59732cba",
+    "benchmarks/density/host.py": "ca3ac46451da5972abb8a3e06ccbb620896443b73ec82419fafc76e5261e52c9",
+    "benchmarks/density/preparation.py": "1db958cfbaadc32b75b2d2bae8fe35f7164195f851f4c83a355ccaae47abe452",
+    "benchmarks/density/test_preparation.py": "aedfc9182508248e1215708e450d54f7504caeb8129090b2c35ee3ca30be1aae"
+  },
+  "binaries": {
+    "baseline": {
+      "bytes": 4711328,
+      "sha256": "6242f643787758da97ccd91ed63500bf436014af9ea24c994ffefa0af58e0bf6"
+    },
+    "candidate": {
+      "bytes": 4768672,
+      "sha256": "cccc5378356d846152b522058b376fb1c2aa21e1ea05850de2bef6385733b5ac"
+    }
+  },
+  "fullComparison": "FIRST_COMPLETE_RETAINED; corrected configuration identity and quiescent endpoint observations pending CI",
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "PASS",
+      "scope": "preparation-reuse-smoke",
+      "cases": [
+        {
+          "name": "1-1-monolithic",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        },
+        {
+          "name": "1-1-recipe",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "result": "PASS",
+      "scope": "preparation-reuse-smoke",
+      "cases": [
+        {
+          "name": "1-1-monolithic",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        },
+        {
+          "name": "1-1-recipe",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        }
+      ]
+    },
+    {
+      "attempt": 3,
+      "scope": "smoke after config fingerprint correction and initial 1.1-second observation settling",
+      "result": "PASS",
+      "finalObservationSettleSeconds": 2.1
+    }
+  ],
+  "rawEvidence": "Local smoke attempts retained in operator storage; the targeted CI workflow uploads full comparison attempts.",
+  "ciSetupAttempts": [
+    {
+      "run": 42580700627,
+      "attempt": 1,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "Bundled helper source download returned HTTP 504"
+    },
+    {
+      "run": 42580700627,
+      "attempt": 2,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "Bundled helper source download returned HTTP 504"
+    },
+    {
+      "run": 42582845370,
+      "attempt": 1,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "New workflow omitted the parent directory required by prepare-tools.sh; both binaries and helper verification passed"
+    }
+  ],
+  "publishedHelper": {
+    "release": "v0.1.1",
+    "sha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+    "bytes": 141736,
+    "sourceLocksMatch": true
+  },
+  "firstCompleteComparison": {
+    "run": 42583889380,
+    "head": "d2e8286278c91b0d3ab87dcff5c82816e7c2022f",
+    "artifactId": 13658706675,
+    "artifactSha256": "f2226717dea1c5176bde493eaeed491ca44212574f0f71934d9edddce6191e3b",
+    "result": "PASS",
+    "cases": 12,
+    "successfulMeasuredCommands": 732,
+    "limits": "Original endpoint memory.stat reads can lag batched updates; fixture config hash preceded template overrides. File-specific residency, file identities, imported bytes, copy-up inventory and command timings remain retained.",
+    "rows": [
+      {
+        "name": "1-1-monolithic",
+        "importedBytes": 4239360,
+        "preparationNs": 712224368,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 4194304,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "1-1-recipe",
+        "importedBytes": 4239360,
+        "preparationNs": 428458733,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 4194304,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "1-10-monolithic",
+        "importedBytes": 42393600,
+        "preparationNs": 1735491625,
+        "readInodes": 640,
+        "warmResidentBytes": 41943040,
+        "writeCopyUpBytes": 41943040,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "1-10-recipe",
+        "importedBytes": 4331520,
+        "preparationNs": 826654912,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 41943040,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "1-50-monolithic",
+        "importedBytes": 211968000,
+        "preparationNs": 9140161704,
+        "readInodes": 3200,
+        "warmResidentBytes": 209715200,
+        "writeCopyUpBytes": 209715200,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "1-50-recipe",
+        "importedBytes": 4741120,
+        "preparationNs": 3508136942,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 209715200,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-1-recipe",
+        "importedBytes": 4239360,
+        "preparationNs": 176280791,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 4194304,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-1-monolithic",
+        "importedBytes": 4239360,
+        "preparationNs": 156754435,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 4194304,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-10-recipe",
+        "importedBytes": 4331520,
+        "preparationNs": 710576246,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 41943040,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-10-monolithic",
+        "importedBytes": 42393600,
+        "preparationNs": 1939498311,
+        "readInodes": 640,
+        "warmResidentBytes": 41943040,
+        "writeCopyUpBytes": 41943040,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-50-recipe",
+        "importedBytes": 4741120,
+        "preparationNs": 4868846607,
+        "readInodes": 64,
+        "warmResidentBytes": 4194304,
+        "writeCopyUpBytes": 209715200,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      },
+      {
+        "name": "2-50-monolithic",
+        "importedBytes": 211968000,
+        "preparationNs": 8375079980,
+        "readInodes": 3200,
+        "warmResidentBytes": 209715200,
+        "writeCopyUpBytes": 209715200,
+        "apiCleanup": "PASS",
+        "hostCleanup": "PASS"
+      }
+    ]
+  }
+}
