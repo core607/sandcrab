@@ -3,7 +3,7 @@
   "result": "SMOKE_PASS",
   "linuxCollectorUnitTests": 42,
   "sourceSha256Lf": {
-    ".github/workflows/environment-reuse.yml": "8d436856ed6476a4ba097d459a7c7497fe33e4046bd2147f4aa5ac2e2552b0f8",
+    ".github/workflows/environment-reuse.yml": "315c0db7754b31feb9178f79765735bde4dcd9cc8625113a919758728f9249da",
     "benchmarks/density/README.md": "1af3568ea55fb3d936b59d22b3f1c1835e79a5f45ccae37e4c696dc34cd0cadb",
     "benchmarks/density/host.py": "ca3ac46451da5972abb8a3e06ccbb620896443b73ec82419fafc76e5261e52c9",
     "benchmarks/density/preparation.py": "b1aeb439598684eea24d03d35cba298b797da989c80b3f7c90b78c88b9931022",
@@ -125,6 +125,12 @@
       "attempt": 2,
       "result": "FAIL_BEFORE_MEASUREMENT",
       "reason": "Bundled helper source download returned HTTP 504"
+    },
+    {
+      "run": 42582845370,
+      "attempt": 1,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "New workflow omitted the parent directory required by prepare-tools.sh; both binaries and helper verification passed"
     }
   ],
   "publishedHelper": {
