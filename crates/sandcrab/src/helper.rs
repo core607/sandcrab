@@ -156,7 +156,7 @@ pub fn launch(path: &Path) -> io::Result<()> {
     if path.parent() != Some(record.root.as_path())
         || record.executable != executable
         || record.argv.first().map(Path::new) != Some(executable.as_path())
-        || !matches!(record.argv.get(1).map(String::as_str), Some("__file") if record.argv.len() == 3)
+        || !matches!(record.argv.get(1).map(String::as_str), Some("__file" | "__template-layer") if record.argv.len() == 3)
             && !matches!(record.argv.get(1).map(String::as_str), Some("__copy-tree") if record.argv.len() == 5)
             && !matches!(record.argv.get(1).map(String::as_str),Some("__overlay-export") if record.argv.len()==2)
         || record.overlay.is_some()
@@ -213,6 +213,9 @@ pub fn launch(path: &Path) -> io::Result<()> {
         .position(|argument| argument == "--remount-ro")
         .ok_or_else(|| invalid("Missing helper root boundary"))?;
     let mut grants = Vec::<String>::new();
+    if record.argv.get(1).map(String::as_str) == Some("__template-layer") {
+        grants.extend(["--cap-add".into(), "CAP_MKNOD".into()]);
+    }
     if let Some(overlay) = &record.overlay {
         grants.extend(overlay.arguments()?);
     }

@@ -20,19 +20,24 @@ pub fn import_path(path: &str) -> bool {
     path == "/v1/templates" || path.starts_with("/v1/templates?")
 }
 
-fn profile(query: &str) -> Result<(String, Option<String>)> {
+fn profile(query: &str) -> Result<(String, Option<String>, bool)> {
     let values = crate::sdk_types::query(query)?;
-    let (mut profile, mut expected) = (None, None);
+    let (mut profile, mut expected, mut layer) = (None, None, None);
     for (key, value) in values {
         match key.as_str() {
             "profile" if profile.is_none() && crate::config::name(&value) => profile = Some(value),
             "expectedId" if expected.is_none() && crate::file_io::digest(&value) => {
                 expected = Some(value)
             }
+            "format" if layer.is_none() && value == "layer" => layer = Some(true),
             _ => return Err((400, "INVALID_QUERY")),
         }
     }
-    Ok((profile.ok_or((400, "INVALID_QUERY"))?, expected))
+    Ok((
+        profile.ok_or((400, "INVALID_QUERY"))?,
+        expected,
+        layer.unwrap_or(false),
+    ))
 }
 
 fn failure(error: &io::Error) -> (u16, &'static str) {
@@ -43,6 +48,7 @@ fn failure(error: &io::Error) -> (u16, &'static str) {
         | "NOT_DIRECTORY"
         | "UNSUPPORTED_ARCHIVE_ENTRY"
         | "CONTENT_INCOMPLETE" => (400, "INVALID_TEMPLATE_ARCHIVE"),
+        "INVALID_LAYER_WHITEOUT" => (400, "INVALID_LAYER_WHITEOUT"),
         "FILE_CANCELLED" => (409, "TEMPLATE_CANCELLED"),
         "FILE_TIMEOUT" => (408, "TEMPLATE_TIMEOUT"),
         _ => (503, "TEMPLATE_IMPORT_FAILED"),
@@ -61,7 +67,7 @@ impl Service {
         if self.stopped.load(Ordering::SeqCst) {
             return Err((503, "STOPPING"));
         }
-        let (name, expected) = profile(path.split_once('?').map_or("", |(_, query)| query))?;
+        let (name, expected, layer) = profile(path.split_once('?').map_or("", |(_, query)| query))?;
         let profile = self
             .runtime
             .config
@@ -94,7 +100,12 @@ impl Service {
             ready().map_err(|error| failure(&error))?;
             let staging = store.stage(&stage);
             let job = Job {
-                action: "template-receive".into(),
+                action: if layer {
+                    "template-layer-receive"
+                } else {
+                    "template-receive"
+                }
+                .into(),
                 workspace: staging.parent().unwrap().join("data"),
                 stage: staging,
                 path: "data".into(),
@@ -190,11 +201,20 @@ mod tests {
     use super::*;
     #[test]
     fn template_import_requires_one_explicit_profile() {
-        assert_eq!(profile("profile=python").unwrap(), ("python".into(), None));
+        let malformed = invalid_for_test("INVALID_LAYER_WHITEOUT");
+        assert_eq!(failure(&malformed), (400, "INVALID_LAYER_WHITEOUT"));
+        assert_eq!(
+            profile("profile=python").unwrap(),
+            ("python".into(), None, false)
+        );
+        assert_eq!(
+            profile("profile=python&format=layer").unwrap(),
+            ("python".into(), None, true)
+        );
         let id = "a".repeat(64);
         assert_eq!(
             profile(&format!("expectedId={id}&profile=python")).unwrap(),
-            ("python".into(), Some(id.clone()))
+            ("python".into(), Some(id.clone()), false)
         );
         assert!(profile(&format!("profile=python&expectedId={id}&expectedId={id}")).is_err());
         for query in [
@@ -203,9 +223,15 @@ mod tests {
             "profile=../escape",
             "profile=python&root=/host",
             "profile=python&expectedId=invalid",
+            "profile=python&format=layer&format=layer",
+            "profile=python&format=oci",
         ] {
             assert!(profile(query).is_err(), "{query}");
         }
         assert!(!import_path("/v1/templates/deadbeef"));
+    }
+
+    fn invalid_for_test(message: &str) -> io::Error {
+        crate::config::invalid(crate::file_io::error_code(&crate::config::invalid(message)))
     }
 }

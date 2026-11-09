@@ -632,12 +632,15 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
     )
 }
 
-pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
+pub fn execute(path: &Path, layer_helper: bool) -> io::Result<serde_json::Value> {
     if rustix::process::geteuid() != Uid::ROOT {
         return Err(invalid("File helper requires root"));
     }
     let raw = sandcrab_core::fs::protected_file(path, 16384)?;
     let job: Job = serde_json::from_slice(&raw)?;
+    if layer_helper != (job.action == "template-layer-receive") {
+        return Err(invalid("Invalid layer helper authority"));
+    }
     if !sandcrab_core::fs::normal(&job.workspace)
         || !sandcrab_core::fs::normal(&job.stage)
         || !job
@@ -654,13 +657,16 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         || job.byte_limit > 1_073_741_824
         || job.mode > 0o777
         || (job.action.starts_with("stream-") && job.format != Format::Raw)
-        || !(1..=if ["template-receive", "checkpoint"].contains(&job.action.as_str()) {
+        || !(1..=if ["template-receive", "template-layer-receive", "checkpoint"]
+            .contains(&job.action.as_str())
+        {
             100_000
         } else {
             10_000
         })
             .contains(&job.entry_limit)
-        || (job.action == "template-receive" && job.format != Format::Tar)
+        || (["template-receive", "template-layer-receive"].contains(&job.action.as_str())
+            && job.format != Format::Tar)
         || (["difference", "checkpoint"].contains(&job.action.as_str())
             && (job.path != "." || job.format != Format::Tar))
         || !valid_path(
@@ -727,7 +733,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
     if ["snapshot", "difference", "checkpoint"].contains(&job.action.as_str()) {
         return snapshot(&job);
     }
-    if job.action == "template-receive" {
+    if ["template-receive", "template-layer-receive"].contains(&job.action.as_str()) {
         return crate::template_io::receive(&job);
     }
     if ["sdk-query", "sdk-mutate"].contains(&job.action.as_str()) {
@@ -775,6 +781,7 @@ pub fn error_code(error: &io::Error) -> &'static str {
     match error.to_string().as_str() {
         "INVALID_PATH" => "INVALID_PATH",
         "INVALID_LINK" => "INVALID_LINK",
+        "INVALID_LAYER_WHITEOUT" => "INVALID_LAYER_WHITEOUT",
         "NOT_DIRECTORY" => "NOT_DIRECTORY",
         "NOT_REGULAR_FILE" => "NOT_REGULAR_FILE",
         "FILE_LIMIT" => "FILE_LIMIT",

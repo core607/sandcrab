@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "sandcrab template capture --socket PATH SESSION_ID DESTINATION\nsandcrab template import --socket PATH --profile NAME [--directory | --expected-id SHA256] SOURCE\nsandcrab template compose --socket PATH BASE_ID [LAYER_ID ...]\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. Capture freezes the session's writers while creating a full filesystem tar; it restores no process, variable or cwd. DESTINATION must be a new local file. SOURCE is plain tar; --directory streams an unpacked tree without pulling an image.\n";
+const HELP: &str = "sandcrab template capture --socket PATH SESSION_ID DESTINATION\nsandcrab template import --socket PATH --profile NAME [--directory | [--layer] [--expected-id SHA256]] SOURCE\nsandcrab template compose --socket PATH BASE_ID [LAYER_ID ...]\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. Capture freezes the session's writers while creating a full filesystem tar; it restores no process, variable or cwd. DESTINATION must be a new local file. SOURCE is plain tar unless --layer explicitly enables deletion markers; --directory streams an unpacked tree without pulling an image.\n";
 
 struct Chunks<'a, W> {
     output: &'a mut W,
@@ -45,6 +45,7 @@ fn import(
     source: &Path,
     directory: bool,
     expected: Option<&str>,
+    layer: bool,
 ) -> io::Result<Value> {
     if !crate::config::name(profile) {
         return Err(invalid("Invalid profile name"));
@@ -53,10 +54,11 @@ fn import(
         return Err(invalid("Invalid expected template ID"));
     }
     let route = format!(
-        "/v1/templates?profile={profile}{}",
+        "/v1/templates?profile={profile}{}{}",
         expected
             .map(|id| format!("&expectedId={id}"))
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        if layer { "&format=layer" } else { "" }
     );
     let recovery = expected
         .map(|id| format!("inspect template {id} before retrying this archive"))
@@ -143,17 +145,32 @@ pub fn command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
             )?
         }
         ("import", [flag, profile, source]) if flag == "--profile" => {
-            import(&endpoint, profile, Path::new(source), false, None)?
+            import(&endpoint, profile, Path::new(source), false, None, false)?
         }
         ("import", [flag, profile, directory, source])
             if flag == "--profile" && directory == "--directory" =>
         {
-            import(&endpoint, profile, Path::new(source), true, None)?
+            import(&endpoint, profile, Path::new(source), true, None, false)?
         }
         ("import", [flag, profile, expected, id, source])
             if flag == "--profile" && expected == "--expected-id" =>
         {
-            import(&endpoint, profile, Path::new(source), false, Some(id))?
+            import(
+                &endpoint,
+                profile,
+                Path::new(source),
+                false,
+                Some(id),
+                false,
+            )?
+        }
+        ("import", [flag, profile, layer, source]) if flag == "--profile" && layer == "--layer" => {
+            import(&endpoint, profile, Path::new(source), false, None, true)?
+        }
+        ("import", [flag, profile, layer, expected, id, source])
+            if flag == "--profile" && layer == "--layer" && expected == "--expected-id" =>
+        {
+            import(&endpoint, profile, Path::new(source), false, Some(id), true)?
         }
         ("list", []) => client::request(&endpoint, "GET", "/v1/templates", None)?,
         ("list", [flag, after]) if flag == "--after" && crate::file_io::digest(after) => {

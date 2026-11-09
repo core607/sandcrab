@@ -1739,7 +1739,7 @@
       },
       "post": {
         "operationId": "importTemplate",
-        "description": "Import plain tar with fixed Content-Length or chunked framing. A required profile normalizes ownership to its execution UID/GID. SHA-256 covers normalized names, contents, modes, symlinks and hard-link topology, excluding archive ordering and timestamps. Duplicate trees return the existing ID. One import runs at a time under the shared file-transfer admission, profile memory/CPU/transfer limits, 100000 entries and a 30-second body deadline. Published trees survive restart and expire only by explicit deletion. Template pool bytes count allocated blocks in committed trees, including directories and counting hard links once. Store records and the bounded incoming archive/tree need additional disk space. An optional expectedId must match the normalized tree before publication; it binds contents, modes, links and profile execution identity and permits read-only lost-response reconciliation.",
+        "description": "Import plain tar with fixed Content-Length or chunked framing. A required profile normalizes ownership to its execution UID/GID. SHA-256 covers normalized names, contents, modes, symlinks and hard-link topology, excluding archive ordering and timestamps. Duplicate trees return the existing ID. One import runs at a time under the shared file-transfer admission, profile memory/CPU/transfer limits, 100000 entries and a 30-second body deadline. Published trees survive restart and expire only by explicit deletion. Template pool bytes count allocated blocks in committed trees, including directories and counting hard links once. Store records and the bounded incoming archive/tree need additional disk space. An optional expectedId must match the normalized tree before publication; it binds contents, modes, links and profile execution identity and permits read-only lost-response reconciliation. With format=layer, a fixed helper normalizes explicit deletion markers; identity includes whiteouts and opacity under the layer hash domain. Import limits and profile authority are unchanged.",
         "parameters": [
           {
             "name": "profile",
@@ -1758,6 +1758,15 @@
             "schema": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "Explicit layer format interprets empty regular .wh.NAME and .wh..wh..opq tar markers. Same-layer additions survive; plain import keeps literal names. Supplied devices and malformed or linked markers are rejected.",
+            "schema": {
+              "const": "layer"
             }
           }
         ],

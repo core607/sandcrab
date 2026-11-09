@@ -1,0 +1,119 @@
+{
+  "scope": "D2 explicit deletion-layer import; targeted native and SDK checks, no density or throughput claim",
+  "result": "PASS",
+  "baselineCommit": "072e6d1ae06a97eab5353b986ecfecdf98c2931c",
+  "sourceSha256Lf": {
+    ".github/workflows/evals.yml": "839abfcf43c1dbe5efefd7c63c39c63cf99519cebf923f31c723c4010a10000a",
+    "THREAT-MODEL.md": "7c5479db0dfc59ac7fbcae2375e94cb254ef7ca254b52b39430caab40f188db5",
+    "crates/sandcrab/README.md": "ce9712f154c95b5a3b5d56eafc00af40ab13cad6f220f9fdfe9893452dd9a758",
+    "crates/sandcrab/openapi.json": "26a7213c7bd32679df18bc0386b459fba4e43982726caf0fd5b02813dbbe957b",
+    "crates/sandcrab/sandcrab_conformance/layers.py": "1482af2e4bfc64ae53a5e872305c612a9ecc457e2be98a9f7ecd4d175185cb15",
+    "crates/sandcrab/sandcrab_conformance/runner.py": "b8188a4f17bcb44fa409f0b4c16dd468b302140c06f37712d47ea138ad9ad239",
+    "crates/sandcrab/src/file_io.rs": "b0aebd7dc28ed0a44688f46705343b6c1f4695d6495563532634103e4cbb0d8b",
+    "crates/sandcrab/src/helper.rs": "6a5b7e56798a49af4ec5104f969aae4bd20cc82625a8f1e91f0060e70db16a02",
+    "crates/sandcrab/src/main.rs": "3e31dfcb883fa5663cd22d603345cbb197206d31ae3ce771de4be0d17baf9c60",
+    "crates/sandcrab/src/runtime.rs": "022bd6faac188c1a88f035b4312aa9b1830b75e76d53953ab0bbf379496cf312",
+    "crates/sandcrab/src/template_api.rs": "1c81bd611d2b819eebee0d6187688941d9ef6948c1c8bd41e4a808d89c94d22b",
+    "crates/sandcrab/src/template_client.rs": "a69b2d71effc003fa6ad95c5e3af71ba6f5b41cc717a695787e1a815309a071d",
+    "crates/sandcrab/src/template_io.rs": "2adecabc4e8bc2131679459cbb7591d6b9e6a962e3a12936ab5d3b58a27b29b1",
+    "crates/sandcrab/src/template_layers.rs": "32863680d09a7d5584742066e9e6d7e964a6346178ba00dd66d8da99eeb18888"
+  },
+  "binary": {
+    "bytes": 4776864,
+    "sha256": "a0d3d7a2e0e78e1307b8915194fdab748b0f9db75378f30ab2487d48aed7eb6a",
+    "baselineBytes": 4768672,
+    "deltaBytes": 8192,
+    "helperBytes": 141736,
+    "helperSha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+    "addedRuntimeDependencies": [],
+    "addedResidentProcesses": 0
+  },
+  "checks": {
+    "rustFmtClippyLockedTests": "PASS",
+    "rustTests": 125,
+    "conformanceControllerTests": 5,
+    "layers": {
+      "checks": 10,
+      "result": "PASS",
+      "cleanup": "PASS"
+    },
+    "adjacentSuites": [
+      {
+        "name": "templates",
+        "result": "PASS",
+        "seconds": 2.52,
+        "cleanup": "PASS",
+        "checks": 9
+      },
+      {
+        "name": "recipes",
+        "result": "PASS",
+        "seconds": 12.204,
+        "cleanup": "PASS",
+        "checks": 12
+      },
+      {
+        "name": "diff",
+        "result": "PASS",
+        "seconds": 4.225,
+        "cleanup": "PASS",
+        "checks": 8
+      }
+    ],
+    "publishedPythonSdk": "1.1.0",
+    "publishedKotlinSdk": "1.1.0"
+  },
+  "measurements": [
+    {
+      "operation": "layer-import",
+      "wallSeconds": 0.022876785951666534,
+      "archiveBytes": 10240
+    }
+  ],
+  "measurementLimits": "Single synthetic layer import; no comparative performance result.",
+  "attempts": [
+    {
+      "kind": "rust",
+      "attempt": 1,
+      "result": "FAIL",
+      "reason": "Build environment denied mknod in a new unit test. Device creation moved to mandatory native acceptance; units cover normalization and opacity."
+    },
+    {
+      "kind": "rust",
+      "attempt": 2,
+      "result": "PASS"
+    },
+    {
+      "kind": "native",
+      "attempt": 1,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "reason": "Malformed-marker rejection lost its error code at the helper boundary; added explicit propagation to HTTP 400."
+    },
+    {
+      "kind": "rust",
+      "attempt": 3,
+      "result": "PASS"
+    },
+    {
+      "kind": "native",
+      "attempt": 2,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "layers": "PASS",
+      "reason": "Adjacent template fixture selected container overlay backing and correctly failed startup; selected the existing isolated XFS fixture parent next."
+    },
+    {
+      "kind": "native",
+      "attempt": 3,
+      "result": "PASS",
+      "cleanup": "PASS",
+      "suites": [
+        "templates",
+        "recipes",
+        "diff"
+      ]
+    }
+  ],
+  "rawEvidence": "All attempts retained in operator storage; CI uploads raw conformance reports and logs."
+}

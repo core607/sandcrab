@@ -330,7 +330,12 @@ impl Runtime {
                     id: &operation,
                     argv: vec![
                         self.executable.to_string_lossy().into(),
-                        "__file".into(),
+                        if job.action == "template-layer-receive" {
+                            "__template-layer"
+                        } else {
+                            "__file"
+                        }
+                        .into(),
                         record.to_string_lossy().into(),
                     ],
                     read_only: readonly.into_iter().map(Path::to_path_buf).collect(),
