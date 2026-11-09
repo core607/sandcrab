@@ -3,10 +3,10 @@ name: Evaluation preflight
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
+    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', '!scripts/repo_check.py', '!scripts/sync-claude-skills.py', '!scripts/test_repo_check.py', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
   push:
     branches: [main]
-    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
+    paths: ['crates/**', 'evals/**', 'examples/**', 'sdk/**', 'scripts/**', '!scripts/repo_check.py', '!scripts/sync-claude-skills.py', '!scripts/test_repo_check.py', Cargo.toml, Cargo.lock, Dockerfile, '.github/workflows/evals.yml']
   workflow_call:
     inputs:
       evidence_mode:
