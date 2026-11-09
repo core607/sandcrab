@@ -48,6 +48,8 @@ python3 examples/sandcrab-batch.py first.py second.py
 The [Python](examples/sandcrab-sdk.py) and [Kotlin](examples/sandcrab-sdk.main.kts)
 examples create a sandbox, run code and release it. The [threat model](THREAT-MODEL.md)
 describes profile selection, credential scope and egress.
+The [template extension](sdk/python/README.md) captures validated environments and
+publishes immutable templates for independent reuse with the Python SDK.
 
 ## Build and test
 

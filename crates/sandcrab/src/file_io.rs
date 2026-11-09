@@ -622,8 +622,13 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
     }
     output.writer.sync_all()?;
     stage.sync_all()?;
+    let template_id = if job.action == "checkpoint" {
+        Some(crate::template_io::identify_capture(&job.workspace, job)?.id)
+    } else {
+        None
+    };
     Ok(
-        serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize()),"sourceBytes":source_bytes}),
+        serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize()),"sourceBytes":source_bytes,"templateId":template_id}),
     )
 }
 

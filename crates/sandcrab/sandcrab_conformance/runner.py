@@ -59,7 +59,8 @@ def create_fixture(name, args, report):
         probe.sdk_client = args.sdk_clients / ('network_client.py' if name == 'egress' else 'queue_client.py')
     if name == 'rootfs' and args.python:
         probe.sdk = SimpleNamespace(python=args.python, python_client=args.sdk_clients / 'rootfs_client.py',
-                                    java=args.java, jvm_libs=args.jvm_libs)
+                                    java=args.java, jvm_libs=args.jvm_libs,
+                                    environment_client=args.examples / 'sandcrab-environment.py')
         probe.config.write_text(probe.config.read_text().replace('[service]', '[service]\nopensandbox = true', 1))
     return probe
 

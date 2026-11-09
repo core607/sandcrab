@@ -58,7 +58,15 @@ pub struct Snapshot {
     pub lease: Lease,
     pub range: Option<crate::sdk_download::Range>,
     pub text: bool,
+    pub template_id: Option<String>,
     stage: Stage,
+}
+struct Captured {
+    file: File,
+    bytes: u64,
+    sha256: String,
+    range: Option<crate::sdk_download::Range>,
+    template_id: Option<String>,
 }
 struct Active<'a> {
     service: &'a Service,
@@ -550,7 +558,7 @@ impl Service {
         };
         let stage = stage(&id, &lease.access);
         let mut contained = true;
-        let result = (|| -> io::Result<(File, u64, String, Option<crate::sdk_download::Range>)> {
+        let result = (|| -> io::Result<Captured> {
             let path = self
                 .runtime
                 .files
@@ -604,6 +612,17 @@ impl Service {
                 .filter(|s| digest(s))
                 .ok_or_else(|| invalid("FILE_HELPER_FAILED"))?
                 .to_owned();
+            let template_id = if request.scope == CaptureScope::Filesystem {
+                Some(
+                    value["templateId"]
+                        .as_str()
+                        .filter(|id| digest(id))
+                        .ok_or_else(|| invalid("FILE_HELPER_FAILED"))?
+                        .to_owned(),
+                )
+            } else {
+                None
+            };
             let file = OpenOptions::new()
                 .read(true)
                 .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
@@ -624,10 +643,22 @@ impl Service {
                 } else {
                     None
                 };
-            Ok((file, bytes, sha, range))
+            Ok(Captured {
+                file,
+                bytes,
+                sha256: sha,
+                range,
+                template_id,
+            })
         })();
         match result {
-            Ok((file, bytes, sha256, range)) => Ok(Snapshot {
+            Ok(Captured {
+                file,
+                bytes,
+                sha256,
+                range,
+                template_id,
+            }) => Ok(Snapshot {
                 file,
                 bytes,
                 sha256,
@@ -636,6 +667,7 @@ impl Service {
                 stage,
                 range,
                 text: selection.is_some_and(crate::sdk_download::Selection::text),
+                template_id,
             }),
             Err(error) => {
                 if contained {

@@ -271,6 +271,13 @@ removing incoming stages. Uncertain publication or cleanup reports
 restart. Identical imports return the existing object even at catalog capacity.
 Include the template store in runtime backups before rebuilding 0.x metadata.
 
+Conditional import adds `expectedId=SHA256` to the query, or `--expected-id SHA256`
+to a CLI tar import. The server compares the normalized tree before publication;
+changed contents, modes, links or profile execution identity return
+`TEMPLATE_ID_MISMATCH` without publishing that tree. After a lost reply, read
+`GET /v1/templates/SHA256` or `sandcrab template get` for the same ID. Do not rerun
+environment preparation or validation to resolve a publication outcome.
+
 ## Host calls
 
 Profiles can enable opaque requests from a command to its caller. The
@@ -778,6 +785,15 @@ capture. A complete file can be retained and imported after the source session
 ends. A partial or lost download does not publish a template; capturing again
 observes a later filesystem state. Inspect the template catalog after a lost
 import reply and retain the exact captured archive for reconciliation.
+
+Filesystem capture replies also carry `X-Sandcrab-Template-Id`,
+`X-Sandcrab-Profile` and `X-Sandcrab-Rootfs`. The ID predicts the normalized import
+under that profile; source ownership and the root mode are normalized by the same
+identity scan used for imports. The additional scan shares the existing frozen
+helper's deadline and resource bound. The CLI includes this identity as `template`
+in its JSON receipt. Retain that receipt and use `--expected-id` when importing.
+The [Python extension](../../sdk/python/README.md) performs this workflow with the
+published OpenSandbox SDK and exposes read-only reconciliation after response loss.
 
 ## Verification
 

@@ -187,3 +187,25 @@ class RootfsProbe(OverlayProbe):
             assert (self.socket.parent / 'templates/objects' / tree['id'] / 'lower/data/opt/base').read_bytes() == b'template environment'
             self.receipt[label+'Sdk'] = receipt
             self.done(label+'-published-sdk-creates-a-template-rootfs-and-cleans-its-native-records')
+        source = self.root / 'environment-client.py'
+        shutil.copyfile(args.environment_client, source)
+        source.chmod(0o644)
+        artifacts = self.root / 'environment-client'
+        artifacts.mkdir(mode=0o700)
+        os.chown(artifacts, *native_probe.CLIENT)
+        result = subprocess.run([str(args.python), str(source), '--endpoint', endpoint,
+            '--token-file', str(token), '--base-image', image, '--archive', str(artifacts / 'prepared.tar'),
+            '--receipt', str(artifacts / 'prepared.json')],
+            user=native_probe.CLIENT[0], group=native_probe.CLIENT[1], extra_groups=[native_probe.CLIENT[1]],
+            env={'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8'}, text=True, capture_output=True, timeout=150)
+        assert result.returncode == 0, result.stderr
+        receipt = json.loads(result.stdout)
+        assert receipt['result'] == 'PASS' and len(receipt['instanceIds']) == 2, receipt
+        assert len(set([receipt['builderId'], *receipt['instanceIds']])) == 3
+        for identity in [receipt['builderId'], *receipt['instanceIds']]:
+            assert http(self.socket, 'GET', '/v1/sessions/' + identity)[0] == 404
+        assert http(self.socket, 'GET', '/v1/templates/' + receipt['templateId'])[0] == 200
+        assert http(self.socket, 'DELETE', '/v1/templates/' + receipt['templateId'])[0] == 200
+        assert not list((self.socket.parent / 'jobs').iterdir())
+        self.receipt['environmentPublication'] = receipt
+        self.done('published-python-sdk-prepares-validates-publishes-and-reuses-independent-environments')

@@ -1107,6 +1107,30 @@
                   "type": "string",
                   "pattern": "^\"[0-9a-f]{64}\"$"
                 }
+              },
+              "X-Sandcrab-Template-Id": {
+                "description": "Present for filesystem captures: predicted normalized template identity for conditional import.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "X-Sandcrab-Profile": {
+                "description": "The capture profile used to predict template ownership and identity.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,47}$"
+                }
+              },
+              "X-Sandcrab-Rootfs": {
+                "description": "Whether the filesystem capture is a complete rootfs rather than a workspace.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
               }
             },
             "content": {
@@ -1715,7 +1739,7 @@
       },
       "post": {
         "operationId": "importTemplate",
-        "description": "Import plain tar with fixed Content-Length or chunked framing. A required profile normalizes ownership to its execution UID/GID. SHA-256 covers normalized names, contents, modes, symlinks and hard-link topology, excluding archive ordering and timestamps. Duplicate trees return the existing ID. One import runs at a time under the shared file-transfer admission, profile memory/CPU/transfer limits, 100000 entries and a 30-second body deadline. Published trees survive restart and expire only by explicit deletion. Template pool bytes count allocated blocks in committed trees, including directories and counting hard links once. Store records and the bounded incoming archive/tree need additional disk space.",
+        "description": "Import plain tar with fixed Content-Length or chunked framing. A required profile normalizes ownership to its execution UID/GID. SHA-256 covers normalized names, contents, modes, symlinks and hard-link topology, excluding archive ordering and timestamps. Duplicate trees return the existing ID. One import runs at a time under the shared file-transfer admission, profile memory/CPU/transfer limits, 100000 entries and a 30-second body deadline. Published trees survive restart and expire only by explicit deletion. Template pool bytes count allocated blocks in committed trees, including directories and counting hard links once. Store records and the bounded incoming archive/tree need additional disk space. An optional expectedId must match the normalized tree before publication; it binds contents, modes, links and profile execution identity and permits read-only lost-response reconciliation.",
         "parameters": [
           {
             "name": "profile",
@@ -1724,6 +1748,16 @@
             "schema": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            }
+          },
+          {
+            "name": "expectedId",
+            "in": "query",
+            "required": false,
+            "description": "Require this normalized tree identity before publication; mismatches return 409 TEMPLATE_ID_MISMATCH. Reconcile a lost reply by GET of this ID.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
             }
           }
         ],
@@ -3037,7 +3071,10 @@
             "description": "Temporarily freeze all session workload processes during capture. Expiry and command deadlines continue."
           },
           "scope": {
-            "enum": ["workspace", "filesystem"],
+            "enum": [
+              "workspace",
+              "filesystem"
+            ],
             "default": "workspace",
             "description": "filesystem includes a rootfs session's complete merged root and requires frozen=true, path=. and format=tar. No arbitrary host path is accepted."
           }
@@ -3045,15 +3082,29 @@
         "allOf": [
           {
             "if": {
-              "required": ["scope"],
-              "properties": {"scope": {"const": "filesystem"}}
+              "required": [
+                "scope"
+              ],
+              "properties": {
+                "scope": {
+                  "const": "filesystem"
+                }
+              }
             },
             "then": {
-              "required": ["frozen"],
+              "required": [
+                "frozen"
+              ],
               "properties": {
-                "path": {"const": "."},
-                "format": {"const": "tar"},
-                "frozen": {"const": true}
+                "path": {
+                  "const": "."
+                },
+                "format": {
+                  "const": "tar"
+                },
+                "frozen": {
+                  "const": true
+                }
               }
             }
           }
