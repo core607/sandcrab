@@ -1,7 +1,6 @@
 {
-  "scope": "D4 collector smoke; the full mixed-workload comparison is pending CI",
-  "result": "SMOKE_PASS",
-  "runtimeControlsAdded": false,
+  "scope": "Pre-control comparison: Synthetic interactive arithmetic with four CPU compilation loops and a startup burst. Operator changes only owned fixture cpu.weight; startup and background execution bounds are caller-side. No runtime control or topology isolation is implemented.",
+  "result": "PASS",
   "modelCalls": 0,
   "binarySha256": "a0d3d7a2e0e78e1307b8915194fdab748b0f9db75378f30ab2487d48aed7eb6a",
   "decisionRule": "A candidate needs >=20% lower interactive p95 in both reversed-order repetitions, all interactive successes, >=80% background compilation throughput, zero full seconds without active background progress, background caller wait <=2 seconds and >=80% foreground overlap with background work before considering a runtime control.",
@@ -103,5 +102,820 @@
     }
   ],
   "sourceObservation": "Serial consumer breakdown is retained in the linked public phase-measurement summary. This fixed concurrent workload tests whether weights or separate caller-side bounds warrant new runtime controls.",
-  "rawEvidence": "Local smoke attempts retained outside source control; the service-class CI workflow uploads every full comparison attempt."
+  "rawEvidence": "Local smoke attempts retained outside source control; the service-class CI workflow uploads every full comparison attempt.",
+  "fullComparison": {
+    "run": 42587233813,
+    "head": "69cad596bb0659cb26802627f19d9c8a5d4bcb04",
+    "artifactId": 13659378722,
+    "artifactSha256": "8b337457b47b890197c2758ff71b81e00c33ef12323802a76ccff7485c7dc1f3",
+    "resultsSha256": "43adc9c40574172a731210e0e8229c94bdb14b4734d47a8f6259388c740ed3ad",
+    "sourceSha256Lf": {
+      "page_cache.py": "9cb2e9d887b604aeb729b4b76252c6a7be1cf28441c6c1f498dcaf6288692d73",
+      "test_service_classes.py": "a6dec4e6b063cfdf0cd1ce96dccbfdca904bd87744db28e82d6e5969890892bd",
+      "test_footprint.py": "dd7aaa0832130306f266c021da30926685543e4de6a290deb0ad99748ce47134",
+      "test_cold_start.py": "5a42d6cbd56afd50e6085a82102b0e460cccd95b7bfd57d9170b540b27af32f5",
+      "test_scoring.py": "68da8da44c9cd9576aa28c4b00fa0373009b4cc112951a8669c5248f1df6b1ad",
+      "metrics.py": "9b9acf0782ec21619a8125c7d4be28d65feeb0722ae462104b6ab31ef3d77d69",
+      "workload.py": "b7e315cdbfe4b222e41c3025e3e1c700cbb599689e505991f52a0cc0f4f1ccef",
+      "footprint.py": "d93866707231a942067d1d6390307f8c7ed946e7fbfe4457f5af7eaecacf6f0c",
+      "test_engine.py": "896039c529af5687f14dfbf532d6fb97950ce4c96693b7cd7eeab43eaebcc0a5",
+      "protocol.py": "640bd23e0e6c2aba551ec1414f1f2c4fd7db782d9df491c49815fe27baf2b787",
+      "service_classes.py": "4b7cb2fc1a3a29e5ed38f66a358a930b2ddc91e07c6f83a435d8b096327f1611",
+      "test_density.py": "6001238822084996b824c4ff2589615d7521df8503ebbcbbc93aa0fb5b2eb3dd",
+      "engine.py": "86b2c4104930dc5c0b3b04b84e3af57ec5ee4a071f9bbe5a8e09bf5b4053c7e7",
+      "host.py": "ffb28add39c789fbc5cecd56bf8db81b42187597f74bd78f8536fa9ec210af82",
+      "readiness.py": "81ef206a59ec263c57ec0b1a73ae222d36916540b14709615bad2310e1193570",
+      "test_page_cache.py": "4bb1fcfa4e43e73e052ba3c9a8db1933cf6d0c6cd2134c8370043d8202423b8a",
+      "cold_start.py": "070f2523d316bd1f114239ed60bb59db11efb31b40337bdba99c40b9a0fc94a6",
+      "test_workload.py": "af0c58334562aa987b3442e92524eec3f3d8a5e3b43c9b60da524c510953e1ec",
+      "test_client.py": "3c35b5d71236f612689114da4a135b261eb60cb9d8efbe5c443e0050235a896a",
+      "scoring.py": "48b5f42df8a9e3eec81a5fb50d381effc699935037c40e6dca6922a59a8f9cfb",
+      "density.py": "3d1a3d8444c661a65a5a6168291aa1792e6cca661db6ce6d4de9a61e2c9f476c",
+      "readiness_container.py": "21975cc05f20062d0dc7dd0d63b69326c09c3723a9cb76b47f4ed580ae612bb2",
+      "client.py": "71815cd1cc6a1284426bff142866519de1779c5013731b614462b56a018d533f"
+    },
+    "parameters": {
+      "seconds": 20,
+      "commands": 60,
+      "starters": 8
+    },
+    "limits": {
+      "memory.max": 1073741824,
+      "memory.swap.max": 0,
+      "pids.max": 8192,
+      "cpu.max": [
+        200000,
+        100000
+      ]
+    },
+    "rows": [
+      {
+        "name": "1-default",
+        "mode": "default",
+        "repetition": 1,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 94076106,
+          "p95Ns": 121357788,
+          "p99Ns": 152372911,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 7375987109,
+          "successfulPerSecond": 8.134504455246331
+        },
+        "backgroundSummary": {
+          "compilations": 9517,
+          "zeroProgressSeconds": 0,
+          "perSecond": 473.2714687622322,
+          "maximumCallerQueueNs": 36217
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 59,
+        "startupWallNs": 122352966,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37109296,
+          "user_usec": 34626533,
+          "system_usec": 2482763,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 202,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=8197\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=3726\n",
+        "cpuPressureAfter": "some avg10=66.36 avg60=21.40 avg300=4.99 total=16342966\nfull avg10=6.25 avg60=2.04 avg300=0.47 total=1646003\n",
+        "memoryBefore": {
+          "anon": 3313664,
+          "file": 274432,
+          "shmem": 0,
+          "kernel": 3833856
+        },
+        "memoryAfter": {
+          "anon": 9134080,
+          "file": 450560,
+          "shmem": 0,
+          "kernel": 9531392
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "1-weights",
+        "mode": "weights",
+        "repetition": 1,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 10
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 54039471,
+          "p95Ns": 60547631,
+          "p99Ns": 103579062,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 4893882573,
+          "successfulPerSecond": 12.260204266245683
+        },
+        "backgroundSummary": {
+          "compilations": 9599,
+          "zeroProgressSeconds": 0,
+          "perSecond": 478.8984125251663,
+          "maximumCallerQueueNs": 4485
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 58,
+        "startupWallNs": 94457844,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37310369,
+          "user_usec": 34827159,
+          "system_usec": 2483209,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 202,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=5920\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=3512\n",
+        "cpuPressureAfter": "some avg10=68.08 avg60=22.40 avg300=5.25 total=16197309\nfull avg10=5.82 avg60=1.96 avg300=0.46 total=1528219\n",
+        "memoryBefore": {
+          "anon": 3280896,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3813376
+        },
+        "memoryAfter": {
+          "anon": 9117696,
+          "file": 135168,
+          "shmem": 0,
+          "kernel": 9658368
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "1-execution-bound",
+        "mode": "execution-bound",
+        "repetition": 1,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 2,
+        "foregroundSummary": {
+          "p50Ns": 75803977,
+          "p95Ns": 96313667,
+          "p99Ns": 106131951,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 6190582672,
+          "successfulPerSecond": 9.692140979132699
+        },
+        "backgroundSummary": {
+          "compilations": 20428,
+          "zeroProgressSeconds": 0,
+          "perSecond": 509.9235016349885,
+          "maximumCallerQueueNs": 20135405463
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 0,
+        "startupWallNs": 107716670,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 75753161,
+          "user_usec": 72032959,
+          "system_usec": 3720201,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 402,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=5480\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1673\n",
+        "cpuPressureAfter": "some avg10=13.65 avg60=8.10 avg300=2.25 total=7392115\nfull avg10=4.23 avg60=2.25 avg300=0.60 total=2176956\n",
+        "memoryBefore": {
+          "anon": 3301376,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3817472
+        },
+        "memoryAfter": {
+          "anon": 9113600,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9527296
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "1-startup-bound",
+        "mode": "startup-bound",
+        "repetition": 1,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 2,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 98541650,
+          "p95Ns": 123482036,
+          "p99Ns": 125918088,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 7430023048,
+          "successfulPerSecond": 8.075345071257981
+        },
+        "backgroundSummary": {
+          "compilations": 9500,
+          "zeroProgressSeconds": 0,
+          "perSecond": 474.0984611695529,
+          "maximumCallerQueueNs": 5082
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 59,
+        "startupWallNs": 194337101,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37108555,
+          "user_usec": 34605383,
+          "system_usec": 2503172,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 202,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=4584\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2511\n",
+        "cpuPressureAfter": "some avg10=65.50 avg60=21.93 avg300=5.16 total=15942782\nfull avg10=6.26 avg60=2.08 avg300=0.49 total=1613089\n",
+        "memoryBefore": {
+          "anon": 3293184,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3825664
+        },
+        "memoryAfter": {
+          "anon": 9105408,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9580544
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "1-weights-and-startup-bound",
+        "mode": "weights-and-startup-bound",
+        "repetition": 1,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 10
+        },
+        "startupParallelism": 2,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 54386789,
+          "p95Ns": 60847942,
+          "p99Ns": 91245431,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 4919608812,
+          "successfulPerSecond": 12.196091659492701
+        },
+        "backgroundSummary": {
+          "compilations": 9384,
+          "zeroProgressSeconds": 0,
+          "perSecond": 467.4942958243102,
+          "maximumCallerQueueNs": 4752
+        },
+        "foregroundWithBackgroundWork": 58,
+        "foregroundOverlappingAllBackgrounds": 57,
+        "startupWallNs": 125275823,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 36537026,
+          "user_usec": 34130392,
+          "system_usec": 2406633,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 203,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=5672\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2537\n",
+        "cpuPressureAfter": "some avg10=66.63 avg60=21.93 avg300=5.14 total=15923062\nfull avg10=7.64 avg60=2.54 avg300=0.59 total=1927824\n",
+        "memoryBefore": {
+          "anon": 3284992,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3813376
+        },
+        "memoryAfter": {
+          "anon": 9138176,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9445376
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "2-weights-and-startup-bound",
+        "mode": "weights-and-startup-bound",
+        "repetition": 2,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 10
+        },
+        "startupParallelism": 2,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 53723139,
+          "p95Ns": 63355055,
+          "p99Ns": 97256352,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 4861803711,
+          "successfulPerSecond": 12.341098811588775
+        },
+        "backgroundSummary": {
+          "compilations": 9555,
+          "zeroProgressSeconds": 0,
+          "perSecond": 474.21830321795375,
+          "maximumCallerQueueNs": 4941
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 57,
+        "startupWallNs": 138638002,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37222170,
+          "user_usec": 34629827,
+          "system_usec": 2592343,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 203,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=7196\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=3997\n",
+        "cpuPressureAfter": "some avg10=67.60 avg60=22.11 avg300=5.18 total=16109776\nfull avg10=6.26 avg60=2.06 avg300=0.48 total=1586054\n",
+        "memoryBefore": {
+          "anon": 3293184,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3809280
+        },
+        "memoryAfter": {
+          "anon": 9142272,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9502720
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "2-startup-bound",
+        "mode": "startup-bound",
+        "repetition": 2,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 2,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 95799761,
+          "p95Ns": 126659512,
+          "p99Ns": 162773345,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 7408813505,
+          "successfulPerSecond": 8.098462724093093
+        },
+        "backgroundSummary": {
+          "compilations": 9517,
+          "zeroProgressSeconds": 0,
+          "perSecond": 472.3949530565331,
+          "maximumCallerQueueNs": 4555
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 58,
+        "startupWallNs": 255224997,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37262730,
+          "user_usec": 34700656,
+          "system_usec": 2562074,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 203,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=4559\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2034\n",
+        "cpuPressureAfter": "some avg10=67.91 avg60=22.74 avg300=5.35 total=16515115\nfull avg10=5.94 avg60=2.02 avg300=0.47 total=1600698\n",
+        "memoryBefore": {
+          "anon": 3272704,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3821568
+        },
+        "memoryAfter": {
+          "anon": 9089024,
+          "file": 135168,
+          "shmem": 0,
+          "kernel": 9486336
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "2-execution-bound",
+        "mode": "execution-bound",
+        "repetition": 2,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 2,
+        "foregroundSummary": {
+          "p50Ns": 75973057,
+          "p95Ns": 103696129,
+          "p99Ns": 127019628,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 6413483685,
+          "successfulPerSecond": 9.35529003376579
+        },
+        "backgroundSummary": {
+          "compilations": 20496,
+          "zeroProgressSeconds": 0,
+          "perSecond": 510.9307762478311,
+          "maximumCallerQueueNs": 20144622790
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 0,
+        "startupWallNs": 103975572,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 75963754,
+          "user_usec": 72046037,
+          "system_usec": 3917717,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 402,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=5007\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2809\n",
+        "cpuPressureAfter": "some avg10=13.60 avg60=8.22 avg300=2.29 total=7455320\nfull avg10=4.32 avg60=2.28 avg300=0.61 total=2156057\n",
+        "memoryBefore": {
+          "anon": 3284992,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3825664
+        },
+        "memoryAfter": {
+          "anon": 9121792,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9519104
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "2-weights",
+        "mode": "weights",
+        "repetition": 2,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 10
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 53670697,
+          "p95Ns": 61118644,
+          "p99Ns": 72729121,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 4819426915,
+          "successfulPerSecond": 12.449613005491546
+        },
+        "backgroundSummary": {
+          "compilations": 9554,
+          "zeroProgressSeconds": 0,
+          "perSecond": 475.9944619111533,
+          "maximumCallerQueueNs": 4434
+        },
+        "foregroundWithBackgroundWork": 58,
+        "foregroundOverlappingAllBackgrounds": 57,
+        "startupWallNs": 106150750,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37174702,
+          "user_usec": 34645896,
+          "system_usec": 2528805,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 202,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=6654\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2573\n",
+        "cpuPressureAfter": "some avg10=69.93 avg60=22.94 avg300=5.37 total=16608402\nfull avg10=6.20 avg60=2.08 avg300=0.49 total=1609668\n",
+        "memoryBefore": {
+          "anon": 3284992,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3801088
+        },
+        "memoryAfter": {
+          "anon": 9113600,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9515008
+        },
+        "oomKillDelta": 0
+      },
+      {
+        "name": "2-default",
+        "mode": "default",
+        "repetition": 2,
+        "status": "PASS",
+        "weights": {
+          "foreground": 100,
+          "background": 100
+        },
+        "startupParallelism": 8,
+        "backgroundExecutionBound": 4,
+        "foregroundSummary": {
+          "p50Ns": 95473252,
+          "p95Ns": 132564852,
+          "p99Ns": 227054261,
+          "attempts": 60,
+          "successful": 60,
+          "wallNs": 7469355689,
+          "successfulPerSecond": 8.03282137016999
+        },
+        "backgroundSummary": {
+          "compilations": 9564,
+          "zeroProgressSeconds": 0,
+          "perSecond": 474.3122882070875,
+          "maximumCallerQueueNs": 4084
+        },
+        "foregroundWithBackgroundWork": 59,
+        "foregroundOverlappingAllBackgrounds": 59,
+        "startupWallNs": 150536857,
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "cpuStatDelta": {
+          "usage_usec": 37249598,
+          "user_usec": 34717755,
+          "system_usec": 2531843,
+          "nice_usec": 0,
+          "core_sched.force_idle_usec": 0,
+          "nr_periods": 202,
+          "nr_throttled": 0,
+          "throttled_usec": 0,
+          "nr_bursts": 0,
+          "burst_usec": 0
+        },
+        "cpuPressureBefore": "some avg10=0.00 avg60=0.00 avg300=0.00 total=5164\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2536\n",
+        "cpuPressureAfter": "some avg10=70.88 avg60=23.19 avg300=5.43 total=16827853\nfull avg10=6.44 avg60=2.16 avg300=0.51 total=1627203\n",
+        "memoryBefore": {
+          "anon": 3297280,
+          "file": 65536,
+          "shmem": 0,
+          "kernel": 3809280
+        },
+        "memoryAfter": {
+          "anon": 9129984,
+          "file": 131072,
+          "shmem": 0,
+          "kernel": 9478144
+        },
+        "oomKillDelta": 0
+      }
+    ],
+    "decisions": [
+      {
+        "mode": "weights",
+        "passesBothRepetitions": true,
+        "repetitions": [
+          {
+            "repetition": 1,
+            "p95ReductionFraction": 0.5010816199121889,
+            "backgroundThroughputRatio": 1.0118894633087654,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": true
+          },
+          {
+            "repetition": 2,
+            "p95ReductionFraction": 0.5389528741751245,
+            "backgroundThroughputRatio": 1.0035465530746093,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": true
+          }
+        ]
+      },
+      {
+        "mode": "execution-bound",
+        "passesBothRepetitions": false,
+        "repetitions": [
+          {
+            "repetition": 1,
+            "p95ReductionFraction": 0.20636599770589092,
+            "backgroundThroughputRatio": 1.07744399418079,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": false,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": false
+          },
+          {
+            "repetition": 2,
+            "p95ReductionFraction": 0.21777056711834897,
+            "backgroundThroughputRatio": 1.0772033298550254,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": false,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": false
+          }
+        ]
+      },
+      {
+        "mode": "startup-bound",
+        "passesBothRepetitions": false,
+        "repetitions": [
+          {
+            "repetition": 1,
+            "p95ReductionFraction": -0.017504010537832126,
+            "backgroundThroughputRatio": 1.0017473954419511,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": false,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": false
+          },
+          {
+            "repetition": 2,
+            "p95ReductionFraction": 0.044546800384162144,
+            "backgroundThroughputRatio": 0.9959576523775043,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": false,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": false
+          }
+        ]
+      },
+      {
+        "mode": "weights-and-startup-bound",
+        "passesBothRepetitions": true,
+        "repetitions": [
+          {
+            "repetition": 1,
+            "p95ReductionFraction": 0.4986070280054874,
+            "backgroundThroughputRatio": 0.9877931096226205,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": true
+          },
+          {
+            "repetition": 2,
+            "p95ReductionFraction": 0.5220825577506774,
+            "backgroundThroughputRatio": 0.9998018499805498,
+            "conditions": {
+              "p95ReductionAtLeast20Percent": true,
+              "allForegroundSucceeded": true,
+              "backgroundThroughputAtLeast80Percent": true,
+              "noActiveBackgroundStarvation": true,
+              "backgroundWaitAtMost2Seconds": true,
+              "foregroundOverlapAtLeast80Percent": true
+            },
+            "passes": true
+          }
+        ]
+      }
+    ]
+  },
+  "decision": "Select optional operator profile CPU weights. Weights alone pass both repetitions. Combining weights with a startup bound adds no demonstrated benefit over weights alone. The startup-only condition fails the latency threshold; the execution-bound condition fails the caller-wait bound. Keep default weights and current finite admission; add no startup/execution queue or topology controls.",
+  "limitations": "Two repetitions of one synthetic workload on a two-vCPU CI host establish a useful trade-off here, not a general throughput or latency guarantee. All 600 interactive commands succeeded, no active background second had zero progress, no OOM occurred, and every fixture confirmed cleanup. Pool quota throttled_usec stayed zero despite contention, so zero quota throttling alone does not show spare CPU.",
+  "comparisonRuntimeControlsAdded": false,
+  "implementation": {
+    "profileCpuWeight": "../sandcrab-profile-cpu-weights-2026-11-09/summary.json",
+    "default": 100,
+    "startupBoundAdded": false,
+    "executionBoundAdded": false
+  }
 }

@@ -1,0 +1,69 @@
+{
+  "scope": "Operator profile CPU weights following the retained mixed-workload comparison",
+  "result": "LOCAL_PASS",
+  "base": "fd05ec5a9fcb895f945de47efb41597f3c949082",
+  "defaultWeight": 100,
+  "range": [
+    1,
+    10000
+  ],
+  "callerOverride": "DENIED",
+  "binaryBytes": 4780960,
+  "binarySha256": "e71bcc5354de7702926ee6a66176115accd8e17ae0209797428e16404d8b2c9b",
+  "previousBinaryBytes": 4776864,
+  "binaryDeltaBytes": 4096,
+  "runtimeProcessesAdded": 0,
+  "runtimeDependenciesAdded": 0,
+  "rustFmtClippyLockedTests": "PASS",
+  "rustTests": 126,
+  "controllerTests": 5,
+  "nativeSuites": [
+    {
+      "suite": "resources",
+      "result": "PASS",
+      "checks": 11,
+      "cleanup": "PASS",
+      "receiptSha256": "13a828cdd57e716b2c67041f051fec6fee4ca30371736beade08400b6ec97867"
+    },
+    {
+      "suite": "contexts",
+      "result": "PASS",
+      "checks": 10,
+      "cleanup": "PASS",
+      "receiptSha256": "52d8198db8d1a8bdd086ef35c889effbd6c7cd49fe0815d59117e6f32e3d4ddb"
+    },
+    {
+      "suite": "queue",
+      "result": "PASS",
+      "checks": 11,
+      "cleanup": "PASS",
+      "receiptSha256": "8f946d756a8f7b7566c7cd1952ad939cb22d5630b8a81b99fed70b168e1d9b73"
+    }
+  ],
+  "publishedPythonSdk": "1.1.0",
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "PRECHECK_FAIL",
+      "reason": "Selected SDK client directory lacked queue_client.py; no fixture was started. Log retained in operator storage."
+    },
+    {
+      "attempt": 2,
+      "result": "PASS",
+      "groups": 32,
+      "cleanup": "PASS"
+    }
+  ],
+  "sourceSha256Lf": {
+    "benchmarks/density/README.md": "5e82790d62305e44f95f52da11915a8e6218940ffc30bc792c68484d95cab5fb",
+    "crates/sandcrab-core/src/cgroup.rs": "b950fc6ecb13cb2ee5f4aed308448fbcf3f71ab134789be60e65ee22f565f664",
+    "crates/sandcrab/README.md": "dff3a8297c65b338758a6d49e1de687cda4429c96f178421f0a7d2ee5858ae97",
+    "crates/sandcrab/openapi.json": "dfe755e0c4e496439d9efba19a0a1df16166555aede25dc1dcf1c35a63f66411",
+    "crates/sandcrab/sandcrab_conformance/resources.py": "069ceb658ca3498328821f5a417a759d3747973a34c2ff7dca646982c7fdcf8d",
+    "crates/sandcrab/src/config.rs": "94f4fffabd6c94c774f0c2622d00fbc92b668702c76aea48784aee466d79a0aa",
+    "crates/sandcrab/src/runtime.rs": "0cd2f894983ed393991ed098fbb1af04f71c781d30681d858b8684dea2fbe9cb",
+    "crates/sandcrab/src/service.rs": "35f73905685f05d90a247777d69847d73f7d3a607d85d94d98afb0a5f9cf4349",
+    "crates/sandcrab/src/session_resources.rs": "39df4c3221f6f2e6867d24aa3fd3ba29a81ff255439a75176668a974e3d5ab63"
+  },
+  "rawEvidence": "Native receipts/logs retained outside source control; CI native conformance retains raw artifacts. This is targeted correctness acceptance, not a repeated full-density measurement."
+}

@@ -1,6 +1,6 @@
 {
-  "scope": "D3 collector smoke only; the 1/10/50 comparison is pending CI and is not established by this receipt",
-  "result": "SMOKE_PASS",
+  "scope": "Matched 1/10/50 distinct workspaces sharing immutable dependencies, with two reversed-order repetitions",
+  "result": "PASS",
   "linuxCollectorUnitTests": 42,
   "sourceSha256Lf": {
     ".github/workflows/environment-reuse.yml": "315c0db7754b31feb9178f79765735bde4dcd9cc8625113a919758728f9249da",
@@ -19,7 +19,7 @@
       "sha256": "cccc5378356d846152b522058b376fb1c2aa21e1ea05850de2bef6385733b5ac"
     }
   },
-  "fullComparison": "FIRST_COMPLETE_RETAINED; corrected configuration identity and quiescent endpoint observations pending CI",
+  "fullComparison": "PASS",
   "attempts": [
     {
       "attempt": 1,
@@ -276,5 +276,3586 @@
         "hostCleanup": "PASS"
       }
     ]
-  }
+  },
+  "finalCompleteComparison": {
+    "run": 42586592743,
+    "head": "55f49aa7ee34b73935bd69007efe81cb4a93a705",
+    "artifactId": 13659866530,
+    "artifactSha256": "a9055e0010068149732875610098c3edf37834e175eae70ee6bbc36e29b1ef9d",
+    "resultsSha256": "653a26b55fab8f34195e82aa113332fcc0f8eb79b76f79918eaa76b75825b862",
+    "result": "PASS",
+    "sourceSha256Lf": {
+      "page_cache.py": "9cb2e9d887b604aeb729b4b76252c6a7be1cf28441c6c1f498dcaf6288692d73",
+      "test_footprint.py": "dd7aaa0832130306f266c021da30926685543e4de6a290deb0ad99748ce47134",
+      "test_cold_start.py": "5a42d6cbd56afd50e6085a82102b0e460cccd95b7bfd57d9170b540b27af32f5",
+      "test_scoring.py": "68da8da44c9cd9576aa28c4b00fa0373009b4cc112951a8669c5248f1df6b1ad",
+      "metrics.py": "9b9acf0782ec21619a8125c7d4be28d65feeb0722ae462104b6ab31ef3d77d69",
+      "workload.py": "b7e315cdbfe4b222e41c3025e3e1c700cbb599689e505991f52a0cc0f4f1ccef",
+      "footprint.py": "d93866707231a942067d1d6390307f8c7ed946e7fbfe4457f5af7eaecacf6f0c",
+      "test_engine.py": "896039c529af5687f14dfbf532d6fb97950ce4c96693b7cd7eeab43eaebcc0a5",
+      "protocol.py": "640bd23e0e6c2aba551ec1414f1f2c4fd7db782d9df491c49815fe27baf2b787",
+      "test_density.py": "6001238822084996b824c4ff2589615d7521df8503ebbcbbc93aa0fb5b2eb3dd",
+      "engine.py": "86b2c4104930dc5c0b3b04b84e3af57ec5ee4a071f9bbe5a8e09bf5b4053c7e7",
+      "host.py": "ca3ac46451da5972abb8a3e06ccbb620896443b73ec82419fafc76e5261e52c9",
+      "readiness.py": "81ef206a59ec263c57ec0b1a73ae222d36916540b14709615bad2310e1193570",
+      "preparation.py": "1db958cfbaadc32b75b2d2bae8fe35f7164195f851f4c83a355ccaae47abe452",
+      "test_preparation.py": "aedfc9182508248e1215708e450d54f7504caeb8129090b2c35ee3ca30be1aae",
+      "test_page_cache.py": "4bb1fcfa4e43e73e052ba3c9a8db1933cf6d0c6cd2134c8370043d8202423b8a",
+      "cold_start.py": "070f2523d316bd1f114239ed60bb59db11efb31b40337bdba99c40b9a0fc94a6",
+      "test_workload.py": "af0c58334562aa987b3442e92524eec3f3d8a5e3b43c9b60da524c510953e1ec",
+      "test_client.py": "3c35b5d71236f612689114da4a135b261eb60cb9d8efbe5c443e0050235a896a",
+      "scoring.py": "48b5f42df8a9e3eec81a5fb50d381effc699935037c40e6dca6922a59a8f9cfb",
+      "density.py": "3d1a3d8444c661a65a5a6168291aa1792e6cca661db6ce6d4de9a61e2c9f476c",
+      "readiness_container.py": "21975cc05f20062d0dc7dd0d63b69326c09c3723a9cb76b47f4ed580ae612bb2",
+      "client.py": "71815cd1cc6a1284426bff142866519de1779c5013731b614462b56a018d533f"
+    },
+    "successfulMeasuredCommands": 732,
+    "observation": "The collector waits 2.1 seconds outside timed preparation and command batches before endpoint counters. These are quiescent observations, not peaks or atomic snapshots. The first complete run remains retained.",
+    "limits": {
+      "memory.max": 1073741824,
+      "memory.swap.max": 0,
+      "pids.max": 8192,
+      "cpu.max": [
+        200000,
+        100000
+      ]
+    },
+    "rows": [
+      {
+        "name": "1-1-monolithic",
+        "mode": "monolithic",
+        "readers": 1,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 4239360,
+        "preparationNs": 183818692,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 159744,
+          "shmem": 0,
+          "kernel": 286720
+        },
+        "preparationMemoryAfter": {
+          "anon": 884736,
+          "file": 4415488,
+          "shmem": 0,
+          "kernel": 1298432
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 67310449,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 66846760,
+              "p95Ns": 66846760,
+              "p99Ns": 66846760
+            },
+            "successfulPerSecond": 14.85653438443116,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 897024,
+              "file": 221184,
+              "shmem": 0,
+              "kernel": 1138688
+            },
+            "memoryAfter": {
+              "anon": 917504,
+              "file": 4415488,
+              "shmem": 0,
+              "kernel": 1236992
+            },
+            "cpuUsecDelta": {
+              "pool": 39317,
+              "daemon": 7025,
+              "sandboxes": 32292
+            },
+            "cpuStatDelta": {
+              "usage_usec": 39317,
+              "user_usec": 24315,
+              "system_usec": 15002,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 9,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2131,
+                "full": 905
+              },
+              "io": {
+                "some": 5092,
+                "full": 5092
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 55424100,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 55008092,
+              "p95Ns": 55008092,
+              "p99Ns": 55008092
+            },
+            "successfulPerSecond": 18.04269261927573,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 917504,
+              "file": 4415488,
+              "shmem": 0,
+              "kernel": 1236992
+            },
+            "memoryAfter": {
+              "anon": 921600,
+              "file": 4415488,
+              "shmem": 0,
+              "kernel": 1236992
+            },
+            "cpuUsecDelta": {
+              "pool": 33753,
+              "daemon": 6038,
+              "sandboxes": 27715
+            },
+            "cpuStatDelta": {
+              "usage_usec": 33753,
+              "user_usec": 21230,
+              "system_usec": 12524,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 8,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 1527,
+                "full": 965
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 148436292,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 148036128,
+              "p95Ns": 148036128,
+              "p99Ns": 148036128
+            },
+            "successfulPerSecond": 6.736896930839528,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 64,
+              "logicalBytes": 4194304,
+              "allocatedBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "applicationWriteBytes": 64,
+            "memoryBefore": {
+              "anon": 921600,
+              "file": 4415488,
+              "shmem": 0,
+              "kernel": 1236992
+            },
+            "memoryAfter": {
+              "anon": 942080,
+              "file": 8642560,
+              "shmem": 0,
+              "kernel": 1478656
+            },
+            "cpuUsecDelta": {
+              "pool": 68383,
+              "daemon": 9877,
+              "sandboxes": 58506
+            },
+            "cpuStatDelta": {
+              "usage_usec": 68383,
+              "user_usec": 33857,
+              "system_usec": 34525,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 10,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 3318,
+                "full": 1569
+              },
+              "io": {
+                "some": 23756,
+                "full": 23234
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 4456448,
+                "rios": 0,
+                "wios": 128,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "1-1-recipe",
+        "mode": "recipe",
+        "readers": 1,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 4239360,
+        "preparationNs": 187026183,
+        "recipeMetadataBytes": 242,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 253952,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 262144
+        },
+        "preparationMemoryAfter": {
+          "anon": 884736,
+          "file": 4247552,
+          "shmem": 0,
+          "kernel": 1343488
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 68520526,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 68094563,
+              "p95Ns": 68094563,
+              "p99Ns": 68094563
+            },
+            "successfulPerSecond": 14.594167009167442,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 901120,
+              "file": 53248,
+              "shmem": 0,
+              "kernel": 1187840
+            },
+            "memoryAfter": {
+              "anon": 921600,
+              "file": 4247552,
+              "shmem": 0,
+              "kernel": 1282048
+            },
+            "cpuUsecDelta": {
+              "pool": 39709,
+              "daemon": 6840,
+              "sandboxes": 32869
+            },
+            "cpuStatDelta": {
+              "usage_usec": 39709,
+              "user_usec": 28451,
+              "system_usec": 11257,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 9,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 1251,
+                "full": 973
+              },
+              "io": {
+                "some": 7487,
+                "full": 7335
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 57980144,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 57538809,
+              "p95Ns": 57538809,
+              "p99Ns": 57538809
+            },
+            "successfulPerSecond": 17.247283828753513,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 921600,
+              "file": 4247552,
+              "shmem": 0,
+              "kernel": 1282048
+            },
+            "memoryAfter": {
+              "anon": 925696,
+              "file": 4247552,
+              "shmem": 0,
+              "kernel": 1286144
+            },
+            "cpuUsecDelta": {
+              "pool": 40111,
+              "daemon": 7205,
+              "sandboxes": 32906
+            },
+            "cpuStatDelta": {
+              "usage_usec": 40111,
+              "user_usec": 28394,
+              "system_usec": 11717,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 8,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 1293,
+                "full": 998
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 137644212,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 137225119,
+              "p95Ns": 137225119,
+              "p99Ns": 137225119
+            },
+            "successfulPerSecond": 7.265107522283611,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 64,
+              "logicalBytes": 4194304,
+              "allocatedBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "applicationWriteBytes": 64,
+            "memoryBefore": {
+              "anon": 925696,
+              "file": 4247552,
+              "shmem": 0,
+              "kernel": 1286144
+            },
+            "memoryAfter": {
+              "anon": 946176,
+              "file": 8462336,
+              "shmem": 0,
+              "kernel": 1527808
+            },
+            "cpuUsecDelta": {
+              "pool": 68182,
+              "daemon": 9963,
+              "sandboxes": 58219
+            },
+            "cpuStatDelta": {
+              "usage_usec": 68182,
+              "user_usec": 39564,
+              "system_usec": 28619,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 10,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2569,
+                "full": 2154
+              },
+              "io": {
+                "some": 16247,
+                "full": 15969
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 4456448,
+                "rios": 0,
+                "wios": 128,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "1-10-monolithic",
+        "mode": "monolithic",
+        "readers": 10,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 42393600,
+        "preparationNs": 1654444066,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 640,
+          "payloadBytes": 41943040,
+          "pages": 10240,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 640
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 262144
+        },
+        "preparationMemoryAfter": {
+          "anon": 6336512,
+          "file": 42700800,
+          "shmem": 0,
+          "kernel": 10121216
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 314437949,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 288860846,
+              "p95Ns": 313879397,
+              "p99Ns": 313879397
+            },
+            "successfulPerSecond": 31.802777087825362,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6443008,
+              "file": 757760,
+              "shmem": 0,
+              "kernel": 8622080
+            },
+            "memoryAfter": {
+              "anon": 6664192,
+              "file": 42700800,
+              "shmem": 0,
+              "kernel": 9601024
+            },
+            "cpuUsecDelta": {
+              "pool": 522444,
+              "daemon": 65404,
+              "sandboxes": 457040
+            },
+            "cpuStatDelta": {
+              "usage_usec": 522458,
+              "user_usec": 374732,
+              "system_usec": 147727,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 21,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 260823,
+                "full": 32474
+              },
+              "io": {
+                "some": 84388,
+                "full": 21724
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 41943040,
+                "wbytes": 0,
+                "rios": 640,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 271146255,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 263123806,
+              "p95Ns": 267314547,
+              "p99Ns": 267314547
+            },
+            "successfulPerSecond": 36.88046512019869,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6664192,
+              "file": 42700800,
+              "shmem": 0,
+              "kernel": 9601024
+            },
+            "memoryAfter": {
+              "anon": 6696960,
+              "file": 42700800,
+              "shmem": 0,
+              "kernel": 9601024
+            },
+            "cpuUsecDelta": {
+              "pool": 463332,
+              "daemon": 62158,
+              "sandboxes": 401174
+            },
+            "cpuStatDelta": {
+              "usage_usec": 463332,
+              "user_usec": 324065,
+              "system_usec": 139267,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 23,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 261587,
+                "full": 38529
+              },
+              "io": {
+                "some": 6,
+                "full": 3
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 976018779,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 944429282,
+              "p95Ns": 975085289,
+              "p99Ns": 975085289
+            },
+            "successfulPerSecond": 10.245704504011393,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 640,
+              "logicalBytes": 41943040,
+              "allocatedBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "applicationWriteBytes": 640,
+            "memoryBefore": {
+              "anon": 6696960,
+              "file": 42700800,
+              "shmem": 0,
+              "kernel": 9601024
+            },
+            "memoryAfter": {
+              "anon": 6868992,
+              "file": 84971520,
+              "shmem": 0,
+              "kernel": 12021760
+            },
+            "cpuUsecDelta": {
+              "pool": 975458,
+              "daemon": 174075,
+              "sandboxes": 801383
+            },
+            "cpuStatDelta": {
+              "usage_usec": 975458,
+              "user_usec": 579754,
+              "system_usec": 395704,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 31,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 486398,
+                "full": 103756
+              },
+              "io": {
+                "some": 529311,
+                "full": 367139
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 73728,
+                "wbytes": 44564480,
+                "rios": 18,
+                "wios": 1280,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "1-10-recipe",
+        "mode": "recipe",
+        "readers": 10,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 4331520,
+        "preparationNs": 691065524,
+        "recipeMetadataBytes": 2420,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 262144,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 262144
+        },
+        "preparationMemoryAfter": {
+          "anon": 6361088,
+          "file": 4427776,
+          "shmem": 0,
+          "kernel": 7970816
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 252257232,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 237890155,
+              "p95Ns": 251569873,
+              "p99Ns": 251569873
+            },
+            "successfulPerSecond": 39.642074563000044,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6463488,
+              "file": 233472,
+              "shmem": 0,
+              "kernel": 7843840
+            },
+            "memoryAfter": {
+              "anon": 6676480,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8458240
+            },
+            "cpuUsecDelta": {
+              "pool": 446298,
+              "daemon": 55757,
+              "sandboxes": 390541
+            },
+            "cpuStatDelta": {
+              "usage_usec": 446280,
+              "user_usec": 332343,
+              "system_usec": 113937,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 18,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 236189,
+                "full": 29147
+              },
+              "io": {
+                "some": 5672,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 256848893,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 243188025,
+              "p95Ns": 256027183,
+              "p99Ns": 256027183
+            },
+            "successfulPerSecond": 38.93339731076824,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6676480,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8458240
+            },
+            "memoryAfter": {
+              "anon": 6713344,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8458240
+            },
+            "cpuUsecDelta": {
+              "pool": 459547,
+              "daemon": 55716,
+              "sandboxes": 403831
+            },
+            "cpuStatDelta": {
+              "usage_usec": 459575,
+              "user_usec": 337915,
+              "system_usec": 121661,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 16,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 251885,
+                "full": 31912
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 777153135,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 751478089,
+              "p95Ns": 776618838,
+              "p99Ns": 776618838
+            },
+            "successfulPerSecond": 12.867476884076392,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 640,
+              "logicalBytes": 41943040,
+              "allocatedBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "applicationWriteBytes": 640,
+            "memoryBefore": {
+              "anon": 6713344,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8458240
+            },
+            "memoryAfter": {
+              "anon": 6877184,
+              "file": 46370816,
+              "shmem": 0,
+              "kernel": 10874880
+            },
+            "cpuUsecDelta": {
+              "pool": 959951,
+              "daemon": 145466,
+              "sandboxes": 814485
+            },
+            "cpuStatDelta": {
+              "usage_usec": 959951,
+              "user_usec": 591667,
+              "system_usec": 368284,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 27,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 483518,
+                "full": 81047
+              },
+              "io": {
+                "some": 301593,
+                "full": 200630
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 44564480,
+                "rios": 0,
+                "wios": 1280,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "1-50-monolithic",
+        "mode": "monolithic",
+        "readers": 50,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 211968000,
+        "preparationNs": 7643641975,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 3200,
+          "payloadBytes": 209715200,
+          "pages": 51200,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 3200
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 266240
+        },
+        "preparationMemoryAfter": {
+          "anon": 30502912,
+          "file": 212967424,
+          "shmem": 0,
+          "kernel": 48984064
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 3028623599,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2984347165,
+              "p95Ns": 3024856566,
+              "p99Ns": 3027551081
+            },
+            "successfulPerSecond": 16.509149574251865,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 31014912,
+              "file": 3252224,
+              "shmem": 0,
+              "kernel": 41472000
+            },
+            "memoryAfter": {
+              "anon": 32112640,
+              "file": 212967424,
+              "shmem": 0,
+              "kernel": 46383104
+            },
+            "cpuUsecDelta": {
+              "pool": 4306440,
+              "daemon": 1612379,
+              "sandboxes": 2694061
+            },
+            "cpuStatDelta": {
+              "usage_usec": 4306449,
+              "user_usec": 2445796,
+              "system_usec": 1860653,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 51,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2960388,
+                "full": 869739
+              },
+              "io": {
+                "some": 381620,
+                "full": 20047
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 209715200,
+                "wbytes": 0,
+                "rios": 3200,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 2783444224,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2754732841,
+              "p95Ns": 2780715285,
+              "p99Ns": 2782236931
+            },
+            "successfulPerSecond": 17.963356178966855,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 32112640,
+              "file": 212967424,
+              "shmem": 0,
+              "kernel": 46383104
+            },
+            "memoryAfter": {
+              "anon": 32337920,
+              "file": 212967424,
+              "shmem": 0,
+              "kernel": 46391296
+            },
+            "cpuUsecDelta": {
+              "pool": 3920860,
+              "daemon": 1467520,
+              "sandboxes": 2453340
+            },
+            "cpuStatDelta": {
+              "usage_usec": 3920906,
+              "user_usec": 2320054,
+              "system_usec": 1600852,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 49,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2725757,
+                "full": 838060
+              },
+              "io": {
+                "some": 3,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 7891865084,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 7747935055,
+              "p95Ns": 7883319732,
+              "p99Ns": 7888564464
+            },
+            "successfulPerSecond": 6.335637959823997,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 3200,
+              "logicalBytes": 209715200,
+              "allocatedBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "applicationWriteBytes": 3200,
+            "memoryBefore": {
+              "anon": 32337920,
+              "file": 212967424,
+              "shmem": 0,
+              "kernel": 46391296
+            },
+            "memoryAfter": {
+              "anon": 33165312,
+              "file": 424157184,
+              "shmem": 0,
+              "kernel": 58474496
+            },
+            "cpuUsecDelta": {
+              "pool": 9437713,
+              "daemon": 4191327,
+              "sandboxes": 5246386
+            },
+            "cpuStatDelta": {
+              "usage_usec": 9437774,
+              "user_usec": 4625206,
+              "system_usec": 4812568,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 100,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 6380346,
+                "full": 1971303
+              },
+              "io": {
+                "some": 3635087,
+                "full": 1179715
+              },
+              "memory": {
+                "some": 2,
+                "full": 2
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 200704,
+                "wbytes": 223948800,
+                "rios": 49,
+                "wios": 6675,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "1-50-recipe",
+        "mode": "recipe",
+        "readers": 50,
+        "repetition": 1,
+        "status": "PASS",
+        "importedBytes": 4741120,
+        "preparationNs": 3215383543,
+        "recipeMetadataBytes": 12100,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 253952,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 249856
+        },
+        "preparationMemoryAfter": {
+          "anon": 30539776,
+          "file": 5246976,
+          "shmem": 0,
+          "kernel": 37355520
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 2985452229,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2934055872,
+              "p95Ns": 2983252253,
+              "p99Ns": 2983341077
+            },
+            "successfulPerSecond": 16.747881448013615,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 31051776,
+              "file": 1052672,
+              "shmem": 0,
+              "kernel": 37318656
+            },
+            "memoryAfter": {
+              "anon": 32149504,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40239104
+            },
+            "cpuUsecDelta": {
+              "pool": 4225212,
+              "daemon": 1668667,
+              "sandboxes": 2556545
+            },
+            "cpuStatDelta": {
+              "usage_usec": 4225223,
+              "user_usec": 2469941,
+              "system_usec": 1755283,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 51,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2936267,
+                "full": 874029
+              },
+              "io": {
+                "some": 5936,
+                "full": 645
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 2768956291,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2696853003,
+              "p95Ns": 2766282777,
+              "p99Ns": 2767402860
+            },
+            "successfulPerSecond": 18.057345347962375,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 32149504,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40239104
+            },
+            "memoryAfter": {
+              "anon": 32370688,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40247296
+            },
+            "cpuUsecDelta": {
+              "pool": 3925986,
+              "daemon": 1420002,
+              "sandboxes": 2505984
+            },
+            "cpuStatDelta": {
+              "usage_usec": 3925985,
+              "user_usec": 2327484,
+              "system_usec": 1598501,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 49,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2709551,
+                "full": 803359
+              },
+              "io": {
+                "some": 2,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 6366798071,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 6281469672,
+              "p95Ns": 6363839116,
+              "p99Ns": 6364888469
+            },
+            "successfulPerSecond": 7.853241054988691,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 3200,
+              "logicalBytes": 209715200,
+              "allocatedBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "applicationWriteBytes": 3200,
+            "memoryBefore": {
+              "anon": 32370688,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40247296
+            },
+            "memoryAfter": {
+              "anon": 33198080,
+              "file": 214962176,
+              "shmem": 0,
+              "kernel": 52334592
+            },
+            "cpuUsecDelta": {
+              "pool": 8487443,
+              "daemon": 3301422,
+              "sandboxes": 5186021
+            },
+            "cpuStatDelta": {
+              "usage_usec": 8487493,
+              "user_usec": 4436682,
+              "system_usec": 4050812,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 85,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 5729200,
+                "full": 1737446
+              },
+              "io": {
+                "some": 1360059,
+                "full": 364826
+              },
+              "memory": {
+                "some": 1,
+                "full": 1
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 225292288,
+                "rios": 0,
+                "wios": 7003,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-1-recipe",
+        "mode": "recipe",
+        "readers": 1,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 4239360,
+        "preparationNs": 178818895,
+        "recipeMetadataBytes": 242,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 270336
+        },
+        "preparationMemoryAfter": {
+          "anon": 888832,
+          "file": 4243456,
+          "shmem": 0,
+          "kernel": 1294336
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 65348318,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 64974815,
+              "p95Ns": 64974815,
+              "p99Ns": 64974815
+            },
+            "successfulPerSecond": 15.302612685455806,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 905216,
+              "file": 49152,
+              "shmem": 0,
+              "kernel": 1146880
+            },
+            "memoryAfter": {
+              "anon": 925696,
+              "file": 4243456,
+              "shmem": 0,
+              "kernel": 1245184
+            },
+            "cpuUsecDelta": {
+              "pool": 35336,
+              "daemon": 6334,
+              "sandboxes": 29002
+            },
+            "cpuStatDelta": {
+              "usage_usec": 35336,
+              "user_usec": 17709,
+              "system_usec": 17627,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 9,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 1170,
+                "full": 1068
+              },
+              "io": {
+                "some": 5577,
+                "full": 5467
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 54907953,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 54522591,
+              "p95Ns": 54522591,
+              "p99Ns": 54522591
+            },
+            "successfulPerSecond": 18.21229795253886,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 925696,
+              "file": 4243456,
+              "shmem": 0,
+              "kernel": 1245184
+            },
+            "memoryAfter": {
+              "anon": 929792,
+              "file": 4243456,
+              "shmem": 0,
+              "kernel": 1245184
+            },
+            "cpuUsecDelta": {
+              "pool": 32805,
+              "daemon": 6022,
+              "sandboxes": 26783
+            },
+            "cpuStatDelta": {
+              "usage_usec": 32805,
+              "user_usec": 23672,
+              "system_usec": 9134,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 8,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 671,
+                "full": 635
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 126671208,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 126296602,
+              "p95Ns": 126296602,
+              "p99Ns": 126296602
+            },
+            "successfulPerSecond": 7.894453805161469,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 64,
+              "logicalBytes": 4194304,
+              "allocatedBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "applicationWriteBytes": 64,
+            "memoryBefore": {
+              "anon": 929792,
+              "file": 4243456,
+              "shmem": 0,
+              "kernel": 1245184
+            },
+            "memoryAfter": {
+              "anon": 946176,
+              "file": 8437760,
+              "shmem": 0,
+              "kernel": 1490944
+            },
+            "cpuUsecDelta": {
+              "pool": 65660,
+              "daemon": 9138,
+              "sandboxes": 56522
+            },
+            "cpuStatDelta": {
+              "usage_usec": 65660,
+              "user_usec": 40761,
+              "system_usec": 24899,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 10,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2902,
+                "full": 2094
+              },
+              "io": {
+                "some": 11460,
+                "full": 10934
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 4456448,
+                "rios": 0,
+                "wios": 128,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-1-monolithic",
+        "mode": "monolithic",
+        "readers": 1,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 4239360,
+        "preparationNs": 149503684,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 278528
+        },
+        "preparationMemoryAfter": {
+          "anon": 876544,
+          "file": 4235264,
+          "shmem": 0,
+          "kernel": 1277952
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 67738979,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 67357834,
+              "p95Ns": 67357834,
+              "p99Ns": 67357834
+            },
+            "successfulPerSecond": 14.762549048753746,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 888832,
+              "file": 40960,
+              "shmem": 0,
+              "kernel": 1130496
+            },
+            "memoryAfter": {
+              "anon": 909312,
+              "file": 4235264,
+              "shmem": 0,
+              "kernel": 1228800
+            },
+            "cpuUsecDelta": {
+              "pool": 36168,
+              "daemon": 5937,
+              "sandboxes": 30231
+            },
+            "cpuStatDelta": {
+              "usage_usec": 36180,
+              "user_usec": 23018,
+              "system_usec": 13161,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 8,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 3182,
+                "full": 2041
+              },
+              "io": {
+                "some": 5591,
+                "full": 5510
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 54689923,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 54292133,
+              "p95Ns": 54292133,
+              "p99Ns": 54292133
+            },
+            "successfulPerSecond": 18.284904149526778,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 909312,
+              "file": 4235264,
+              "shmem": 0,
+              "kernel": 1228800
+            },
+            "memoryAfter": {
+              "anon": 913408,
+              "file": 4235264,
+              "shmem": 0,
+              "kernel": 1228800
+            },
+            "cpuUsecDelta": {
+              "pool": 32724,
+              "daemon": 5631,
+              "sandboxes": 27093
+            },
+            "cpuStatDelta": {
+              "usage_usec": 32724,
+              "user_usec": 22214,
+              "system_usec": 10510,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 8,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 830,
+                "full": 808
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 120161872,
+            "latency": {
+              "attempts": 1,
+              "successful": 1,
+              "refusedOrFailed": 0,
+              "p50Ns": 119790752,
+              "p95Ns": 119790752,
+              "p99Ns": 119790752
+            },
+            "successfulPerSecond": 8.322107365304696,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 64,
+              "logicalBytes": 4194304,
+              "allocatedBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "applicationWriteBytes": 64,
+            "memoryBefore": {
+              "anon": 913408,
+              "file": 4235264,
+              "shmem": 0,
+              "kernel": 1228800
+            },
+            "memoryAfter": {
+              "anon": 933888,
+              "file": 8429568,
+              "shmem": 0,
+              "kernel": 1470464
+            },
+            "cpuUsecDelta": {
+              "pool": 62533,
+              "daemon": 8268,
+              "sandboxes": 54265
+            },
+            "cpuStatDelta": {
+              "usage_usec": 62533,
+              "user_usec": 36729,
+              "system_usec": 25804,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 10,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2257,
+                "full": 1776
+              },
+              "io": {
+                "some": 8658,
+                "full": 8310
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 4456448,
+                "rios": 0,
+                "wios": 128,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-10-recipe",
+        "mode": "recipe",
+        "readers": 10,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 4331520,
+        "preparationNs": 718101439,
+        "recipeMetadataBytes": 2420,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 262144
+        },
+        "preparationMemoryAfter": {
+          "anon": 6336512,
+          "file": 4427776,
+          "shmem": 0,
+          "kernel": 7950336
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 269268268,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 256601497,
+              "p95Ns": 268262110,
+              "p99Ns": 268262110
+            },
+            "successfulPerSecond": 37.13768456370804,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6438912,
+              "file": 233472,
+              "shmem": 0,
+              "kernel": 7802880
+            },
+            "memoryAfter": {
+              "anon": 6664192,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8425472
+            },
+            "cpuUsecDelta": {
+              "pool": 474962,
+              "daemon": 60222,
+              "sandboxes": 414740
+            },
+            "cpuStatDelta": {
+              "usage_usec": 474962,
+              "user_usec": 330679,
+              "system_usec": 144283,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 18,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 254283,
+                "full": 32989
+              },
+              "io": {
+                "some": 5806,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 255854031,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 241794703,
+              "p95Ns": 255498262,
+              "p99Ns": 255498262
+            },
+            "successfulPerSecond": 39.084785808983405,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6664192,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8425472
+            },
+            "memoryAfter": {
+              "anon": 6705152,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8425472
+            },
+            "cpuUsecDelta": {
+              "pool": 450731,
+              "daemon": 50968,
+              "sandboxes": 399763
+            },
+            "cpuStatDelta": {
+              "usage_usec": 450731,
+              "user_usec": 328544,
+              "system_usec": 122187,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 18,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 239673,
+                "full": 25953
+              },
+              "io": {
+                "some": 0,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 758422513,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 711169668,
+              "p95Ns": 757688095,
+              "p99Ns": 757688095
+            },
+            "successfulPerSecond": 13.185262605726473,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 640,
+              "logicalBytes": 41943040,
+              "allocatedBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "applicationWriteBytes": 640,
+            "memoryBefore": {
+              "anon": 6705152,
+              "file": 4427776,
+              "shmem": 0,
+              "kernel": 8425472
+            },
+            "memoryAfter": {
+              "anon": 6864896,
+              "file": 46370816,
+              "shmem": 0,
+              "kernel": 10846208
+            },
+            "cpuUsecDelta": {
+              "pool": 901130,
+              "daemon": 140386,
+              "sandboxes": 760744
+            },
+            "cpuStatDelta": {
+              "usage_usec": 901130,
+              "user_usec": 545973,
+              "system_usec": 355158,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 26,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 459367,
+                "full": 77983
+              },
+              "io": {
+                "some": 311100,
+                "full": 213765
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 44564480,
+                "rios": 0,
+                "wios": 1280,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-10-monolithic",
+        "mode": "monolithic",
+        "readers": 10,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 42393600,
+        "preparationNs": 1439726533,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 640,
+          "payloadBytes": 41943040,
+          "pages": 10240,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 640
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 262144,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 274432
+        },
+        "preparationMemoryAfter": {
+          "anon": 6328320,
+          "file": 42131456,
+          "shmem": 0,
+          "kernel": 10043392
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 328954771,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 320691272,
+              "p95Ns": 328331040,
+              "p99Ns": 328331040
+            },
+            "successfulPerSecond": 30.39931589865891,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6430720,
+              "file": 188416,
+              "shmem": 0,
+              "kernel": 8544256
+            },
+            "memoryAfter": {
+              "anon": 6647808,
+              "file": 42131456,
+              "shmem": 0,
+              "kernel": 9527296
+            },
+            "cpuUsecDelta": {
+              "pool": 487936,
+              "daemon": 71675,
+              "sandboxes": 416261
+            },
+            "cpuStatDelta": {
+              "usage_usec": 487936,
+              "user_usec": 320532,
+              "system_usec": 167404,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 20,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 255111,
+                "full": 37148
+              },
+              "io": {
+                "some": 115967,
+                "full": 47880
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 41943040,
+                "wbytes": 0,
+                "rios": 640,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 253134839,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 228139755,
+              "p95Ns": 252449504,
+              "p99Ns": 252449504
+            },
+            "successfulPerSecond": 39.50463728937762,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 6647808,
+              "file": 42131456,
+              "shmem": 0,
+              "kernel": 9527296
+            },
+            "memoryAfter": {
+              "anon": 6696960,
+              "file": 42131456,
+              "shmem": 0,
+              "kernel": 9531392
+            },
+            "cpuUsecDelta": {
+              "pool": 446906,
+              "daemon": 53743,
+              "sandboxes": 393163
+            },
+            "cpuStatDelta": {
+              "usage_usec": 446906,
+              "user_usec": 318708,
+              "system_usec": 128198,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 21,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 238334,
+                "full": 27187
+              },
+              "io": {
+                "some": 1,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 747033853,
+            "latency": {
+              "attempts": 10,
+              "successful": 10,
+              "refusedOrFailed": 0,
+              "p50Ns": 744919580,
+              "p95Ns": 746068316,
+              "p99Ns": 746068316
+            },
+            "successfulPerSecond": 13.38627420945005,
+            "lowerResidency": {
+              "files": 640,
+              "payloadBytes": 41943040,
+              "pages": 10240,
+              "residentPages": 10240,
+              "pageBytes": 4096,
+              "residentBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "copyUp": {
+              "files": 640,
+              "logicalBytes": 41943040,
+              "allocatedBytes": 41943040,
+              "distinctInodes": 640
+            },
+            "applicationWriteBytes": 640,
+            "memoryBefore": {
+              "anon": 6696960,
+              "file": 42131456,
+              "shmem": 0,
+              "kernel": 9531392
+            },
+            "memoryAfter": {
+              "anon": 6860800,
+              "file": 84074496,
+              "shmem": 0,
+              "kernel": 11952128
+            },
+            "cpuUsecDelta": {
+              "pool": 876831,
+              "daemon": 133925,
+              "sandboxes": 742906
+            },
+            "cpuStatDelta": {
+              "usage_usec": 876853,
+              "user_usec": 552673,
+              "system_usec": 324180,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 27,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 462267,
+                "full": 71463
+              },
+              "io": {
+                "some": 331275,
+                "full": 234449
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 44564480,
+                "rios": 0,
+                "wios": 1280,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-50-recipe",
+        "mode": "recipe",
+        "readers": 50,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 4741120,
+        "preparationNs": 3027289870,
+        "recipeMetadataBytes": 12100,
+        "coldResidency": {
+          "files": 64,
+          "payloadBytes": 4194304,
+          "pages": 1024,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 64
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 274432
+        },
+        "preparationMemoryAfter": {
+          "anon": 30564352,
+          "file": 5246976,
+          "shmem": 0,
+          "kernel": 37269504
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 2978215389,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2909266506,
+              "p95Ns": 2971216266,
+              "p99Ns": 2976340929
+            },
+            "successfulPerSecond": 16.788577543677448,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 31088640,
+              "file": 1052672,
+              "shmem": 0,
+              "kernel": 37240832
+            },
+            "memoryAfter": {
+              "anon": 32182272,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40148992
+            },
+            "cpuUsecDelta": {
+              "pool": 4198807,
+              "daemon": 1659341,
+              "sandboxes": 2539466
+            },
+            "cpuStatDelta": {
+              "usage_usec": 4198809,
+              "user_usec": 2424541,
+              "system_usec": 1774269,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 50,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2921744,
+                "full": 879962
+              },
+              "io": {
+                "some": 5560,
+                "full": 1249
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 4194304,
+                "wbytes": 0,
+                "rios": 64,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 2859466794,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2806911753,
+              "p95Ns": 2857479306,
+              "p99Ns": 2858489470
+            },
+            "successfulPerSecond": 17.485777455053743,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 32182272,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40148992
+            },
+            "memoryAfter": {
+              "anon": 32387072,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40153088
+            },
+            "cpuUsecDelta": {
+              "pool": 4028035,
+              "daemon": 1564123,
+              "sandboxes": 2463912
+            },
+            "cpuStatDelta": {
+              "usage_usec": 4028058,
+              "user_usec": 2367879,
+              "system_usec": 1660178,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 50,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2773316,
+                "full": 840086
+              },
+              "io": {
+                "some": 10,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 6479593372,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 6344950654,
+              "p95Ns": 6472394291,
+              "p99Ns": 6478856160
+            },
+            "successfulPerSecond": 7.71653360472633,
+            "lowerResidency": {
+              "files": 64,
+              "payloadBytes": 4194304,
+              "pages": 1024,
+              "residentPages": 1024,
+              "pageBytes": 4096,
+              "residentBytes": 4194304,
+              "distinctInodes": 64
+            },
+            "copyUp": {
+              "files": 3200,
+              "logicalBytes": 209715200,
+              "allocatedBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "applicationWriteBytes": 3200,
+            "memoryBefore": {
+              "anon": 32387072,
+              "file": 5246976,
+              "shmem": 0,
+              "kernel": 40153088
+            },
+            "memoryAfter": {
+              "anon": 33214464,
+              "file": 214962176,
+              "shmem": 0,
+              "kernel": 52371456
+            },
+            "cpuUsecDelta": {
+              "pool": 8490272,
+              "daemon": 3416282,
+              "sandboxes": 5073990
+            },
+            "cpuStatDelta": {
+              "usage_usec": 8490274,
+              "user_usec": 4372297,
+              "system_usec": 4117978,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 86,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 5841374,
+                "full": 1769790
+              },
+              "io": {
+                "some": 1683237,
+                "full": 439672
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 224002048,
+                "rios": 0,
+                "wios": 6688,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "2-50-monolithic",
+        "mode": "monolithic",
+        "readers": 50,
+        "repetition": 2,
+        "status": "PASS",
+        "importedBytes": 211968000,
+        "preparationNs": 7228168399,
+        "recipeMetadataBytes": 0,
+        "coldResidency": {
+          "files": 3200,
+          "payloadBytes": 209715200,
+          "pages": 51200,
+          "residentPages": 0,
+          "pageBytes": 4096,
+          "residentBytes": 0,
+          "distinctInodes": 3200
+        },
+        "beforeReadCopyUp": {
+          "files": 0,
+          "logicalBytes": 0,
+          "allocatedBytes": 0,
+          "distinctInodes": 0
+        },
+        "immutableReadback": "PASS",
+        "apiCleanup": {
+          "result": "PASS",
+          "failures": []
+        },
+        "hostCleanup": "PASS",
+        "preparationMemoryBefore": {
+          "anon": 258048,
+          "file": 24576,
+          "shmem": 0,
+          "kernel": 266240
+        },
+        "preparationMemoryAfter": {
+          "anon": 30502912,
+          "file": 210579456,
+          "shmem": 0,
+          "kernel": 48955392
+        },
+        "phases": [
+          {
+            "phase": "cold-read",
+            "wallNs": 3082860879,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 3030895894,
+              "p95Ns": 3080723072,
+              "p99Ns": 3081738194
+            },
+            "successfulPerSecond": 16.218701382405133,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 31023104,
+              "file": 864256,
+              "shmem": 0,
+              "kernel": 41484288
+            },
+            "memoryAfter": {
+              "anon": 32137216,
+              "file": 210579456,
+              "shmem": 0,
+              "kernel": 46403584
+            },
+            "cpuUsecDelta": {
+              "pool": 4383943,
+              "daemon": 1638957,
+              "sandboxes": 2744986
+            },
+            "cpuStatDelta": {
+              "usage_usec": 4383915,
+              "user_usec": 2555371,
+              "system_usec": 1828544,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 52,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 3028165,
+                "full": 895396
+              },
+              "io": {
+                "some": 300612,
+                "full": 1825
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 209715200,
+                "wbytes": 0,
+                "rios": 3200,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "warm-read",
+            "wallNs": 2698494648,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 2654936358,
+              "p95Ns": 2695744148,
+              "p99Ns": 2696211343
+            },
+            "successfulPerSecond": 18.528849051843665,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 0,
+              "logicalBytes": 0,
+              "allocatedBytes": 0,
+              "distinctInodes": 0
+            },
+            "applicationWriteBytes": 0,
+            "memoryBefore": {
+              "anon": 32137216,
+              "file": 210579456,
+              "shmem": 0,
+              "kernel": 46403584
+            },
+            "memoryAfter": {
+              "anon": 32354304,
+              "file": 210579456,
+              "shmem": 0,
+              "kernel": 46403584
+            },
+            "cpuUsecDelta": {
+              "pool": 3891658,
+              "daemon": 1327231,
+              "sandboxes": 2564427
+            },
+            "cpuStatDelta": {
+              "usage_usec": 3891700,
+              "user_usec": 2334899,
+              "system_usec": 1556802,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 48,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 2655355,
+                "full": 760067
+              },
+              "io": {
+                "some": 2,
+                "full": 0
+              },
+              "memory": {
+                "some": 0,
+                "full": 0
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 0,
+                "rios": 0,
+                "wios": 0,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          },
+          {
+            "phase": "write-heavy",
+            "wallNs": 5932067260,
+            "latency": {
+              "attempts": 50,
+              "successful": 50,
+              "refusedOrFailed": 0,
+              "p50Ns": 5827830400,
+              "p95Ns": 5924033016,
+              "p99Ns": 5929465234
+            },
+            "successfulPerSecond": 8.428764848495666,
+            "lowerResidency": {
+              "files": 3200,
+              "payloadBytes": 209715200,
+              "pages": 51200,
+              "residentPages": 51200,
+              "pageBytes": 4096,
+              "residentBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "copyUp": {
+              "files": 3200,
+              "logicalBytes": 209715200,
+              "allocatedBytes": 209715200,
+              "distinctInodes": 3200
+            },
+            "applicationWriteBytes": 3200,
+            "memoryBefore": {
+              "anon": 32354304,
+              "file": 210579456,
+              "shmem": 0,
+              "kernel": 46403584
+            },
+            "memoryAfter": {
+              "anon": 33185792,
+              "file": 420294656,
+              "shmem": 0,
+              "kernel": 58490880
+            },
+            "cpuUsecDelta": {
+              "pool": 7870090,
+              "daemon": 2923346,
+              "sandboxes": 4946744
+            },
+            "cpuStatDelta": {
+              "usage_usec": 7870107,
+              "user_usec": 4107311,
+              "system_usec": 3762795,
+              "nice_usec": 0,
+              "core_sched.force_idle_usec": 0,
+              "nr_periods": 80,
+              "nr_throttled": 0,
+              "throttled_usec": 0,
+              "nr_bursts": 0,
+              "burst_usec": 0
+            },
+            "oomKillDelta": 0,
+            "pressureUsecDelta": {
+              "cpu": {
+                "some": 5290527,
+                "full": 1539759
+              },
+              "io": {
+                "some": 1582584,
+                "full": 429499
+              },
+              "memory": {
+                "some": 2,
+                "full": 2
+              }
+            },
+            "ioByDeviceDelta": {
+              "259:0": {
+                "rbytes": 0,
+                "wbytes": 223899648,
+                "rios": 0,
+                "wios": 6663,
+                "dbytes": 0,
+                "dios": 0
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "conclusions": [
+    "The new benefit is sharing common dependencies across distinct workspace templates. Identical templates already shared their tree before recipes.",
+    "At 50 workspaces, imported tar bytes fall from 211968000 to 4741120; dependency cache residency falls from 209715200 to 4194304 bytes with 3200 versus 64 physical file identities.",
+    "Preparation takes 7.644/7.228 seconds for monolithic imports and 3.215/3.027 seconds for recipes. A single workspace has no preparation benefit in these runs.",
+    "Reads copy up zero files. Writing one byte into each dependency copies up 209715200 bytes in both 50-workspace cases; write-tail improvement is inconsistent across repetitions.",
+    "This fixed 4 MiB synthetic dependency corpus and burst reader workload does not establish large-environment storage dominance or W0 think-time capacity."
+  ]
 }

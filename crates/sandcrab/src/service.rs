@@ -232,7 +232,7 @@ impl Service {
             };
             let profiles = self.runtime.config.profiles.iter().map(|(name,p)|
                 (name.clone(), json!({"timeoutMillis":p.timeout_millis,"outputLimitBytes":p.output_limit_bytes,"sessionTtlMillis":p.session_ttl_millis,"transferBytes":p.transfer_bytes,"network":p.network,"hostCalls":p.host_calls,
-                    "memoryBytes":p.memory_bytes,"minimumMemoryBytes":p.minimum_memory(),"cpuQuotaPercent":p.cpu_quota_percent})))
+                    "memoryBytes":p.memory_bytes,"minimumMemoryBytes":p.minimum_memory(),"cpuQuotaPercent":p.cpu_quota_percent,"cpuWeight":p.cpu_weight})))
                 .collect::<serde_json::Map<_,_>>();
             let mut capabilities = vec![
                 "runs",

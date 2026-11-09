@@ -1,0 +1,68 @@
+{
+  "scope": "D6 and D7 conditional investigations; no capability implementation is claimed",
+  "d6": {
+    "decision": "defer_local_erofs_and_remote_lazy_loading",
+    "trigger": "D0/D2 show large-environment import, extraction or local storage dominating the target workload; remote loading additionally needs a distribution bottleneck",
+    "evidence": [
+      "../sandcrab-preparation-reuse-2026-11-09/summary.json",
+      "../sandcrab-template-recipes-2026-11-09/summary.json",
+      "https://github.com/core607/poketto/blob/64e73e4edeba4a136d48436ec5ae80a514c41295/executor-native/evidence/2026-11-09-native-phase-measurements/summary.json"
+    ],
+    "observed": "The matched dependency fixture is 4 MiB. Composing it across 50 distinct workspaces reduces imported bytes from 211968000 to 4741120 and preparation from 7.644/7.228 to 3.215/3.027 seconds. Existing target measurements establish repeated setup and writable copy-up costs, but do not establish large-environment storage or remote distribution as the dominant cost.",
+    "triggerMet": false,
+    "followup": "Reconsider local EROFS with an actual large environment when its import/extraction/storage dominates. Measure CPU, I/O, cache reuse, startup tails and readiness before remote loading.",
+    "runtimeDependencyAdded": false
+  },
+  "d7": {
+    "decision": "defer_idle_shell_reclamation",
+    "triggerFraction": 0.4,
+    "source": "../sandcrab-l9-2026-11-04/summary.json",
+    "sourceSha256": "7331a0896bf979e3f5c3ad171d15e0e520feaf278392267149fc14f573d0e8fd",
+    "sourceCommit": "e7d5a04a22c8d4a90c66ec7b7a54f6bc96848b70",
+    "binarySha256": "10c54a0ef5d8361fb5bcfcf2b113912f249fbb5e1d3444d122b5c6422d6b9331",
+    "measurementScope": "Historical last canonical W0-protocol L9 checkpoint. D3 burst readers are not a new think-time capacity measurement.",
+    "method": "Extrapolate the maximum observed per-item idle cost among cohorts 1/10/50 to the passing population, divided by the minimum passing-trial median pool memory minus the full 512 MiB daemon ceiling. This conservative fixed-cost estimate is not a direct attribution of each loaded process.",
+    "budgets": [
+      {
+        "memoryBudgetGB": 4,
+        "largestPassingStage": 50,
+        "p1ConservativeEstimate": {
+          "maximumObservedIdlePerItemBytes": 2433024.0,
+          "population": 50,
+          "poolMedianMinimumBytes": 1107748864.0,
+          "daemonCeilingBytes": 536870912,
+          "denominatorBytes": 570877952.0,
+          "fraction": 0.2130949348697215
+        }
+      },
+      {
+        "memoryBudgetGB": 5,
+        "largestPassingStage": 100,
+        "p1ConservativeEstimate": {
+          "maximumObservedIdlePerItemBytes": 2371584.0,
+          "population": 100,
+          "poolMedianMinimumBytes": 2104313856.0,
+          "daemonCeilingBytes": 536870912,
+          "denominatorBytes": 1567442944.0,
+          "fraction": 0.15130273220331011
+        }
+      },
+      {
+        "memoryBudgetGB": 8,
+        "largestPassingStage": 100,
+        "p1ConservativeEstimate": {
+          "maximumObservedIdlePerItemBytes": 2301952.0,
+          "population": 100,
+          "poolMedianMinimumBytes": 2100865024.0,
+          "daemonCeilingBytes": 536870912,
+          "denominatorBytes": 1563994112.0,
+          "fraction": 0.14718418581872514
+        }
+      }
+    ],
+    "triggerMet": false,
+    "capabilitiesAdded": [],
+    "followup": "Reconsider when a canonical passing capacity stage reaches the 40% idle-memory trigger. Require disk workspace, background-process protection, cwd/export and state-loss rules, measured released memory and resume cost. Keep the zero-swap reference; freezing alone has no established memory saving."
+  },
+  "measurementPolicy": "Checkpoint-only full density measurements remain L2/L7/L9. Keep raw attempts in CI artifacts or operator storage; retain performance misses as issues without repeated tuning in the same change."
+}

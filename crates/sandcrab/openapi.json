@@ -2118,7 +2118,8 @@
                 "hostCalls",
                 "memoryBytes",
                 "minimumMemoryBytes",
-                "cpuQuotaPercent"
+                "cpuQuotaPercent",
+                "cpuWeight"
               ],
               "properties": {
                 "timeoutMillis": {
@@ -2184,6 +2185,12 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 10000
+                },
+                "cpuWeight": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000,
+                  "description": "Operator-owned relative CPU weight; default 100. Not a caller resource override or a CPU reservation."
                 }
               }
             }

@@ -33,6 +33,7 @@ pub struct Limits {
     pub memory_bytes: u64,
     pub tasks_max: u64,
     pub cpu_quota_percent: u64,
+    pub cpu_weight: u64,
     pub oom_group: bool,
 }
 
@@ -41,7 +42,11 @@ impl Limits {
         let page = rustix::param::page_size() as u64;
         let memory = self.memory_bytes / page * page;
         let quota = self.cpu_quota_percent.checked_mul(1000);
-        if memory == 0 || self.tasks_max == 0 || quota.is_none_or(|q| q == 0) {
+        if memory == 0
+            || self.tasks_max == 0
+            || quota.is_none_or(|q| q == 0)
+            || !(1..=10000).contains(&self.cpu_weight)
+        {
             return Err(invalid("Cgroup limits must be positive and representable"));
         }
         Ok((memory, quota.unwrap()))
@@ -293,6 +298,7 @@ impl Cgroup {
             ("memory.swap.max", "0".into()),
             ("pids.max", limits.tasks_max.to_string()),
             ("cpu.max", format!("{quota} 100000")),
+            ("cpu.weight", limits.cpu_weight.to_string()),
             ("memory.oom.group", u8::from(limits.oom_group).to_string()),
         ] {
             self.write(name, &expected)?;
@@ -446,10 +452,19 @@ mod tests {
             memory_bytes: page * 2 + 1,
             tasks_max: 64,
             cpu_quota_percent: 200,
+            cpu_weight: 100,
             oom_group: true,
         };
         assert_eq!(valid.values().unwrap(), (page * 2, 200_000));
         for invalid in [
+            Limits {
+                cpu_weight: 0,
+                ..valid
+            },
+            Limits {
+                cpu_weight: 10001,
+                ..valid
+            },
             Limits {
                 memory_bytes: page - 1,
                 ..valid
