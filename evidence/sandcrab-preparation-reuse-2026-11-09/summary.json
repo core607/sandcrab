@@ -3,8 +3,8 @@
   "result": "SMOKE_PASS",
   "linuxCollectorUnitTests": 42,
   "sourceSha256Lf": {
-    ".github/workflows/environment-reuse.yml": "83e3ba2adbe8c6de70991d6dad4b576cacc27159c08999353b6bb886f53b5fb8",
-    "benchmarks/density/README.md": "e34cc872cce9c9e167f001104954f35284a463a5de6d14598c7840840613f27b",
+    ".github/workflows/environment-reuse.yml": "8d436856ed6476a4ba097d459a7c7497fe33e4046bd2147f4aa5ac2e2552b0f8",
+    "benchmarks/density/README.md": "1af3568ea55fb3d936b59d22b3f1c1835e79a5f45ccae37e4c696dc34cd0cadb",
     "benchmarks/density/host.py": "ca3ac46451da5972abb8a3e06ccbb620896443b73ec82419fafc76e5261e52c9",
     "benchmarks/density/preparation.py": "b1aeb439598684eea24d03d35cba298b797da989c80b3f7c90b78c88b9931022",
     "benchmarks/density/test_preparation.py": "aedfc9182508248e1215708e450d54f7504caeb8129090b2c35ee3ca30be1aae"
@@ -112,5 +112,25 @@
       ]
     }
   ],
-  "rawEvidence": "Local smoke attempts retained in operator storage; the targeted CI workflow uploads full comparison attempts."
+  "rawEvidence": "Local smoke attempts retained in operator storage; the targeted CI workflow uploads full comparison attempts.",
+  "ciSetupAttempts": [
+    {
+      "run": 42580700627,
+      "attempt": 1,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "Bundled helper source download returned HTTP 504"
+    },
+    {
+      "run": 42580700627,
+      "attempt": 2,
+      "result": "FAIL_BEFORE_MEASUREMENT",
+      "reason": "Bundled helper source download returned HTTP 504"
+    }
+  ],
+  "publishedHelper": {
+    "release": "v0.1.1",
+    "sha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+    "bytes": 141736,
+    "sourceLocksMatch": true
+  }
 }

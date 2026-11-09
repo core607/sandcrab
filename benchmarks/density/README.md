@@ -85,7 +85,8 @@ sudo python3 benchmarks/density/preparation.py --smoke \
 
 Omit `--smoke` for the fixed matrix. Each binary needs its bundled helper. The
 [environment reuse workflow](../../.github/workflows/environment-reuse.yml)
-builds the pinned unmodified baseline and current candidate, runs only this
+builds the pinned unmodified baseline and current candidate with a published
+helper whose bytes match both source locks, runs only this
 targeted comparison and uploads every attempt. It runs on collector changes or
 manual dispatch, separately from the L2/L7/L9 full-density checkpoints. These
 synthetic results make no production-capacity or general latency claim.
