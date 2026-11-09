@@ -1,8 +1,8 @@
 # Template publication for Python clients
 
 This extension supplies filesystem capture and immutable publication beside the
-published OpenSandbox SDK. It requires Python 3.11+ and a Sandcrab build with
-filesystem capture identities and conditional template import. It adds no daemon
+published OpenSandbox SDK. It requires Python 3.11+ and Sandcrab v0.2.0, which
+provides filesystem capture identities and conditional template import. It adds no daemon
 dependency or new service. Install it from the source checkout:
 
 ```sh

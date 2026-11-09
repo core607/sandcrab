@@ -6,7 +6,8 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 
 def package(directory, entrypoint):
-    files = ['sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz', 'LICENSE', 'THREAT-MODEL.md']
+    files = ['sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz', 'LICENSE', 'THREAT-MODEL.md',
+             'THIRD-PARTY-NOTICES.txt', 'rust-library-copyright.html']
     archive = directory / 'sandcrab-linux-x86_64.zip'
     with ZipFile(archive, 'x') as bundle:
         for path in [entrypoint, *(directory / name for name in files)]:

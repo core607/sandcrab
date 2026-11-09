@@ -11,7 +11,8 @@ from zipfile import ZipFile
 
 RELEASE = Path('/var/lib/sandcrab-release')
 FILES = {'sandcrab': 0o755, 'bwrap': 0o755, 'bwrap-notices.txt': 0o644, 'bwrap-source.tar.xz': 0o644,
-         'LICENSE': 0o644, 'THREAT-MODEL.md': 0o644}
+         'LICENSE': 0o644, 'THREAT-MODEL.md': 0o644, 'THIRD-PARTY-NOTICES.txt': 0o644,
+         'rust-library-copyright.html': 0o644}
 
 
 def protected_directory(path):
