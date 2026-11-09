@@ -2,6 +2,8 @@
 
 Sandcrab is an independently released Linux sandbox service. This repository owns the daemon, CLI, SDK integration, generic evaluations and benchmarks; applications consume releases and own their domain state and effects.
 
+The [provider decision](notes/implemented/2026-11-02-sandcrab-lightweight-service.md) owns installation, runtime and measurement trade-offs; read it when changing those boundaries.
+
 ## Working boundaries
 
 - Implement only an assigned, settled task; `notes/proposed/` records designs awaiting implementation and is not evidence of shipped behavior.
@@ -44,7 +46,7 @@ The [pre-push workflow](.agents/skills/pre-push-checks/SKILL.md) selects evidenc
 
 - Run affected checks; real isolation changes need [native conformance](crates/sandcrab/README.md#verification), and SDK or installation changes need their owning acceptance workflows.
 - Never replace a required check with an invented equivalent; report unavailable evidence and stop only the delivery that depends on it.
-- Run complete density measurements only at the designated L2, L7 and L9 checkpoints; use affected checks otherwise, commit aggregate summaries, retain raw and failed attempts in CI artifacts, and track missed targets without repeated tuning in one PR.
+- Run complete density measurements only at the [L2, L7 and L9 checkpoints](benchmarks/density/README.md#native-measurement); use affected checks otherwise, commit aggregate summaries, retain raw and failed attempts in CI artifacts, and track missed targets without repeated tuning in one PR.
 - Work on short-lived branches with conventional commits, push through PRs, address blocking review findings and verify checks on the exact head before merging; never push directly to `main`.
 - Preserve author identities, copyright and existing attribution; when contributing with Hiyori, include `Co-authored-by: Hiyori <noreply@openai.com>` in ordinary commits, the PR body and the final merge commit, and read each back.
 - Keep credentials and environment-specific runbooks outside this repository; `.env` remains the first line of `.gitignore`.
