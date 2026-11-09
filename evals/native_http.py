@@ -34,7 +34,7 @@ def connect(path: str, timeout: float):
 
 def exchange(path: str, method: str, route: str, data: bytes, *, content_type: str = 'application/json',
              response_limit: int = 8 * 1024 * 1024, timeout: float = 15) -> tuple[int, dict, bytes]:
-    if method not in {'GET', 'POST', 'PUT'} or not route.startswith('/v1/') or any(c.isspace() or ord(c) < 32 for c in route):
+    if method not in {'GET', 'POST', 'PUT', 'DELETE'} or not route.startswith('/v1/') or any(c.isspace() or ord(c) < 32 for c in route):
         raise ValueError('Invalid native HTTP request')
     if method != 'PUT' and len(data) > 65536:
         raise ValueError('Request exceeds 64 KiB')
