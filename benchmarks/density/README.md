@@ -54,6 +54,37 @@ checks skip; a Windows pass is not Linux evidence.
 
 ## Native measurement
 
+`service_classes.py` is a separate targeted experiment for possible operator
+service classes. Four CPU compilation loops run beside 60 fixed interactive
+commands and a burst of eight session starts. The five conditions keep defaults,
+reduce the background groups' CPU weight, bound caller-side background execution,
+bound concurrent starts, or combine weights with the startup bound. Two
+repetitions reverse their order. The controller
+changes only its owned fixture cgroups; the runtime gains no scheduling control.
+Every fixture retains a 1 GiB aggregate memory bound, two CPUs of quota, finite
+task limits and zero swap. No physical-core or SMT isolation is claimed.
+
+Receipts report successful throughput, interactive p50/p95/p99, startup latency
+including caller wait, background progress by second, CPU throttling/pressure,
+memory and confirmed cleanup. The decision rule is fixed before measurement: a
+candidate needs at least 20% lower interactive p95 in both repetitions, every
+interactive command successful, at least 80% of baseline background throughput,
+no full second without active background progress, background caller wait at
+most two seconds, and at least 80% of foreground commands overlapping background
+work before a runtime control is considered.
+These thresholds guide this fixture's trade-off; they are not production SLOs.
+
+```sh
+sudo python3 benchmarks/density/service_classes.py --smoke --binary build/bin/sandcrab \
+  --tools /prepared/tools --output /operator/evidence/classes-smoke-new
+```
+
+Omit `--smoke` for the fixed comparison. The [service-class workflow](../../.github/workflows/service-classes.yml)
+runs on collector changes or manual dispatch and retains raw attempts in CI.
+The [execution-cost breakdown](https://github.com/core607/poketto/blob/64e73e4edeba4a136d48436ec5ae80a514c41295/executor-native/evidence/2026-11-09-native-phase-measurements/summary.json)
+provides separate serial consumer observations; this experiment measures an
+explicit concurrent workload before choosing controls for it.
+
 Use an isolated root-capable systemd host with cgroup v2, XFS utilities, Git,
 Python 3.10+, bash, ripgrep and the [prepared toolchain](../../scripts/prepare-tools.sh).
 Build the binary with `docker build --target release --output type=local,dest=build/bin .`. The driver refuses competing

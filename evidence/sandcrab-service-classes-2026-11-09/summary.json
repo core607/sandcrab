@@ -1,0 +1,107 @@
+{
+  "scope": "D4 collector smoke; the full mixed-workload comparison is pending CI",
+  "result": "SMOKE_PASS",
+  "runtimeControlsAdded": false,
+  "modelCalls": 0,
+  "binarySha256": "a0d3d7a2e0e78e1307b8915194fdab748b0f9db75378f30ab2487d48aed7eb6a",
+  "decisionRule": "A candidate needs >=20% lower interactive p95 in both reversed-order repetitions, all interactive successes, >=80% background compilation throughput, zero full seconds without active background progress, background caller wait <=2 seconds and >=80% foreground overlap with background work before considering a runtime control.",
+  "sourceSha256Lf": {
+    ".github/workflows/service-classes.yml": "2e366b7acd83e45aa61b8d022b25d525ab93bf007be720690fe102acb5e479bb",
+    "benchmarks/density/README.md": "4243b73a82ca3c3b0bc889106d4d19e7b51b3fe86e04eed1982c6ce2d04af8f6",
+    "benchmarks/density/service_classes.py": "4b7cb2fc1a3a29e5ed38f66a358a930b2ddc91e07c6f83a435d8b096327f1611",
+    "benchmarks/density/test_service_classes.py": "a6dec4e6b063cfdf0cd1ce96dccbfdca904bd87744db28e82d6e5969890892bd"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "PASS",
+      "scope": "service-class-smoke",
+      "cases": [
+        {
+          "name": "1-default",
+          "status": "PASS",
+          "weights": {
+            "foreground": 100,
+            "background": 100
+          },
+          "backgroundExecutionBound": null,
+          "startupParallelism": 2,
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "hostCleanup": "PASS"
+        },
+        {
+          "name": "1-weights",
+          "status": "PASS",
+          "weights": {
+            "foreground": 100,
+            "background": 10
+          },
+          "backgroundExecutionBound": null,
+          "startupParallelism": 2,
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "hostCleanup": "PASS"
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "result": "PASS",
+      "scope": "service-class-smoke",
+      "cases": [
+        {
+          "name": "1-default",
+          "status": "PASS",
+          "weights": {
+            "foreground": 100,
+            "background": 100
+          },
+          "backgroundExecutionBound": 4,
+          "startupParallelism": 2,
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "hostCleanup": "PASS"
+        },
+        {
+          "name": "1-weights",
+          "status": "PASS",
+          "weights": {
+            "foreground": 100,
+            "background": 10
+          },
+          "backgroundExecutionBound": 4,
+          "startupParallelism": 2,
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "hostCleanup": "PASS"
+        },
+        {
+          "name": "1-execution-bound",
+          "status": "PASS",
+          "weights": {
+            "foreground": 100,
+            "background": 100
+          },
+          "backgroundExecutionBound": 2,
+          "startupParallelism": 2,
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "hostCleanup": "PASS"
+        }
+      ]
+    }
+  ],
+  "sourceObservation": "Serial consumer breakdown is retained in the linked public phase-measurement summary. This fixed concurrent workload tests whether weights or separate caller-side bounds warrant new runtime controls.",
+  "rawEvidence": "Local smoke attempts retained outside source control; the service-class CI workflow uploads every full comparison attempt."
+}
