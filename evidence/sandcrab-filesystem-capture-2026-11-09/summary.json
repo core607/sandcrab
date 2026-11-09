@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scope": "Filesystem capture foundation for environment publication",
+  "result": "PASS",
+  "baselineRelease": "v0.1.1",
+  "baselineBinary": {
+    "bytes": 4694944,
+    "sha256": "de7de59f292a067dca7f034ffd971f17dd126e984ac624bb892db808d38853d6"
+  },
+  "candidateBinary": {
+    "bytes": 4703136,
+    "sha256": "c3ee3d3f6a9851b59f0a07fe69cb3e965dff35d1c9836e009c05c210e7e7835e",
+    "elfInterpreter": false,
+    "dynamicNeededEntries": 0,
+    "static": true
+  },
+  "binaryByteIncrease": 8192,
+  "helperSha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+  "sourceSha256": {
+    "crates/sandcrab/README.md": "38870d8cc4ff44725edf4c269a011f5752492f26353cc98c329988b760626343",
+    "crates/sandcrab/openapi.json": "9464ae17a7d5139f958fd0bd72cb68717c0a1d9786b1065a70e566657cda98f2",
+    "crates/sandcrab/sandcrab_conformance/rootfs.py": "93bd1545a90441bb6a14796318aab29a55d52bcd9ed8d5fa59d51e99092b1fe6",
+    "crates/sandcrab/src/file_client.rs": "c0c2bc4337dc541ad579284513542d7cae3c02c114a18c59bd25796259f6ce21",
+    "crates/sandcrab/src/file_io.rs": "b0e2e2d06387e2457dd5cfd1e169df5a09b1308a6e12bce346c4997c50e47c69",
+    "crates/sandcrab/src/files.rs": "7689cdcc4c3b56978ebc3b917ee90603c9062914c296674bacc0ff857f69b560",
+    "crates/sandcrab/src/runtime.rs": "ac20c44509cce2c267cbc8cb1d23ece41dd285f3cd282a96791fd45fdb10521b",
+    "crates/sandcrab/src/template_client.rs": "5e9aa5d099c369ef357ec82d9b87ac65ffde445edaa43a43f6f2dacd1c84c793",
+    "crates/sandcrab/sandcrab_conformance/checkpoint.py": "7a55a4efa727c8a04fd4247408a9d7ae99c97cfc4bbebac5725d7f4b78f2433f"
+  },
+  "rust": {
+    "format": "PASS",
+    "clippy": "PASS",
+    "tests": 122
+  },
+  "controllerTests": 5,
+  "nativeAttempts": [
+    {
+      "attempt": 1,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "receiptSha256": "bfbe4588c51a58d8e7c958373993946d04fcaabaf10a7e9e9b0f8c0749db163c",
+      "passedChecks": [
+        "rootfs-cli-executes-template-programs-without-host-profile-mounts-or-privileges",
+        "rootfs-host-calls-use-the-fixed-protected-runtime-bindings",
+        "rootfs-contexts-share-one-view-and-protected-workspace-anchors-prevent-replacement",
+        "rootfs-file-helpers-publish-atomically-outside-the-guest-root-and-snapshot-the-workspace"
+      ],
+      "cause": "The fixture created 1200 files against its existing 1024-inode bound; later command admission returned STORAGE_LIMIT. Reduced the fixture to 800 files; kept resource bounds unchanged."
+    },
+    {
+      "attempt": 2,
+      "result": "PASS",
+      "cleanup": "PASS",
+      "receiptSha256": "27595863c53d0278f7ba6a60275ad9bda0b74aca5d35df3d7ef76b83701b2a10",
+      "passedChecks": [
+        "rootfs-cli-executes-template-programs-without-host-profile-mounts-or-privileges",
+        "rootfs-host-calls-use-the-fixed-protected-runtime-bindings",
+        "rootfs-contexts-share-one-view-and-protected-workspace-anchors-prevent-replacement",
+        "rootfs-file-helpers-publish-atomically-outside-the-guest-root-and-snapshot-the-workspace",
+        "filesystem-capture-freezes-then-thaws-and-preserves-links-modes-deletion-without-shell-state",
+        "filesystem-capture-refuses-invalid-authority-and-thaws-after-size-failure",
+        "rootfs-capture-reimports-the-complete-merged-tree-without-runtime-bindings",
+        "rootfs-restart-reclaims-writable-layers-and-preserves-template-content-and-identity",
+        "rootfs-refuses-unsafe-reserved-paths-before-launch-and-releases-template-pins"
+      ]
+    },
+    {
+      "attempt": 3,
+      "result": "PASS",
+      "cleanup": "PASS",
+      "receiptSha256": "e5c986cd4c53c4054d7ca8599b3d0b8100a6aa2f249a09649750dfa4c3598318",
+      "passedChecks": [
+        "rootfs-cli-executes-template-programs-without-host-profile-mounts-or-privileges",
+        "rootfs-host-calls-use-the-fixed-protected-runtime-bindings",
+        "rootfs-contexts-share-one-view-and-protected-workspace-anchors-prevent-replacement",
+        "rootfs-file-helpers-publish-atomically-outside-the-guest-root-and-snapshot-the-workspace",
+        "capture-cli-refuses-epoch-change-partial-digest-and-replacement-without-retry",
+        "filesystem-capture-freezes-then-thaws-and-preserves-links-modes-deletion-without-shell-state",
+        "filesystem-capture-refuses-invalid-authority-and-thaws-after-size-failure",
+        "rootfs-capture-reimports-the-complete-merged-tree-without-runtime-bindings",
+        "rootfs-restart-reclaims-writable-layers-and-preserves-template-content-and-identity",
+        "rootfs-refuses-unsafe-reserved-paths-before-launch-and-releases-template-pins"
+      ],
+      "scope": "Final native body includes CLI epoch/truncation/digest/existing-destination negative controls."
+    }
+  ],
+  "boundaries": [
+    "Disposable native Linux systemd/cgroup/bwrap fixture; no model and no production load.",
+    "Local rootfs acceptance includes active child writers, freeze/thaw, size failure, immutable reimport and restart.",
+    "Only static executable size is compared; no density, cold-start or throughput claim.",
+    "Raw attempts remain in local operator storage. Required CI records its own native and SDK artifacts.",
+    "SDK publication convenience and lost-import-reply reconciliation remain subsequent work; this change supplies capture."
+  ]
+}

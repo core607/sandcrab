@@ -221,7 +221,8 @@ For a custom environment, add `rootfs: true` to the session request, or use
 and its loader/libraries. Its programs and libraries replace the profile's host
 read mounts and tools; the profile still controls execution identity, resource
 limits, network isolation and optional host calls. The command starts in
-`/workspace`, which is also the scope of file APIs and plain tar snapshots.
+`/workspace`, which is also the default scope of file APIs and plain tar snapshots.
+An explicit [filesystem capture](#filesystem-capture) also includes the template's root.
 Seed files there when packaging the template.
 
 Rootfs sessions share the parent's full filesystem view across contexts. Writes
@@ -678,9 +679,9 @@ opaque; snapshots never follow them. Hard links must name an earlier regular ent
 inside the archive. Extended attributes and original ownership are not preserved.
 
 Staged uploads verify declared length and SHA-256 before publication. Native
-transfers keep workspace processes running. Callers coordinate writers when they
-need a consistent collection, for example by producing an archive inside one
-command before downloading it. Tar downloads contain ordinary entries, with no
+transfers keep workspace processes running unless a snapshot requests `frozen=true`.
+Otherwise callers coordinate writers when they need a consistent collection.
+Tar downloads contain ordinary entries, with no
 private manifest format. A transfer pins its
 session and volume until helper containment and staging cleanup finish; cancellation,
 expiry and shutdown cannot detach storage underneath it. Unconfirmed cleanup holds
@@ -698,7 +699,7 @@ boundary and opaque-symlink rules. Deletion remains available during storage ove
 | `GET /v1/uploads?after=UUID` | Up to ten records in UUID order; continue with `nextAfter` |
 | `POST /v1/uploads/ID/cancel` with `{}` | Cancel pending or active work; inspect the final record |
 | `POST /v1/uploads/ID/forget` with `{}` | Forget a waiting or terminal record when no stage remains |
-| `POST /v1/sessions/ID/snapshot` | Send `path` and `format`; receive a fixed-length body with a quoted SHA-256 ETag |
+| `POST /v1/sessions/ID/snapshot` | Send `path`, `format` and optional `frozen`/`scope`; receive a fixed-length body with a quoted SHA-256 ETag |
 
 Native snapshot replies include `X-Sandcrab-Server-Id`, the serving daemon epoch.
 Clients retaining a session handle must match this header against its `serverId`
@@ -706,8 +707,8 @@ before exposing snapshot bytes; a missing or different epoch cannot identify tha
 
 Bulk requests close their connection. Upload bodies support `Expect: 100-continue`
 after admission; other expectations are refused. Profile `transfer_bytes` bounds
-both stream bytes and expanded regular-file content. Archives also have a 10,000-entry
-limit including implicit parents. Upload body I/O, capture and publication each
+both stream bytes and expanded regular-file content. Workspace file archives have a
+10,000-entry limit including implicit parents; filesystem captures use the template limit. Upload body I/O, capture and publication each
 have a 30-second budget; snapshot body writes have a separate 30-second budget.
 Cleanup has a ten-second helper budget. Service `max_file_transfers` bounds active
 operations; each session allows only one file operation. `max_file_records` bounds
@@ -739,6 +740,44 @@ installing a local file; `--replace` is required to replace an existing regular
 file. A failed download preserves that file. A destination of `-` streams to stdout,
 where already-written bytes cannot be withdrawn after a failure. Snapshots are
 request-scoped and leave no retained artifact; consumers own downloaded copies.
+
+### Filesystem capture
+
+After preparing and validating a session, capture its files for template import:
+
+```sh
+sandcrab template capture --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID prepared.tar
+sandcrab template import --socket /var/lib/sandcrab/runtime/control.sock --profile default prepared.tar
+```
+
+Capture uses the existing snapshot route with `path="."`, `format="tar"`,
+`frozen=true` and `scope="filesystem"`. It freezes the owning session cgroup,
+including child shells, while the bounded helper copies the merged tree. File
+transfer admission excludes concurrent API file mutations. The session thaws
+before body delivery; a failed thaw cancels it. Commands and expiry retain their
+deadlines. External host writers and application-level transactions remain the
+operator's responsibility.
+
+For a workspace session, the tree is `/workspace`. For a rootfs session, it is the
+template root with its current writable changes. Process-only mounts such as
+`/proc`, `/dev`, private `/tmp`, host tools and control channels are absent;
+protected rootfs mount anchors remain empty files or directories. Deletions are
+already resolved in this complete view. Plain tar preserves supported links,
+ordinary permission bits and file contents; import normalizes ownership as
+documented under [templates](#templates). No process, shell variable or working
+directory is saved. Avoid putting credentials or reference answers in the tree.
+
+`filesystem` requires a frozen, whole-tree tar; callers cannot choose a host root.
+It uses the profile's transfer-byte bound, the template entry limit and existing
+helper resource/deadline bounds. Ordinary snapshots default to `scope="workspace"`
+and `frozen=false`. `frozen=true` also works for a workspace file or directory.
+
+The CLI verifies the serving epoch, length and SHA-256, then installs a new local
+file with mode 0600. It never replaces a destination or automatically retries a
+capture. A complete file can be retained and imported after the source session
+ends. A partial or lost download does not publish a template; capturing again
+observes a later filesystem state. Inspect the template catalog after a lost
+import reply and retain the exact captured archive for reconciliation.
 
 ## Verification
 

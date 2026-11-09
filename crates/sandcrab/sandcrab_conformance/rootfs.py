@@ -28,6 +28,10 @@ class RootfsProbe(OverlayProbe):
         self.config.write_text(self.config.read_text().replace('template_pool_bytes = 1048576', 'template_pool_bytes = 33554432')
             .replace('transfer_bytes = 1048576', 'transfer_bytes = 16777216')
             .replace('network = "none"', 'network = "none"\nhost_calls = true'))
+        config = self.config.read_text()
+        capture_profile = config.split('[profiles.python]', 1)[1].split('\n[', 1)[0]
+        capture_profile = capture_profile.replace('transfer_bytes = 16777216', 'transfer_bytes = 1048576')
+        self.config.write_text(config + '\n[profiles.capture]\n' + capture_profile)
         self.receipt['scope'] = 'Native template rootfs and file authority; minimal synthetic environment, no density measurement'
         self.receipt['probeSha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
@@ -113,6 +117,9 @@ class RootfsProbe(OverlayProbe):
         self.session_close(independent)
         self.session_forget(independent)
         self.done('rootfs-file-helpers-publish-atomically-outside-the-guest-root-and-snapshot-the-workspace')
+
+        from .checkpoint import check
+        check(self, tree)
 
         if getattr(self, 'sdk', None):
             self.sdk_template(tree)

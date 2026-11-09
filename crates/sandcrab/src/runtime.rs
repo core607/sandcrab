@@ -296,7 +296,7 @@ impl Runtime {
             if let Some(upper) = &upper {
                 readonly.push(upper);
             }
-            if ["snapshot", "sdk-query"].contains(&job.action.as_str()) {
+            if ["snapshot", "checkpoint", "sdk-query"].contains(&job.action.as_str()) {
                 readonly.push(&job.workspace);
             }
             // Renaming across two bind mounts fails with EXDEV even on the same

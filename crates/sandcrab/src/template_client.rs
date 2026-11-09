@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "sandcrab template import --socket PATH --profile NAME [--directory] SOURCE\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. SOURCE is plain tar; --directory streams an unpacked tree without pulling an image.\n";
+const HELP: &str = "sandcrab template capture --socket PATH SESSION_ID DESTINATION\nsandcrab template import --socket PATH --profile NAME [--directory] SOURCE\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. Capture freezes the session's writers while creating a full filesystem tar; it restores no process, variable or cwd. DESTINATION must be a new local file. SOURCE is plain tar; --directory streams an unpacked tree without pulling an image.\n";
 
 struct Chunks<'a, W> {
     output: &'a mut W,
@@ -98,6 +98,12 @@ pub fn command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         return Err(invalid(HELP));
     };
     let endpoint = Endpoint::parse(flag, address, token_file)?;
+    if let ("capture", [session, destination]) = (mode.as_str(), rest)
+        && sandcrab_core::uuid(session)
+        && destination != "-"
+    {
+        return crate::file_client::checkpoint(&endpoint, session, Path::new(destination));
+    }
     let result = match (mode.as_str(), rest) {
         ("import", [flag, profile, source]) if flag == "--profile" => {
             import(&endpoint, profile, Path::new(source), false)?
