@@ -2,10 +2,10 @@ name: Sandcrab installer acceptance
 
 on:
   pull_request:
-    paths: [Cargo.toml, Cargo.lock, Dockerfile, README.md, 'crates/**', 'examples/**', 'scripts/package.py', 'evals/sdk/requirements.txt', 'benchmarks/density/Dockerfile.readiness', '.github/workflows/sandcrab-readiness.yml']
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, README.md, 'crates/**', 'examples/**', 'scripts/package.py', 'scripts/third_party_notices.py', 'scripts/test_third_party_notices.py', 'evals/sdk/requirements.txt', 'benchmarks/density/Dockerfile.readiness', '.github/workflows/sandcrab-readiness.yml']
   push:
     branches: [main]
-    paths: [Cargo.toml, Cargo.lock, Dockerfile, README.md, 'crates/**', 'examples/**', 'scripts/package.py', '.github/workflows/sandcrab-readiness.yml']
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, README.md, 'crates/**', 'examples/**', 'scripts/package.py', 'scripts/third_party_notices.py', 'scripts/test_third_party_notices.py', '.github/workflows/sandcrab-readiness.yml']
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -37,7 +37,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: docker build --target release --output type=local,dest=build/bin .
       - name: Check release staging and the documented command budget
-        run: sudo python3 -m unittest discover -s crates/sandcrab/install -p test_quickstart.py -v
+        run: |
+          python3 -m unittest discover -s scripts -p test_third_party_notices.py -v
+          sudo python3 -m unittest discover -s crates/sandcrab/install -p test_quickstart.py -v
       - name: Read the release digest
         id: fingerprint
         run: |

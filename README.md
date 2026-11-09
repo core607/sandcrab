@@ -7,21 +7,14 @@ checksum-verified bubblewrap helper. The host needs cgroup v2 and user namespace
 
 ## Quickstart
 
-On Ubuntu 22.04, Ubuntu 24.04 or Debian 12, download the ZIP from the
-[v0.1.1 release](https://github.com/core607/sandcrab/releases/tag/v0.1.1) using an
-account with repository access. An authenticated GitHub CLI can download it directly:
-
-```sh
-gh release download v0.1.1 --repo core607/sandcrab --pattern sandcrab-linux-x86_64.zip
-```
-
-From a root shell on the systemd host, run the last two commands below in the
-directory containing the ZIP. For unattended installation, supply a short-lived
-authorized asset URL in `SANDCRAB_BUNDLE_URL` and run all three commands.
+On Ubuntu 22.04, Ubuntu 24.04 or Debian 12, run these three commands from a root
+shell on the systemd host. They download [v0.2.0](https://github.com/core607/sandcrab/releases/tag/v0.2.0),
+install the service and execute Python. A private mirror can supply an authorized
+asset URL through `SANDCRAB_BUNDLE_URL`.
 
 <!-- sandcrab-quickstart -->
 ```sh
-curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "$SANDCRAB_BUNDLE_URL"
+curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "${SANDCRAB_BUNDLE_URL:-https://github.com/core607/sandcrab/releases/download/v0.2.0/sandcrab-linux-x86_64.zip}"
 python3 -I sandcrab-linux-x86_64.zip
 /var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
 ```
@@ -61,7 +54,7 @@ docker build --target check .
 python3 crates/sandcrab/conformance.py --list
 ```
 
-The release contains the executables, installer ZIP, SHA-256 manifest, threat model
+The release contains the executables, installer ZIP, SHA-256 manifest, project license, threat model
 and the helper's notices and source. The [conformance runner](crates/sandcrab/README.md#verification)
 exercises real Linux sandboxes. [Inspect evals](evals/README.md) test agent use of the API.
 The [density benchmark](benchmarks/density/README.md) measures a reproducible workload.
@@ -78,3 +71,6 @@ and receipt remain the standard release check.
 
 Sandcrab is licensed under [Apache 2.0](LICENSE). The separate bundled helper and
 its dependencies retain their [upstream licenses and corresponding source](crates/sandcrab-launch/bwrap/README.md).
+Releases also carry the locked Cargo dependencies' original license and notice
+texts and the pinned Rust standard library's copyright report, available offline
+in the ZIP, installation directory and container image.

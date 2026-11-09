@@ -35,7 +35,8 @@ def recipe(readme):
         if not tokens or any(token in (';', '&&', '||', '|', '&') for token in tokens):
             raise ValueError('Each quickstart line must be one operator command')
         entries.append(tokens)
-    if (len(entries) != 3 or entries[0][0] != 'curl' or entries[0][-1] != '$SANDCRAB_BUNDLE_URL'
+    download = r'\$\{SANDCRAB_BUNDLE_URL:-https://github\.com/core607/sandcrab/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/sandcrab-linux-x86_64\.zip\}'
+    if (len(entries) != 3 or entries[0][0] != 'curl' or not re.fullmatch(download, entries[0][-1])
             or entries[1] != ['python3', '-I', ARCHIVE]
             or entries[2][:2] != [(RELEASE / 'sandcrab').as_posix(), 'run']):
         raise ValueError('The README must download, install, and run without an intervening configuration edit')

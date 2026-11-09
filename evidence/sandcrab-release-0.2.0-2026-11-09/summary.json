@@ -1,0 +1,96 @@
+{
+  "scope": "v0.2.0 distribution preparation; publication, anonymous access and fresh published quickstart are pending",
+  "result": "LOCAL_PACKAGE_VERIFIED",
+  "base": "c760f021c8f861bfc396fdc49990b0b4a81547ad",
+  "version": "0.2.0",
+  "tests": {
+    "rustFmtClippyLockedTests": "PASS",
+    "rustTests": 126,
+    "linuxInstallerTests": 5,
+    "noticeGeneratorTests": 2,
+    "manifestEntriesVerified": 9,
+    "binaryVersion": "sandcrab 0.2.0"
+  },
+  "assets": {
+    "bwrap": {
+      "bytes": 141736,
+      "sha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d"
+    },
+    "bwrap-notices.txt": {
+      "bytes": 53683,
+      "sha256": "e9d5c7485a8f791fb6f567973fc8901467c4b4ab6ebebcdf5991a98429f3c569"
+    },
+    "bwrap-source.tar.xz": {
+      "bytes": 1417288,
+      "sha256": "e687584006b756cd4b3be0efc9b64776fac6fc802260d3c5c15eadb609aaa3bb"
+    },
+    "LICENSE": {
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "rust-library-copyright.html": {
+      "bytes": 1499465,
+      "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+    },
+    "sandcrab": {
+      "bytes": 4780960,
+      "sha256": "b80e8e4806f4a4869f7f5243ead8f701477bd0647ec59959fa81d221de1f9849"
+    },
+    "sandcrab-linux-x86_64.zip": {
+      "bytes": 3598143,
+      "sha256": "1ca7158973b7b16113a9ea056232cca5930cec6b3cd7bd8bfffee7cff6bfeb56"
+    },
+    "SHA256SUMS": {
+      "bytes": 749,
+      "sha256": "8f6e8b7f75f965c06dce07ba16fbb1899c3ebbf566d31788c52b736a0c0a84bd"
+    },
+    "THIRD-PARTY-NOTICES.txt": {
+      "bytes": 700004,
+      "sha256": "83fc8b82bd242c8e5777300e9c0d63dc610d8b46cff85f7fcd497f44956f8d67"
+    },
+    "THREAT-MODEL.md": {
+      "bytes": 4820,
+      "sha256": "7c5479db0dfc59ac7fbcae2375e94cb254ef7ca254b52b39430caab40f188db5"
+    }
+  },
+  "notices": {
+    "registryPackages": 69,
+    "cargoNoticesBytes": 700004,
+    "rustLibraryCopyrightBytes": 1499465,
+    "origin": "Locked Cargo dependency sources and COPYRIGHT-library.html from the pinned Rust 1.99.1 toolchain",
+    "binaryBytesChangedByNotices": 0,
+    "archiveDeltaBytes": 69792
+  },
+  "runtimeProcessesAdded": 0,
+  "runtimeDependenciesAdded": 0,
+  "attempts": [
+    {
+      "name": "package1",
+      "result": "PASS",
+      "scope": "Version and public-default URL before the dependency-notice audit"
+    },
+    {
+      "name": "package2",
+      "result": "PASS",
+      "scope": "Cargo and Rust library notices included in the checksummed ZIP"
+    }
+  ],
+  "sourceSha256Lf": {
+    ".github/workflows/release.yml": "cc9fc46d9c23a41dd2fc2d3674a5e12d668d683027ba064fbf64e85bcfac3145",
+    ".github/workflows/sandcrab-readiness.yml": "68755af015d8c94b36b518cbd177da4826a3e78919b686c6ede6c1f7c43b5781",
+    "Cargo.lock": "82a6f1d36a59d3d236d92652e707c4d2ec66e3fa1d283ec46bf8f2a178556094",
+    "Dockerfile": "6862db872af813ca75d71f861f389040aaf67db77f3dbb281e8712b86a9dcf3f",
+    "README.md": "602c447b9df1b28fe193b65f70406437c726cd4e893e2577d4f299f535860dcf",
+    "crates/sandcrab/Cargo.toml": "caecfd5e68dd1bc08fd255b0dd5ba26034418e1762e1908595742369d824cf8c",
+    "crates/sandcrab/install/Dockerfile": "7770830595b3c32dad8f3e3ea137e6767065a5a7945632b482de9fc3ca3ce023",
+    "crates/sandcrab/install/__main__.py": "a3a7db1c27588547f25ad80eba87985ed565127db7145b9b9eeeba76298eaf15",
+    "crates/sandcrab/install/quickstart.py": "a54d5be888dd06ac77446cd616a301209d2487081fbbc192c83b7e0b97a93cf0",
+    "crates/sandcrab/install/test_quickstart.py": "f0f61b068706f73e7cacfcc94b1f7527ab8190adedcc0e5a9f2c2bdeb183cc50",
+    "scripts/package.py": "718a10d70eee9fac852b1f0be8e34e976711f071b2da8525e9d6682e5ab08af1",
+    "scripts/test_third_party_notices.py": "40a7420a94ceab9a102bef693f0613b6f5896b35baae16b4a7eafd5b7f12754b",
+    "scripts/third_party_notices.py": "0cf9b3d26f06ceac65057ebc60af37fc5e063480072753c95f13a732dc7f752c",
+    "sdk/python/README.md": "7235565f52b9d3c631e2068a66fb42d6ebc371d705633ef64140d6b4263fe3bd",
+    "sdk/python/pyproject.toml": "da21c9c8b5a5abdddaf669b6c4e0e41bc20b8dc4cd574b52a7e00213203e04bd"
+  },
+  "rawEvidence": "Build logs, full metadata and package files retained outside source control; CI retains the tested release and installer receipts."
+}

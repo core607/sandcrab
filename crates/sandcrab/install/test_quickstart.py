@@ -3,6 +3,7 @@ from contextlib import ExitStack
 import importlib.util
 from io import BytesIO
 import os
+import re
 from pathlib import Path
 import hashlib
 import shutil
@@ -23,6 +24,10 @@ class ReadmeRecipe(unittest.TestCase):
                         install + ' && vi /etc/sandcrab/config.toml'):
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 recipe(readme.replace(install, changed))
+        for changed in (readme.replace('https://github.com/core607/sandcrab/releases/download/', 'file:///tmp/'),
+                        re.sub(r'\$\{SANDCRAB_BUNDLE_URL:[^}]+\}', '$SANDCRAB_BUNDLE_URL', readme)):
+            with self.assertRaises(ValueError):
+                recipe(changed)
 
 
 @unittest.skipUnless(hasattr(os, 'geteuid') and os.geteuid() == 0, 'requires a protected Linux fixture')
@@ -61,7 +66,7 @@ class BundleFiles(unittest.TestCase):
         spec.loader.exec_module(package)
         payload = self.root / 'payload'
         payload.mkdir()
-        for name in ('sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz'):
+        for name in ('sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz', 'THIRD-PARTY-NOTICES.txt', 'rust-library-copyright.html'):
             (payload / name).write_bytes(name.encode())
         for name in ('LICENSE', 'THREAT-MODEL.md'):
             shutil.copyfile(repository / name, payload / name)
@@ -70,6 +75,9 @@ class BundleFiles(unittest.TestCase):
             self.entry.install_files(archive, self.release)
         for name in ('LICENSE', 'THREAT-MODEL.md'):
             self.assertEqual((self.release / name).read_bytes(), (repository / name).read_bytes())
+            self.assertEqual(stat.S_IMODE((self.release / name).stat().st_mode), 0o644)
+        for name in ('THIRD-PARTY-NOTICES.txt', 'rust-library-copyright.html'):
+            self.assertEqual((self.release / name).read_bytes(), (payload / name).read_bytes())
             self.assertEqual(stat.S_IMODE((self.release / name).stat().st_mode), 0o644)
         rows = [line.split('  ', 1) for line in (payload / 'SHA256SUMS').read_text().splitlines()]
         self.assertEqual(len(rows), len({name for _, name in rows}))

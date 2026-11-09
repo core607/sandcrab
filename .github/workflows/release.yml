@@ -70,7 +70,7 @@ jobs:
           else
             gh release create "$tag" --verify-tag --draft --title "Sandcrab $tag" --generate-notes
           fi
-          gh release upload "$tag" dist/{sandcrab,bwrap,bwrap-notices.txt,bwrap-source.tar.xz,sandcrab-linux-x86_64.zip,THREAT-MODEL.md,SHA256SUMS} --clobber
+          gh release upload "$tag" dist/{sandcrab,bwrap,bwrap-notices.txt,bwrap-source.tar.xz,sandcrab-linux-x86_64.zip,LICENSE,THREAT-MODEL.md,THIRD-PARTY-NOTICES.txt,rust-library-copyright.html,SHA256SUMS} --clobber
           docker load --input image/sandcrab-image.tar.gz
           source="sandcrab-ci:$GITHUB_SHA"
           test "$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$source")" = "$GITHUB_SHA"
