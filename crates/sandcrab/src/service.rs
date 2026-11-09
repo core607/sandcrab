@@ -281,7 +281,7 @@ impl Service {
             return self.file_route(method, path, body);
         }
         if crate::template_api::import_path(path) || path.starts_with("/v1/templates/") {
-            return self.template_route(method, path);
+            return self.template_route(method, path, body);
         }
         if method == "DELETE"
             && let Some((id, query)) = path

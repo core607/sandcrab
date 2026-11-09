@@ -1,0 +1,142 @@
+{
+  "scope": "D2 ordered immutable recipe foundation; explicit imported whiteout layers and D3 comparisons follow separately",
+  "result": "PASS",
+  "baselineCommit": "df755f5c27e6bf768ee97e33437b47ffc96941b2",
+  "sourceSha256Lf": {
+    ".github/workflows/evals.yml": "69f008b4fbc85d536f26989ffc83988af599e383ddc18dbbd640d00992a4167e",
+    "crates/sandcrab/README.md": "a0c9fb3d86463137d6239a5f0b79e19c02d4790b1f3e2705ac7dda38bd29a192",
+    "crates/sandcrab/openapi.json": "3aa13ea24da82ea624287d4513b8da9010e47c6a9405a952c7fc41f461030092",
+    "crates/sandcrab/sandcrab_conformance/recipes.py": "b1abd2bde170c4223aa426e907f3fc87ccaf0e71dd44f2b98c9d13e65db51e26",
+    "crates/sandcrab/sandcrab_conformance/rootfs.py": "13eda839a7d7a5f62dba02d037c49a244d8fb45e8c3620049cb3b7d34b2e9bab",
+    "crates/sandcrab/sandcrab_conformance/runner.py": "a07b7be01e05ff6aa3b3336aa9faec66973cd49477073f3418ec056f1544817b",
+    "crates/sandcrab/src/main.rs": "de00f8561d30a21127629ff510154bdda4dd1756118ae9301a7ce8cd6c30cbe3",
+    "crates/sandcrab/src/overlay.rs": "0ba389cdd050de12ac698cf28401aba6b63bb1cae0745e7c58408a6e78d24aef",
+    "crates/sandcrab/src/recipes.rs": "fe9280ab2901ddf8847112425c6f6f2d4cfb0564e01f5ed73e59825e2275f7d8",
+    "crates/sandcrab/src/service.rs": "887fd7deec0fd2dee8e56f0ee39b8e5d6c8c2eb4a0c9bdad34149ffbff364394",
+    "crates/sandcrab/src/template_api.rs": "7213812c1e95a820e07d24b2150f896fe25db596fcd10ea7f1c61280f58b376f",
+    "crates/sandcrab/src/template_client.rs": "05b2c83bd4d8344da179d31e08235469a2a2c4cdcfd79f17f65023722e3b75c1",
+    "crates/sandcrab/src/templates.rs": "7f1ea102bc72c5eec0148ca7197a7c4c1328fd2ceb74eb3bf8d7830351f7416c",
+    "crates/sandcrab/src/workspaces.rs": "95235ae3adba614302dec616dd7e32b5fb2a72171e603442236f7848a7da8a91",
+    "examples/sandcrab-recipe.py": "433a376f15c87ce9b55fa3ac24695e29ed94f93899ab955fe66ac37ff3eb97db",
+    "sdk/python/README.md": "3732833722eaf5bd610355d097ab34b890c1d4daf1e6d2f6a40f609da823c1ac",
+    "sdk/python/src/sandcrab_templates/__init__.py": "8952c88e5ea4f5d801385031fde5dbc81cf158d79805ad23417d5b5e22b61d86",
+    "sdk/python/src/sandcrab_templates/client.py": "f5b2bb2ea1d9a86ecd4fdfe0b06e6f4db300baa995939f98e5f5bd2a8b4408db",
+    "sdk/python/tests/test_templates.py": "536b6169880f14f7341678c6785f9ea766525a9f1f2c91b99d41843b2d7f678b"
+  },
+  "binary": {
+    "bytes": 4768672,
+    "baselineBytes": 4711328,
+    "deltaBytes": 57344,
+    "sha256": "cccc5378356d846152b522058b376fb1c2aa21e1ea05850de2bef6385733b5ac",
+    "helperBytes": 141736,
+    "helperSha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+    "addedRuntimeDependencies": [],
+    "addedResidentProcesses": 0
+  },
+  "checks": {
+    "rustFmtClippyLockedTests": "PASS",
+    "sdkUnitWindows": 11,
+    "sdkUnitLinux": 11,
+    "conformanceControllerTests": 5,
+    "nativeAndPublishedSdkGroups": 12,
+    "pythonSdkVersion": "1.1.0",
+    "kotlinSdkVersion": "1.1.0",
+    "cleanup": "PASS"
+  },
+  "measurements": {
+    "measurements": [
+      {
+        "operation": "import-base",
+        "wallSeconds": 0.057606081943959,
+        "archiveBytes": 5130240
+      },
+      {
+        "operation": "import-toolkit",
+        "wallSeconds": 0.019179631024599075,
+        "archiveBytes": 10240
+      },
+      {
+        "operation": "import-replacement",
+        "wallSeconds": 0.019233823055401444,
+        "archiveBytes": 10240
+      },
+      {
+        "operation": "import-workspace",
+        "wallSeconds": 0.020411870093084872,
+        "archiveBytes": 10240
+      },
+      {
+        "operation": "compose-cold",
+        "wallSeconds": 0.002814723993651569
+      },
+      {
+        "operation": "compose-warm",
+        "wallSeconds": 0.000230391975492239
+      },
+      {
+        "operation": "mount-and-start-cold",
+        "wallSeconds": 0.026116899913176894
+      },
+      {
+        "operation": "mount-and-start-warm",
+        "wallSeconds": 0.02630741789471358
+      }
+    ],
+    "metadataBytes": 309,
+    "uniqueTreeAllocatedBytes": 5169152,
+    "workspaceRepublishedBytes": 0,
+    "workspaceInodePreserved": true
+  },
+  "measurementLimits": "Native multi-layer recipes; cold is first mount after publication, warm is next instance; host caches are not dropped; no density claim; single observations, no improvement percentage or latency SLO",
+  "attempts": [
+    {
+      "kind": "format",
+      "attempt": 1,
+      "result": "FAIL",
+      "reason": "rustup distribution TLS unexpected EOF before source formatting"
+    },
+    {
+      "kind": "format",
+      "attempt": 2,
+      "result": "FAIL",
+      "reason": "Docker config digest was not a runnable image; switched to verified manifest digest"
+    },
+    {
+      "kind": "rust",
+      "attempt": 3,
+      "result": "PASS",
+      "scope": "initial recipe unit implementation"
+    },
+    {
+      "kind": "rust",
+      "attempt": 4,
+      "result": "PASS",
+      "scope": "final runtime and OpenAPI"
+    },
+    {
+      "kind": "linuxSdkInstall",
+      "attempt": 1,
+      "result": "FAIL",
+      "reason": "no-build-isolation attempted without setuptools; standard isolated build used next"
+    },
+    {
+      "kind": "linuxSdkInstall",
+      "attempt": 2,
+      "result": "PASS"
+    },
+    {
+      "kind": "native",
+      "attempt": 1,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "reason": "missing-layer fixture rename crossed XFS boundary; moved the temporary fixture target onto the same filesystem"
+    },
+    {
+      "kind": "native",
+      "attempt": 2,
+      "result": "PASS",
+      "cleanup": "PASS"
+    }
+  ],
+  "rawEvidence": "Retained in operator storage; CI uploads conformance receipts and logs as workflow artifacts."
+}

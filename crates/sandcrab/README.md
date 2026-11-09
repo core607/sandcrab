@@ -278,6 +278,51 @@ changed contents, modes, links or profile execution identity return
 `GET /v1/templates/SHA256` or `sandcrab template get` for the same ID. Do not rerun
 environment preparation or validation to resolve a publication outcome.
 
+### Composable recipes
+
+Import base, toolkit and workspace content independently, then publish their
+ordered IDs as one recipe. For rootfs use, workspace-layer files belong beneath
+`workspace/` in that layer. Composition writes only a bounded metadata record;
+updating a toolkit reuses the existing base and workspace objects.
+
+```sh
+sandcrab template compose --socket /var/lib/sandcrab-demo/runtime/control.sock BASE_ID TOOLKIT_ID WORKSPACE_ID
+```
+
+The JSON reply contains `id`, `uid`, `gid` and `layers`. Use its ID wherever a
+template ID is accepted, including native sessions and the OpenSandbox
+`PROFILE@sha256:ID` image selector. The API is `POST /v1/templates/compose` with
+`{"layers":["BASE_ID","TOOLKIT_ID","WORKSPACE_ID"]}`. Supply 1 to 16 distinct
+published tree IDs in base-to-top order. Recipes cannot reference other recipes.
+All layers must share the selected profile's execution UID/GID. Content selection
+does not grant host paths, network access, capabilities or stronger limits.
+Rootfs anchor validation applies to the final merged view.
+
+Later layers win conflicts, including file/directory and symlink replacements;
+directories merge unless hidden by an upper file. Each session adds its own
+writable upper. Plain imported `.wh.*` names remain ordinary files; plain tar
+import does not apply OCI whiteouts. Writable-layer deletions and opaque
+directories retain the [diff semantics](#templates) described above. Use a
+[filesystem capture](#filesystem-capture) to publish a complete merged state.
+
+The recipe ID hashes `sandcrab-template-recipe-v1` followed by a zero byte, the
+layer count as a four-byte little-endian integer, then each 64-byte lowercase
+ASCII tree ID in order. `template compose` prints this ID to stderr before
+sending. After a lost response or cancellation, inspect that ID with `template
+get`; do not rerun preparation to resolve the outcome. The
+[Python extension](../../sdk/python/README.md) computes and reconciles it too.
+
+Trees and recipe records share `max_templates`; the pool's byte totals count
+unique stored trees. Each recipe record is at most 4096 bytes, plus directory
+and filesystem metadata. Reserve that overhead outside `template_pool_bytes`.
+Stored recipes prevent deletion of their layers. Active sessions pin both the
+recipe and every layer until confirmed cleanup; uncertain cleanup preserves
+those pins. Delete unused recipes before deleting their leaves. Restart
+contains old workloads, verifies all references and removes incomplete staging;
+missing layers or corrupt committed recipes refuse readiness. A failed recipe
+commit returns `TEMPLATE_PUBLICATION_UNKNOWN` and fences catalog mutations until
+recovery. Composition adds no runtime dependency or resident process.
+
 ## Host calls
 
 Profiles can enable opaque requests from a command to its caller. The

@@ -61,3 +61,24 @@ python examples/sandcrab-environment.py --base-image PROFILE@sha256:ID \
 
 The example's single timings describe its run; they establish no performance SLO.
 Close each remote sandbox with `kill()` and each local SDK client with `close()`.
+
+Compose independently imported layers with `await templates.compose([base_id,
+toolkit_id, workspace_id])`. The result's `id` selects a native template or an
+OpenSandbox `PROFILE@sha256:ID` image. The [native recipe
+contract](../../crates/sandcrab/README.md#composable-recipes) owns ordering,
+whiteouts, limits, execution identity and reference lifetimes. `recipe_id(layers)`
+computes the expected ID locally. A lost transport reply triggers one read of
+that ID and no automatic repost; cancellation may leave a committed recipe,
+which `await templates.get(recipe_id(layers))` reconciles.
+
+The [recipe example](../../examples/sandcrab-recipe.py) composes the selected
+layers, validates two private instances and leaves the recipe available for reuse:
+
+```sh
+python examples/sandcrab-recipe.py --token-file ./client.token --profile default \
+  --validate 'bash /workspace/test.sh' BASE_ID TOOLKIT_ID WORKSPACE_ID
+```
+
+Changing `TOOLKIT_ID` creates another recipe without importing unchanged base or
+workspace content. The example records composition and start/validation times;
+it adds no daemon operation beyond template composition and existing SDK calls.

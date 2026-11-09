@@ -135,8 +135,23 @@ impl Service {
         result
     }
 
-    pub(crate) fn template_route(&self, method: &str, path: &str) -> (u16, Value) {
+    pub(crate) fn template_route(&self, method: &str, path: &str, body: &[u8]) -> (u16, Value) {
         let store = &self.runtime.templates;
+        if method == "POST" && path == "/v1/templates/compose" {
+            if self.stopped.load(Ordering::SeqCst) {
+                return error(503, "STOPPING");
+            }
+            let Some(request) = sandcrab_core::parse(body)
+                .ok()
+                .and_then(|value| serde_json::from_value::<crate::recipes::Request>(value).ok())
+            else {
+                return error(400, "INVALID_RECIPE");
+            };
+            return match store.compose(request.layers) {
+                Ok(recipe) => (200, serde_json::to_value(recipe).expect("recipe metadata")),
+                Err((status, code)) => error(status, code),
+            };
+        }
         if method == "GET" && import_path(path) {
             let after = if path == "/v1/templates" {
                 ""
@@ -158,9 +173,7 @@ impl Service {
             return error(404, "TEMPLATE_NOT_FOUND");
         };
         let result = match method {
-            "GET" => store
-                .get(id)
-                .map(|tree| serde_json::to_value(tree).expect("template metadata")),
+            "GET" => store.object(id),
             "DELETE" if self.stopped.load(Ordering::SeqCst) => Err((503, "STOPPING")),
             "DELETE" => store.delete(id).map(|()| json!({"deleted":true})),
             _ => Err((404, "NOT_FOUND")),
