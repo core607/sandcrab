@@ -52,6 +52,44 @@ python3 -m unittest discover -s benchmarks/density -p 'test_*.py' -v
 Linux runs the real command mix and Unix-peer/transport checks. On Windows those
 checks skip; a Windows pass is not Linux evidence.
 
+## Environment preparation and reuse
+
+`preparation.py` compares an unmodified pre-recipe binary using complete templates
+with a recipe-capable binary sharing one dependency layer across distinct
+workspace layers. Each workspace has different content. The comparison measures
+the additional reuse across those environments; existing sharing of one identical
+template is not counted as a new gain.
+
+The fixed matrix uses 1, 10 and 50 readers, two repetitions with reversed mode
+order, and 64 synthetic 64 KiB dependency files. Each disposable fixture has a
+1 GiB enclosing memory limit, two CPUs of quota, finite task limits and zero swap.
+It records import bytes, composition metadata, preparation/start time, verified
+source file identities and cold/warm page residency. Only fixture files receive
+`fsync` and `POSIX_FADV_DONTNEED`; root `mincore` must confirm cold pages. It never
+drops global caches. Complete-corpus hashes verify successful reads independently.
+
+Every cohort also writes and syncs one byte in every dependency file. The report
+records application bytes, actual private copy-up files, logical/allocated bytes,
+per-device `io.stat`, anon/file/kernel memory, CPU usage/throttling and pressure.
+Allocated blocks do not establish unique physical extent usage, and stacked I/O
+devices must not be added together. Output separates failed/refused commands from
+successful throughput and reports p50/p95/p99. Immutable sources are read back
+after the measured phases; cleanup contains sessions before releasing recipe and
+leaf references.
+
+```sh
+sudo python3 benchmarks/density/preparation.py --smoke \
+  --binary build/bin/sandcrab --baseline-binary /prepared/baseline/sandcrab \
+  --tools /prepared/tools --output /operator/evidence/reuse-smoke-new
+```
+
+Omit `--smoke` for the fixed matrix. Each binary needs its bundled helper. The
+[environment reuse workflow](../../.github/workflows/environment-reuse.yml)
+builds the pinned unmodified baseline and current candidate, runs only this
+targeted comparison and uploads every attempt. It runs on collector changes or
+manual dispatch, separately from the L2/L7/L9 full-density checkpoints. These
+synthetic results make no production-capacity or general latency claim.
+
 ## Native measurement
 
 Use an isolated root-capable systemd host with cgroup v2, XFS utilities, Git,

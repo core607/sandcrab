@@ -32,6 +32,7 @@ def host_memory():
 def other_loads():
     suffixes = (b'/benchmarks/density/density.py', b'/benchmarks/density/footprint.py',
                 b'/benchmarks/density/page_cache.py', b'/benchmarks/density/cold_start.py',
+                b'/benchmarks/density/preparation.py',
                 b'/agent-load.py', b'/load-suite.py')
     count = 0
     for process in Path('/proc').iterdir():
@@ -168,7 +169,8 @@ network = "none"
             self.storage.chmod(0o755)
             self.data.mkdir(mode=0o755)
         self.slice_file.write_text('[Unit]\nDescription=Disposable Sandcrab density benchmark\n[Slice]\n'
-                                   f'MemoryMax={self.budget}\nMemorySwapMax=0\nTasksMax=8192\nCPUQuota=200%\n')
+                                   f'MemoryMax={self.budget}\nMemorySwapMax=0\nTasksMax=8192\nCPUQuota=200%\n'
+                                   + ('IOAccounting=yes\n' if getattr(self, 'io_accounting', False) else ''))
         call('systemctl', 'daemon-reload')
         call('systemctl', 'start', self.slice)
         self.pool_group = group(self.slice)

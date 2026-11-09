@@ -1,0 +1,116 @@
+{
+  "scope": "D3 collector smoke only; the 1/10/50 comparison is pending CI and is not established by this receipt",
+  "result": "SMOKE_PASS",
+  "linuxCollectorUnitTests": 42,
+  "sourceSha256Lf": {
+    ".github/workflows/environment-reuse.yml": "83e3ba2adbe8c6de70991d6dad4b576cacc27159c08999353b6bb886f53b5fb8",
+    "benchmarks/density/README.md": "e34cc872cce9c9e167f001104954f35284a463a5de6d14598c7840840613f27b",
+    "benchmarks/density/host.py": "ca3ac46451da5972abb8a3e06ccbb620896443b73ec82419fafc76e5261e52c9",
+    "benchmarks/density/preparation.py": "b1aeb439598684eea24d03d35cba298b797da989c80b3f7c90b78c88b9931022",
+    "benchmarks/density/test_preparation.py": "aedfc9182508248e1215708e450d54f7504caeb8129090b2c35ee3ca30be1aae"
+  },
+  "binaries": {
+    "baseline": {
+      "bytes": 4711328,
+      "sha256": "6242f643787758da97ccd91ed63500bf436014af9ea24c994ffefa0af58e0bf6"
+    },
+    "candidate": {
+      "bytes": 4768672,
+      "sha256": "cccc5378356d846152b522058b376fb1c2aa21e1ea05850de2bef6385733b5ac"
+    }
+  },
+  "fullComparison": "PENDING_CI",
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "PASS",
+      "scope": "preparation-reuse-smoke",
+      "cases": [
+        {
+          "name": "1-1-monolithic",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        },
+        {
+          "name": "1-1-recipe",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "result": "PASS",
+      "scope": "preparation-reuse-smoke",
+      "cases": [
+        {
+          "name": "1-1-monolithic",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        },
+        {
+          "name": "1-1-recipe",
+          "status": "PASS",
+          "hostCleanup": "PASS",
+          "apiCleanup": {
+            "result": "PASS",
+            "failures": []
+          },
+          "coldResidency": {
+            "files": 4,
+            "payloadBytes": 262144,
+            "pages": 64,
+            "residentPages": 0,
+            "pageBytes": 4096,
+            "residentBytes": 0,
+            "distinctInodes": 4
+          },
+          "importedBytes": 276480
+        }
+      ]
+    }
+  ],
+  "rawEvidence": "Local smoke attempts retained in operator storage; the targeted CI workflow uploads full comparison attempts."
+}
