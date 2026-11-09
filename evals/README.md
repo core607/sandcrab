@@ -50,6 +50,40 @@ general programming ability or isolate a causal effect. The
 original scores and a controlled regrade after correcting an unstated exit-status
 requirement.
 
+## Evaluation integrity probes
+
+`integrity.py` drives the existing native workspace consumer and independent
+artifact grader as an ordinary authenticated client. Eight scripted cases try
+to read host reference/log/credential canaries, connect to control channels,
+overwrite the protected runtime entrypoint, carry import hooks or background
+state into grading and later samples, forge correct stdout with incorrect stored
+JSON, and exhaust output or workspace storage. The grader must accept the
+expected denial/isolation cases and reject forged or exhausted submissions.
+Reports retain the expected and actual grade, daemon outcomes, independent file
+readback and every cleanup result. These are fixed boundary probes with zero
+model calls; they do not measure model-directed attacks or general capability.
+The storage probe distinguishes hard output termination from periodic workspace
+accounting: a short write can overshoot the byte limit before observation. It
+retains that limit and observed usage, verifies the exceeded state and bounded
+termination of an active over-limit writer, and confirms cleanup.
+
+A separate ordinary builder prepares and validates public files, removes its
+workspace build residue and captures a filesystem checkpoint. The test checks
+the archive's exact file allowlist, publishes it and reads two independent
+instances. The root fixture verifies that host canaries and the service token
+were neither changed nor included. Reference material and credentials stay
+outside the builder's filesystem; capture does not discover or redact secrets.
+
+Run on the same disposable native host used by preflight:
+
+```sh
+sudo python3 evals/integrity.py --binary build/bin/sandcrab --tools /prepared/tools \
+  --python /prepared/eval-python/bin/python --output /operator/evidence/integrity-new
+```
+
+The evaluation workflow runs these probes separately before Inspect and retains
+their reports, exports and logs in its artifact, including failed attempts.
+
 ## Native API cases
 
 Each file in [cases/sandcrab](cases/sandcrab/) is YAML with four fields:

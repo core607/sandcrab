@@ -94,6 +94,11 @@ jobs:
             --python /var/lib/sandcrab-evals/sdk-python/bin/python --java "$JAVA_HOME/bin/java" \
             --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \
             --output /var/lib/sandcrab-evals/conformance
+      - name: Check independent grading and adversarial interference on the native service
+        run: |
+          sudo python3 evals/integrity.py --binary build/bin/sandcrab \
+            --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/python/bin/python \
+            --output /var/lib/sandcrab-evals/integrity
       - name: Run Inspect against the disposable native service
         env:
           EVIDENCE_MODE: ${{ inputs.evidence_mode || 'scripted' }}
@@ -114,6 +119,10 @@ jobs:
           if [ -d /var/lib/sandcrab-evals/conformance ]; then
             sudo install -d -m 755 /var/lib/sandcrab-evals/results
             sudo cp -a /var/lib/sandcrab-evals/conformance /var/lib/sandcrab-evals/results/conformance
+          fi
+          if [ -d /var/lib/sandcrab-evals/integrity ]; then
+            sudo install -d -m 755 /var/lib/sandcrab-evals/results
+            sudo cp -a /var/lib/sandcrab-evals/integrity /var/lib/sandcrab-evals/results/integrity
           fi
           if [ -d /var/lib/sandcrab-evals/results ]; then
             sudo chown --no-dereference -R "$(id -u):$(id -g)" /var/lib/sandcrab-evals/results

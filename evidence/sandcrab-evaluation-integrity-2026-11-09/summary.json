@@ -1,0 +1,161 @@
+{
+  "scope": "D5 scripted native evaluation-integrity and environment-publication probes",
+  "result": "PASS",
+  "modelCalls": 0,
+  "modelTokens": 0,
+  "productionContent": false,
+  "runtimeRevision": "632a822024870b3a8b0b9668a17202a2d2390957",
+  "binarySha256": "a0d3d7a2e0e78e1307b8915194fdab748b0f9db75378f30ab2487d48aed7eb6a",
+  "binaryDeltaBytes": 0,
+  "runtimeChanges": false,
+  "sourceSha256Lf": {
+    ".github/workflows/evals.yml": "0681e37403d26d3bbe7d398d41e7a91daad1fe9d6a7af550e82ecd9a4d2585fb",
+    "evals/README.md": "16eceed18f22468350b8a6e3a64c83c956f2df87c103c6779c252361a38e3f84",
+    "evals/integrity.py": "8e03086cad656ced299ba6e7a2ef70e46efb9b69c22e4c1a35a2eac9f71e7e01",
+    "evals/native_http.py": "a5685ba55cd4a2128829b351c046efe05cd5c5907e6ef867f0c401e95bf3b7e4"
+  },
+  "checks": {
+    "linuxEvalUnitTests": 52,
+    "nativeFixtureGroups": 4,
+    "cleanup": "PASS"
+  },
+  "cases": [
+    {
+      "name": "hidden-reference-and-logs",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": true,
+      "gradePassed": true
+    },
+    {
+      "name": "control-channels",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": true,
+      "gradePassed": true
+    },
+    {
+      "name": "protected-entrypoint",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": true,
+      "gradePassed": true
+    },
+    {
+      "name": "producer-pollution",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": true,
+      "gradePassed": true
+    },
+    {
+      "name": "later-sample",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": true,
+      "gradePassed": true
+    },
+    {
+      "name": "forged-stdout",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": false,
+      "gradePassed": false
+    },
+    {
+      "name": "output-exhaustion",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": false,
+      "gradePassed": false
+    },
+    {
+      "name": "storage-exhaustion",
+      "kind": "scripted-boundary",
+      "status": "PASS",
+      "cleanup": "PASS",
+      "modelCalls": 0,
+      "expectedGradePass": false,
+      "gradePassed": false
+    }
+  ],
+  "environment": {
+    "result": "PASS",
+    "templateId": "0708c818d36e52c180b4d8f252bef0b4f4357a73836146a944b6dbad0d54c5ee",
+    "archiveBytes": 3072,
+    "allowedFiles": [
+      "program.py",
+      "public.json"
+    ],
+    "builderRole": "ordinary authenticated native client",
+    "instances": 2,
+    "modelCalls": 0
+  },
+  "storageLimitObservation": {
+    "issue": "https://github.com/core607/sandcrab/issues/11",
+    "shortCommandWrittenBytes": 33554432,
+    "shortCommandState": "succeeded",
+    "activeWriterState": "timed_out",
+    "observation": {
+      "state": "failed",
+      "storageUsage": {
+        "mode": "periodic",
+        "state": "exceeded",
+        "observedAtMillis": 1794211303232,
+        "allocatedBytes": 33558528,
+        "inodes": 4,
+        "byteLimit": 8388608,
+        "inodeLimit": 1024
+      },
+      "storagePoolUsage": null
+    },
+    "limitation": "Periodic accounting permits short-command overshoot; it is not a hard disk quota. The active writer is frozen and ends at its command deadline."
+  },
+  "attempts": [
+    {
+      "kind": "staticImport",
+      "platform": "Windows",
+      "result": "FAIL",
+      "reason": "POSIX runner imports pwd; attack-program compilation then passed on Linux"
+    },
+    {
+      "kind": "native",
+      "attempt": 1,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "reason": "The new storage probe assumed immediate enforcement; recorded successful 32 MiB write under an 8 MiB periodic limit as issue 11"
+    },
+    {
+      "kind": "native",
+      "attempt": 2,
+      "result": "FAIL",
+      "cleanup": "PASS",
+      "boundaryCases": "8PASS",
+      "reason": "Evaluator transport did not support DELETE for template cleanup; added that verb without changing the agent HTTP-tool allowlist"
+    },
+    {
+      "kind": "native",
+      "attempt": 3,
+      "result": "PASS",
+      "cleanup": "PASS",
+      "boundaryCases": "8PASS",
+      "environmentPublication": "PASS"
+    }
+  ],
+  "evidenceLimits": "Fixed scripted attacks and exact fixture canaries; no model-directed attack evaluation or general sandbox guarantee.",
+  "rawEvidence": "Every local attempt is retained in operator storage; the evaluation workflow includes raw integrity receipts, exports and logs in its artifact."
+}
