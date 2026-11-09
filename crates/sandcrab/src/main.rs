@@ -27,6 +27,7 @@ mod multipart;
 mod opensandbox;
 mod overlay;
 mod queue;
+mod recipes;
 mod rootfs;
 mod runtime;
 mod sdk_commands;

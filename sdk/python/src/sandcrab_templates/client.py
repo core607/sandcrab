@@ -20,6 +20,18 @@ _PROFILE = re.compile(r'[a-z][a-z0-9-]{0,47}')
 _LIMIT = 1 << 30
 
 
+def recipe_id(layers):
+    if (not isinstance(layers, (list, tuple)) or not 1 <= len(layers) <= 16
+            or any(not isinstance(layer, str) or not _DIGEST.fullmatch(layer) for layer in layers)
+            or len(set(layers)) != len(layers)):
+        raise ValueError('Use 1 to 16 distinct immutable layer IDs in base-to-top order')
+    digest = hashlib.sha256(b'sandcrab-template-recipe-v1\0')
+    digest.update(len(layers).to_bytes(4, 'little'))
+    for layer in layers:
+        digest.update(layer.encode('ascii'))
+    return digest.hexdigest()
+
+
 class TemplateError(RuntimeError):
     def __init__(self, status, code):
         self.status, self.code = status, code
@@ -158,6 +170,21 @@ class TemplateClient:
     async def reconcile(self, checkpoint):
         """Read only. None means no published object is visible yet, including an import still running."""
         return await self.get(checkpoint.template_id)
+
+    async def compose(self, layers):
+        expected = recipe_id(layers)
+        layers = list(layers)
+        value = await self.get(expected)
+        if value is None:
+            try:
+                value = await self._json('POST', '/v1/templates/compose', json={'layers': layers})
+            except (httpx.TransportError, TimeoutError):
+                value = await self.get(expected)
+                if value is None:
+                    raise PublicationUncertain(expected) from None
+        if value.get('id') != expected or value.get('layers') != layers:
+            raise ValueError('Published recipe differs from the requested layer order')
+        return value
 
     async def capture(self, session_id, destination):
         if str(uuid.UUID(session_id)) != session_id:

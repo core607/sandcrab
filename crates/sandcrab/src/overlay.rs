@@ -40,34 +40,40 @@ const PACKET: &[u8] = b"sandcrab-overlay-v1";
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
-    pub lower: PathBuf,
+    pub lower: Vec<PathBuf>,
     pub upper: PathBuf,
     pub work: PathBuf,
 }
 impl Spec {
     pub fn arguments(&self) -> io::Result<Vec<String>> {
-        for path in [&self.lower, &self.upper, &self.work] {
+        if self.lower.is_empty() || self.lower.len() > crate::recipes::MAX_LAYERS {
+            return Err(invalid("Invalid overlay layer count"));
+        }
+        for path in self.lower.iter().chain([&self.upper, &self.work]) {
             protected_directory(path)?;
         }
         if self.upper.parent() != self.work.parent()
             || self.upper == self.work
-            || self.lower.starts_with(&self.upper)
-            || self.upper.starts_with(&self.lower)
-            || self.lower.starts_with(&self.work)
-            || self.work.starts_with(&self.lower)
+            || self.lower.iter().enumerate().any(|(index, lower)| {
+                [&self.upper, &self.work]
+                    .into_iter()
+                    .chain(self.lower[..index].iter())
+                    .any(|other| lower.starts_with(other) || other.starts_with(lower))
+            })
         {
             return Err(invalid("Invalid overlay directories"));
         }
-        Ok(vec![
-            "--cap-add".into(),
-            "CAP_SYS_ADMIN".into(),
-            "--overlay-src".into(),
-            self.lower.to_string_lossy().into(),
+        let mut arguments = vec!["--cap-add".into(), "CAP_SYS_ADMIN".into()];
+        for lower in &self.lower {
+            arguments.extend(["--overlay-src".into(), lower.to_string_lossy().into()]);
+        }
+        arguments.extend([
             "--overlay".into(),
             self.upper.to_string_lossy().into(),
             self.work.to_string_lossy().into(),
             VIEW.into(),
-        ])
+        ]);
+        Ok(arguments)
     }
 }
 

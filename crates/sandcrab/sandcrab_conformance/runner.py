@@ -24,6 +24,7 @@ SUITES = {
     'contexts': ('contexts', 'ContextsProbe'),
     'overlays': ('overlay', 'OverlayProbe'),
     'rootfs': ('rootfs', 'RootfsProbe'),
+    'recipes': ('recipes', 'RecipeProbe'),
     'diff': ('diff', 'DiffProbe'),
     'egress': ('egress', 'EgressProbe'),
     'queue': ('queue', 'QueueProbe'),
@@ -57,10 +58,11 @@ def create_fixture(name, args, report):
     if name in ('egress', 'queue') and args.python:
         probe.sdk_python = args.python
         probe.sdk_client = args.sdk_clients / ('network_client.py' if name == 'egress' else 'queue_client.py')
-    if name == 'rootfs' and args.python:
+    if name in ('rootfs', 'recipes') and args.python:
         probe.sdk = SimpleNamespace(python=args.python, python_client=args.sdk_clients / 'rootfs_client.py',
                                     java=args.java, jvm_libs=args.jvm_libs,
-                                    environment_client=args.examples / 'sandcrab-environment.py')
+                                    environment_client=args.examples / 'sandcrab-environment.py',
+                                    recipe_client=args.examples / 'sandcrab-recipe.py')
         probe.config.write_text(probe.config.read_text().replace('[service]', '[service]\nopensandbox = true', 1))
     return probe
 
@@ -147,7 +149,7 @@ def validate(args, suites):
             raise RuntimeError('Missing conformance example: ' + str(args.examples / filename))
     if 'delegation' in suites:
         args.parent = args.parent.resolve(strict=True)
-    if 'sdk' in suites or ('rootfs' in suites and args.python):
+    if 'sdk' in suites or (set(suites).intersection(('rootfs', 'recipes')) and args.python):
         if not all((args.python, args.java, args.jvm_libs)):
             raise RuntimeError('SDK coverage requires --python, --java and --jvm-libs')
     if args.python:
@@ -156,7 +158,7 @@ def validate(args, suites):
         if not args.python.is_file():
             raise RuntimeError('SDK Python interpreter is missing')
         for name, filename in [('sdk', 'python_client.py'), ('egress', 'network_client.py'),
-                               ('queue', 'queue_client.py'), ('rootfs', 'rootfs_client.py')]:
+                               ('queue', 'queue_client.py'), ('rootfs', 'rootfs_client.py'), ('recipes', 'rootfs_client.py')]:
             if name in suites and not (args.sdk_clients / filename).is_file():
                 raise RuntimeError('Missing SDK client: ' + str(args.sdk_clients / filename))
     if args.java:

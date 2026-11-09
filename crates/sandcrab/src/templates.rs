@@ -4,6 +4,7 @@ use crate::{
     config::{Profile, invalid},
     file_io::digest,
     file_records::{Result, Stage},
+    recipes::Recipe,
     template_io::Tree,
 };
 use sandcrab_core::fs::{protected_directory, protected_file};
@@ -24,6 +25,7 @@ pub const ENTRY_LIMIT: usize = 100_000;
 
 struct State {
     trees: BTreeMap<String, Tree>,
+    recipes: BTreeMap<String, Recipe>,
     active: Option<String>,
     fenced: bool,
     pins: BTreeMap<String, usize>,
@@ -47,12 +49,16 @@ pub struct Finished {
 pub struct Lease {
     store: Arc<Store>,
     id: String,
+    layers: Vec<String>,
     started: AtomicBool,
     released: AtomicBool,
 }
 impl Lease {
-    pub fn lower(&self) -> PathBuf {
-        self.store.root.join("objects").join(&self.id).join("lower")
+    pub fn lower(&self) -> Vec<PathBuf> {
+        self.layers
+            .iter()
+            .map(|id| self.store.root.join("objects").join(id).join("lower"))
+            .collect()
     }
     pub fn start(&self) {
         self.started.store(true, Ordering::SeqCst);
@@ -60,10 +66,16 @@ impl Lease {
     pub fn release(&self) {
         if !self.released.swap(true, Ordering::SeqCst) {
             let mut state = self.store.state.lock().unwrap();
-            if let Some(count) = state.pins.get_mut(&self.id) {
-                *count -= 1;
-                if *count == 0 {
-                    state.pins.remove(&self.id);
+            for id in self
+                .layers
+                .iter()
+                .chain((!self.layers.contains(&self.id)).then_some(&self.id))
+            {
+                if let Some(count) = state.pins.get_mut(id) {
+                    *count -= 1;
+                    if *count == 0 {
+                        state.pins.remove(id);
+                    }
                 }
             }
         }
@@ -131,6 +143,7 @@ impl Store {
         }
         directory(&root.join("objects"))?;
         directory(&root.join("incoming"))?;
+        directory(&root.join("recipes"))?;
         let mut trees = BTreeMap::new();
         for entry in fs::read_dir(root.join("objects"))? {
             let entry = entry?;
@@ -153,6 +166,15 @@ impl Store {
         if trees.values().map(|tree| tree.allocated_bytes).sum::<u64>() > pool_bytes {
             return Err(invalid("Stored templates exceed template_pool_bytes"));
         }
+        let mut recipes = BTreeMap::new();
+        for entry in fs::read_dir(root.join("recipes"))? {
+            let path = entry?.path();
+            let recipe = crate::recipes::read(&path, &trees)?;
+            recipes.insert(recipe.id.clone(), recipe);
+            if recipes.len() + trees.len() > max_count {
+                return Err(invalid("Stored templates exceed max_templates"));
+            }
+        }
         Ok(Arc::new(Self {
             root,
             owner,
@@ -160,6 +182,7 @@ impl Store {
             pool_bytes,
             state: Mutex::new(State {
                 trees,
+                recipes,
                 active: None,
                 fenced: false,
                 pins: BTreeMap::new(),
@@ -179,7 +202,7 @@ impl Store {
         {
             return Err(invalid("Template namespace changed"));
         }
-        for name in ["objects", "incoming"] {
+        for name in ["objects", "incoming", "recipes"] {
             protected_directory(&self.root.join(name))?;
         }
         Ok(())
@@ -199,7 +222,10 @@ impl Store {
                 .strip_prefix(".transfer-")
                 .is_some_and(sandcrab_core::uuid);
             let trash = name.strip_prefix(".deleted-").is_some_and(digest);
-            if !import && !trash {
+            let recipe = name
+                .strip_prefix(".recipe-")
+                .is_some_and(sandcrab_core::uuid);
+            if !import && !trash && !recipe {
                 return Err(invalid("Unexpected template staging entry"));
             }
             protected_directory(&entry.path())?;
@@ -213,24 +239,35 @@ impl Store {
     }
 
     fn info(&self, state: &State) -> Value {
-        json!({"available":!state.fenced,"count":state.trees.len(),"maxTemplates":self.max_count,
+        json!({"available":!state.fenced,"count":state.trees.len()+state.recipes.len(),"maxTemplates":self.max_count,
             "logicalBytes":state.trees.values().map(|tree|tree.bytes).sum::<u64>(),
             "allocatedBytes":state.trees.values().map(|tree|tree.allocated_bytes).sum::<u64>(),
-            "poolBytes":self.pool_bytes,"entryLimit":ENTRY_LIMIT,"importBusy":state.active.is_some()})
+            "poolBytes":self.pool_bytes,"entryLimit":ENTRY_LIMIT,"maxLayers":crate::recipes::MAX_LAYERS,"importBusy":state.active.is_some()})
     }
 
     pub fn list(&self, after: &str) -> Value {
         let state = self.state.lock().unwrap();
-        let page = state
+        let values = state
             .trees
-            .values()
-            .filter(|tree| tree.id.as_str() > after)
+            .iter()
+            .map(|(id, tree)| (id, serde_json::to_value(tree).unwrap()))
+            .chain(
+                state
+                    .recipes
+                    .iter()
+                    .map(|(id, recipe)| (id, serde_json::to_value(recipe).unwrap())),
+            )
+            .collect::<BTreeMap<_, _>>();
+        let page = values
+            .iter()
+            .filter(|(id, _)| id.as_str() > after)
             .take(65)
             .collect::<Vec<_>>();
-        json!({"templates":page.iter().take(64).collect::<Vec<_>>(),"pool":self.info(&state),
-            "nextAfter":(page.len()>64).then(||&page[63].id)})
+        json!({"templates":page.iter().take(64).map(|(_,value)|value).collect::<Vec<_>>(),"pool":self.info(&state),
+            "nextAfter":(page.len()>64).then(||page[63].0)})
     }
 
+    #[cfg(test)]
     pub fn get(&self, id: &str) -> Result<Tree> {
         self.state
             .lock()
@@ -241,28 +278,126 @@ impl Store {
             .ok_or((404, "TEMPLATE_NOT_FOUND"))
     }
 
+    pub fn object(&self, id: &str) -> Result<Value> {
+        let state = self.state.lock().unwrap();
+        if let Some(tree) = state.trees.get(id) {
+            return serde_json::to_value(tree).map_err(|_| (503, "TEMPLATE_UNAVAILABLE"));
+        }
+        state
+            .recipes
+            .get(id)
+            .ok_or((404, "TEMPLATE_NOT_FOUND"))
+            .and_then(|recipe| {
+                serde_json::to_value(recipe).map_err(|_| (503, "TEMPLATE_UNAVAILABLE"))
+            })
+    }
+
+    pub fn compose(&self, layers: Vec<String>) -> Result<Recipe> {
+        let mut state = self.state.lock().unwrap();
+        if state.fenced {
+            return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
+        }
+        if state.active.is_some() {
+            return Err((409, "TEMPLATE_IMPORT_BUSY"));
+        }
+        let recipe = Recipe::new(layers, &state.trees)?;
+        if let Some(existing) = state.recipes.get(&recipe.id) {
+            return if existing == &recipe {
+                Ok(existing.clone())
+            } else {
+                Err((503, "TEMPLATE_STATE_UNCERTAIN"))
+            };
+        }
+        if state.trees.len() + state.recipes.len() >= self.max_count {
+            return Err((507, "TEMPLATE_CAPACITY"));
+        }
+        let committed = (|| -> io::Result<()> {
+            self.verify()?;
+            for id in &recipe.layers {
+                if state.trees.get(id) != Some(&checked_tree(&self.root.join("objects").join(id))?)
+                {
+                    return Err(invalid("Template layer changed"));
+                }
+            }
+            if state.trees.contains_key(&recipe.id) {
+                return Err(invalid("Template recipe identity conflict"));
+            }
+            let stage = self
+                .root
+                .join("incoming")
+                .join(format!(".recipe-{}", sandcrab_core::new_uuid()?));
+            DirBuilder::new().mode(0o700).create(&stage)?;
+            crate::storage::write(&stage.join("record.json"), &recipe)?;
+            File::open(&stage)?.sync_all()?;
+            rustix::fs::renameat_with(
+                rustix::fs::CWD,
+                &stage,
+                rustix::fs::CWD,
+                self.root.join("recipes").join(&recipe.id),
+                rustix::fs::RenameFlags::NOREPLACE,
+            )?;
+            File::open(self.root.join("recipes"))?.sync_all()?;
+            File::open(self.root.join("incoming"))?.sync_all()
+        })();
+        if committed.is_err() {
+            state.fenced = true;
+            return Err((503, "TEMPLATE_PUBLICATION_UNKNOWN"));
+        }
+        state.recipes.insert(recipe.id.clone(), recipe.clone());
+        Ok(recipe)
+    }
+
     pub fn acquire(self: &Arc<Self>, id: &str, profile: &Profile) -> Result<Lease> {
         let mut state = self.state.lock().unwrap();
         if state.fenced {
             return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
         }
-        let tree = state.trees.get(id).ok_or((404, "TEMPLATE_NOT_FOUND"))?;
-        if (tree.uid, tree.gid) != (profile.uid, profile.gid) {
-            return Err((409, "TEMPLATE_IDENTITY_MISMATCH"));
-        }
+        let layers = if state.trees.contains_key(id) {
+            vec![id.to_owned()]
+        } else {
+            state
+                .recipes
+                .get(id)
+                .ok_or((404, "TEMPLATE_NOT_FOUND"))?
+                .layers
+                .clone()
+        };
         self.verify()
             .map_err(|_| (503, "TEMPLATE_STATE_UNCERTAIN"))?;
-        if checked_tree(&self.root.join("objects").join(id))
-            .ok()
-            .as_ref()
-            != Some(tree)
+        if let Some(recipe) = state.recipes.get(id)
+            && crate::recipes::read(&self.root.join("recipes").join(id), &state.trees)
+                .ok()
+                .as_ref()
+                != Some(recipe)
         {
             return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
         }
-        *state.pins.entry(id.into()).or_default() += 1;
+        for layer in &layers {
+            let tree = state
+                .trees
+                .get(layer)
+                .ok_or((503, "TEMPLATE_STATE_UNCERTAIN"))?;
+            if (tree.uid, tree.gid) != (profile.uid, profile.gid) {
+                return Err((409, "TEMPLATE_IDENTITY_MISMATCH"));
+            }
+            if checked_tree(&self.root.join("objects").join(layer))
+                .ok()
+                .as_ref()
+                != Some(tree)
+            {
+                return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
+            }
+        }
+        for layer in &layers {
+            *state.pins.entry(layer.clone()).or_default() += 1;
+        }
+        if !layers.iter().any(|layer| layer == id) {
+            *state.pins.entry(id.to_owned()).or_default() += 1;
+        }
         Ok(Lease {
             store: self.clone(),
             id: id.into(),
+            layers,
             started: AtomicBool::new(false),
             released: AtomicBool::new(false),
         })
@@ -330,7 +465,7 @@ impl Store {
             }
             return Ok(existing.clone());
         }
-        if state.trees.len() >= self.max_count
+        if state.trees.len() + state.recipes.len() >= self.max_count
             || state.trees.values().map(|t| t.allocated_bytes).sum::<u64>() + tree.allocated_bytes
                 > self.pool_bytes
         {
@@ -407,16 +542,30 @@ impl Store {
         if state.fenced {
             return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
         }
-        if !state.trees.contains_key(id) {
+        let recipe = state.recipes.contains_key(id);
+        if !state.trees.contains_key(id) && !recipe {
             return Err((404, "TEMPLATE_NOT_FOUND"));
         }
-        if state.pins.get(id).copied().unwrap_or(0) > 0 {
+        if state.pins.get(id).copied().unwrap_or(0) > 0
+            || state
+                .recipes
+                .values()
+                .any(|recipe| recipe.layers.iter().any(|layer| layer == id))
+        {
             return Err((409, "TEMPLATE_BUSY"));
         }
         let deleted = (|| -> io::Result<()> {
             self.verify()?;
-            let path = self.root.join("objects").join(id);
-            checked_tree(&path)?;
+            let namespace = self.root.join(if recipe { "recipes" } else { "objects" });
+            let path = namespace.join(id);
+            if recipe {
+                let disk = crate::recipes::read(&path, &state.trees)?;
+                if state.recipes.get(id) != Some(&disk) {
+                    return Err(invalid("Template recipe changed"));
+                }
+            } else {
+                checked_tree(&path)?;
+            }
             let trash = self.root.join("incoming").join(format!(".deleted-{id}"));
             rustix::fs::renameat_with(
                 rustix::fs::CWD,
@@ -425,7 +574,7 @@ impl Store {
                 &trash,
                 rustix::fs::RenameFlags::NOREPLACE,
             )?;
-            File::open(self.root.join("objects"))?.sync_all()?;
+            File::open(&namespace)?.sync_all()?;
             File::open(self.root.join("incoming"))?.sync_all()?;
             fs::remove_dir_all(trash)?;
             File::open(self.root.join("incoming"))?.sync_all()
@@ -435,6 +584,7 @@ impl Store {
             return Err((503, "TEMPLATE_STATE_UNCERTAIN"));
         }
         state.trees.remove(id);
+        state.recipes.remove(id);
         Ok(())
     }
 }
@@ -568,6 +718,140 @@ mod tests {
             (507, "TEMPLATE_CAPACITY")
         );
         assert!(limited.finish(&stage, true).cleanup_complete);
+        assert_eq!(runtime.parent(), Some(Path::new("/source")));
+        fs::remove_dir_all(runtime).unwrap();
+    }
+
+    #[test]
+    fn recipes_bind_order_and_hold_layer_references_through_mounts_and_restart() {
+        let runtime = Path::new("/source").join(format!(
+            "recipe-store-{}",
+            sandcrab_core::new_uuid().unwrap()
+        ));
+        fs::create_dir(&runtime).unwrap();
+        let owner = json!({"test":sandcrab_core::new_uuid().unwrap()});
+        let store = Store::open(&runtime, owner.clone(), 4, 1 << 20).unwrap();
+        let mut profile = crate::config::Config::parse(include_str!("../config.example.toml"))
+            .unwrap()
+            .profiles["python"]
+            .clone();
+        profile.uid = 65534;
+        profile.gid = 65534;
+        let (stage, a) = staged(&store, &profile, b"base");
+        store.publish(&stage, a.clone()).unwrap();
+        assert!(store.finish(&stage, true).cleanup_complete);
+        let (stage, b) = staged(&store, &profile, b"workspace");
+        store.publish(&stage, b.clone()).unwrap();
+        assert!(store.finish(&stage, true).cleanup_complete);
+        let layers = vec![a.id.clone(), b.id.clone()];
+        let first = store.compose(layers.clone()).unwrap();
+        let reversed = store.compose(vec![b.id.clone(), a.id.clone()]).unwrap();
+        assert_ne!(first.id, reversed.id);
+        assert_eq!(store.compose(layers.clone()).unwrap(), first);
+        assert_eq!(
+            store.compose(vec![a.id.clone()]).unwrap_err(),
+            (507, "TEMPLATE_CAPACITY")
+        );
+        assert_eq!(
+            store.compose(vec![a.id.clone(), a.id.clone()]).unwrap_err(),
+            (400, "INVALID_RECIPE")
+        );
+        assert_eq!(
+            store.compose(vec!["0".repeat(64)]).unwrap_err(),
+            (409, "TEMPLATE_LAYER_NOT_FOUND")
+        );
+        assert_eq!(
+            store.compose(vec![first.id.clone()]).unwrap_err(),
+            (409, "TEMPLATE_LAYER_NOT_FOUND")
+        );
+        let held = store.acquire(&first.id, &profile).unwrap();
+        assert_eq!(
+            held.lower(),
+            layers
+                .iter()
+                .map(|id| runtime.join("templates/objects").join(id).join("lower"))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(store.delete(&first.id), (Err((409, "TEMPLATE_BUSY"))));
+        assert_eq!(store.delete(&a.id), (Err((409, "TEMPLATE_BUSY"))));
+        drop(held);
+        assert_eq!(store.delete(&a.id), (Err((409, "TEMPLATE_BUSY"))));
+        let held = store.acquire(&first.id, &profile).unwrap();
+        held.start();
+        drop(held);
+        assert_eq!(store.delete(&first.id), (Err((409, "TEMPLATE_BUSY"))));
+        drop(store);
+        // The unit has no mounts; runtime recovery contains real old mounts before reusing the catalog.
+        let store = Store::open(&runtime, owner.clone(), 4, 1 << 20).unwrap();
+        store.recover().unwrap();
+        assert_eq!(store.object(&first.id).unwrap()["layers"], json!(layers));
+        assert_eq!(store.list("")["pool"]["count"], 4);
+        let mut wrong = profile.clone();
+        wrong.uid = 1;
+        assert!(matches!(
+            store.acquire(&first.id, &wrong),
+            Err((409, "TEMPLATE_IDENTITY_MISMATCH"))
+        ));
+        store.delete(&first.id).unwrap();
+        assert_eq!(store.delete(&a.id), (Err((409, "TEMPLATE_BUSY"))));
+        store.delete(&reversed.id).unwrap();
+        store.delete(&a.id).unwrap();
+        store.delete(&b.id).unwrap();
+        assert_eq!(store.list("")["pool"]["count"], 0);
+        assert_eq!(runtime.parent(), Some(Path::new("/source")));
+        fs::remove_dir_all(runtime).unwrap();
+    }
+
+    #[test]
+    fn invalid_recipe_publication_is_fenced_and_missing_layers_are_not_adopted() {
+        let runtime = Path::new("/source").join(format!(
+            "recipe-fault-{}",
+            sandcrab_core::new_uuid().unwrap()
+        ));
+        fs::create_dir(&runtime).unwrap();
+        let owner = json!({"test":sandcrab_core::new_uuid().unwrap()});
+        let store = Store::open(&runtime, owner.clone(), 8, 1 << 20).unwrap();
+        let mut profile = crate::config::Config::parse(include_str!("../config.example.toml"))
+            .unwrap()
+            .profiles["python"]
+            .clone();
+        profile.uid = 65534;
+        profile.gid = 65534;
+        let (stage, tree) = staged(&store, &profile, b"keep");
+        store.publish(&stage, tree.clone()).unwrap();
+        assert!(store.finish(&stage, true).cleanup_complete);
+        let recipe =
+            Recipe::new(vec![tree.id.clone()], &store.state.lock().unwrap().trees).unwrap();
+        let collision = runtime.join("templates/recipes").join(&recipe.id);
+        fs::create_dir(&collision).unwrap();
+        assert_eq!(
+            store.compose(recipe.layers.clone()),
+            Err((503, "TEMPLATE_PUBLICATION_UNKNOWN"))
+        );
+        assert_eq!(store.list("")["pool"]["available"], false);
+        assert!(store.delete(&tree.id).is_err());
+        drop(store);
+        assert!(Store::open(&runtime, owner.clone(), 8, 1 << 20).is_err());
+        fs::remove_dir(&collision).unwrap();
+        let store = Store::open(&runtime, owner.clone(), 8, 1 << 20).unwrap();
+        store.recover().unwrap();
+        assert_eq!(
+            fs::read_dir(runtime.join("templates/incoming"))
+                .unwrap()
+                .count(),
+            0
+        );
+        store.compose(recipe.layers).unwrap();
+        let original = runtime.join("templates/objects").join(&tree.id);
+        let moved = runtime.join("retained-layer");
+        fs::rename(&original, &moved).unwrap();
+        assert!(Store::open(&runtime, owner.clone(), 8, 1 << 20).is_err());
+        assert_eq!(
+            fs::read(moved.join("lower/data/artifact")).unwrap(),
+            b"keep"
+        );
+        fs::rename(moved, original).unwrap();
+        assert!(Store::open(&runtime, owner, 8, 1 << 20).is_ok());
         assert_eq!(runtime.parent(), Some(Path::new("/source")));
         fs::remove_dir_all(runtime).unwrap();
     }

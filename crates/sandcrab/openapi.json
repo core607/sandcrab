@@ -1830,7 +1830,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Template"
+                  "$ref": "#/components/schemas/TemplateObject"
                 }
               }
             }
@@ -1863,7 +1863,7 @@
       },
       "delete": {
         "operationId": "deleteTemplate",
-        "description": "Remove an unused immutable template and its stored tree. Uncertain publication or cleanup fences template mutations until contained restart recovery.",
+        "description": "Delete a tree or recipe only when no active lease or stored recipe references it. Uncertain cleanup retains pins until contained restart recovery.",
         "responses": {
           "200": {
             "description": "Deleted",
@@ -1981,6 +1981,55 @@
           },
           "401": {
             "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
+    },
+    "/v1/templates/compose": {
+      "post": {
+        "operationId": "composeTemplate",
+        "description": "Publish an ordered immutable recipe without copying trees. SHA-256 binds the recipe version and exact ordered layer IDs. Upper layers win conflicting paths; directories merge. All layers use the same execution UID/GID. Profile authority, rootfs anchor checks and private writable uppers are unchanged. After a lost reply, read the predicted ID without replaying preparation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateRecipeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Published or existing recipe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateRecipe"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "408": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "507": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3793,7 +3842,7 @@
             "type": "array",
             "maxItems": 64,
             "items": {
-              "$ref": "#/components/schemas/Template"
+              "$ref": "#/components/schemas/TemplateObject"
             }
           },
           "nextAfter": {
@@ -3819,7 +3868,8 @@
           "poolBytes",
           "entryLimit",
           "importBusy",
-          "allocatedBytes"
+          "allocatedBytes",
+          "maxLayers"
         ],
         "properties": {
           "available": {
@@ -3851,6 +3901,9 @@
           "allocatedBytes": {
             "type": "integer",
             "minimum": 0
+          },
+          "maxLayers": {
+            "const": 16
           }
         }
       },
@@ -3860,7 +3913,7 @@
           "null"
         ],
         "pattern": "^[0-9a-f]{64}$",
-        "description": "Immutable template for the session overlay. Requires matching profile UID/GID; mutually exclusive with volumeId."
+        "description": "Immutable tree or recipe for the session overlay. Every layer requires matching profile UID/GID; mutually exclusive with volumeId."
       },
       "RunLifecycle": {
         "description": "Queued/running results are absent. A refusal confirms no execution.",
@@ -3908,6 +3961,71 @@
                 }
               }
             }
+          }
+        ]
+      },
+      "TemplateRecipeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "layers"
+        ],
+        "properties": {
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "description": "Distinct published leaf tree IDs, base first and topmost last; recipes cannot reference recipes."
+          }
+        }
+      },
+      "TemplateRecipe": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "uid",
+          "gid",
+          "layers"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "uid": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "gid": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "description": "Distinct published leaf tree IDs, base first and topmost last; recipes cannot reference recipes."
+          }
+        }
+      },
+      "TemplateObject": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Template"
+          },
+          {
+            "$ref": "#/components/schemas/TemplateRecipe"
           }
         ]
       }

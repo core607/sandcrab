@@ -8,7 +8,7 @@ import unittest
 
 import httpx
 
-from sandcrab_templates import Checkpoint, PublicationUncertain, TemplateClient, TemplateError
+from sandcrab_templates import Checkpoint, PublicationUncertain, TemplateClient, TemplateError, recipe_id
 
 SESSION = '00000000-0000-0000-0000-000000000001'
 EPOCH = '00000000-0000-0000-0000-000000000002'
@@ -29,6 +29,63 @@ def checkpoint(path):
 
 
 class TemplateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recipe_order_and_bounds_are_checked_before_sending(self):
+        layers = ['a' * 64, 'b' * 64]
+        self.assertNotEqual(recipe_id(layers), recipe_id(list(reversed(layers))))
+        for invalid in ([], ['a'], [layers[0]] * 2, layers[0], [f'{i:064x}' for i in range(17)]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                recipe_id(invalid)
+        methods, published = [], False
+        expected = recipe_id(layers)
+        def handler(request):
+            nonlocal published
+            methods.append(request.method)
+            if request.method == 'POST':
+                self.assertEqual('/v1/templates/compose', request.url.path)
+                self.assertEqual({'layers': layers}, json.loads(request.content))
+                published = True
+                raise httpx.ReadError('committed reply lost', request=request)
+            self.assertEqual('/v1/templates/' + expected, request.url.path)
+            return (httpx.Response(200, json={'id': expected, 'layers': layers}) if published
+                    else httpx.Response(404, json={'error': {'code': 'TEMPLATE_NOT_FOUND'}}))
+        async with TemplateClient('http://127.0.0.1:9011', TOKEN, transport=httpx.MockTransport(handler)) as client:
+            self.assertEqual(expected, (await client.compose(layers))['id'])
+            self.assertEqual(expected, (await client.compose(layers))['id'])
+        self.assertEqual(['GET', 'POST', 'GET', 'GET'], methods)
+
+    async def test_recipe_lost_reply_and_cancellation_never_repost(self):
+        layers = ['a' * 64, 'b' * 64]
+        for cancel in (False, True):
+            methods, started = [], asyncio.Event()
+            async def handler(request):
+                methods.append(request.method)
+                if request.method == 'GET':
+                    return httpx.Response(404, json={'error': {'code': 'TEMPLATE_NOT_FOUND'}})
+                started.set()
+                if cancel:
+                    await asyncio.Event().wait()
+                raise httpx.ReadError('reply lost', request=request)
+            async with TemplateClient('http://127.0.0.1:9011', TOKEN, transport=httpx.MockTransport(handler)) as client:
+                task = asyncio.create_task(client.compose(layers))
+                await asyncio.wait_for(started.wait(), 2)
+                if cancel:
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+                else:
+                    with self.assertRaises(PublicationUncertain) as raised:
+                        await task
+                    self.assertEqual(recipe_id(layers), raised.exception.template_id)
+            self.assertEqual(['GET', 'POST'] if cancel else ['GET', 'POST', 'GET'], methods)
+
+    async def test_recipe_rejects_a_response_with_another_layer_order(self):
+        layers = ['a' * 64, 'b' * 64]
+        def handler(request):
+            return httpx.Response(200, json={'id': recipe_id(layers), 'layers': list(reversed(layers))})
+        async with TemplateClient('http://127.0.0.1:9011', TOKEN, transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(ValueError):
+                await client.compose(layers)
+
     async def test_capture_can_be_reused_by_opensandbox_without_replacement(self):
         requests = []
         def handler(request):

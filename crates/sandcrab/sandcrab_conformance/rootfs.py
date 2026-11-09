@@ -147,7 +147,7 @@ class RootfsProbe(OverlayProbe):
             assert http(self.socket, 'DELETE', '/v1/templates/'+invalid['id'])[0] == 200
         self.done('rootfs-refuses-unsafe-reserved-paths-before-launch-and-releases-template-pins')
 
-    def sdk_template(self, tree):
+    def sdk_template(self, tree, base_id=None):
         args = self.sdk
         source = self.root / 'rootfs-client.py'
         shutil.copyfile(args.python_client, source)
@@ -184,7 +184,7 @@ class RootfsProbe(OverlayProbe):
                 assert time.monotonic() < deadline
                 time.sleep(.02)
             assert not list((self.socket.parent / 'jobs').iterdir())
-            assert (self.socket.parent / 'templates/objects' / tree['id'] / 'lower/data/opt/base').read_bytes() == b'template environment'
+            assert (self.socket.parent / 'templates/objects' / (base_id or tree['id']) / 'lower/data/opt/base').read_bytes() == b'template environment'
             self.receipt[label+'Sdk'] = receipt
             self.done(label+'-published-sdk-creates-a-template-rootfs-and-cleans-its-native-records')
         source = self.root / 'environment-client.py'

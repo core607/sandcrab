@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "sandcrab template capture --socket PATH SESSION_ID DESTINATION\nsandcrab template import --socket PATH --profile NAME [--directory | --expected-id SHA256] SOURCE\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. Capture freezes the session's writers while creating a full filesystem tar; it restores no process, variable or cwd. DESTINATION must be a new local file. SOURCE is plain tar; --directory streams an unpacked tree without pulling an image.\n";
+const HELP: &str = "sandcrab template capture --socket PATH SESSION_ID DESTINATION\nsandcrab template import --socket PATH --profile NAME [--directory | --expected-id SHA256] SOURCE\nsandcrab template compose --socket PATH BASE_ID [LAYER_ID ...]\nsandcrab template list --socket PATH [--after SHA256]\nsandcrab template get|delete --socket PATH SHA256\nUse --endpoint URL with the normal token option for loopback HTTP. Capture freezes the session's writers while creating a full filesystem tar; it restores no process, variable or cwd. DESTINATION must be a new local file. SOURCE is plain tar; --directory streams an unpacked tree without pulling an image.\n";
 
 struct Chunks<'a, W> {
     output: &'a mut W,
@@ -128,6 +128,20 @@ pub fn command(args: &[String], token_file: Option<&Path>) -> io::Result<i32> {
         return crate::file_client::checkpoint(&endpoint, session, Path::new(destination));
     }
     let result = match (mode.as_str(), rest) {
+        ("compose", layers)
+            if !layers.is_empty()
+                && layers.len() <= crate::recipes::MAX_LAYERS
+                && layers.iter().all(|id| crate::file_io::digest(id)) =>
+        {
+            let id = crate::recipes::identity(layers).map_err(|(_, code)| invalid(code))?;
+            eprintln!("templateId={id}");
+            client::request(
+                &endpoint,
+                "POST",
+                "/v1/templates/compose",
+                Some(&serde_json::json!({"layers":layers})),
+            )?
+        }
         ("import", [flag, profile, source]) if flag == "--profile" => {
             import(&endpoint, profile, Path::new(source), false, None)?
         }

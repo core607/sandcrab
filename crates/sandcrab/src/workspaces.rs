@@ -76,7 +76,7 @@ impl Store {
                 profile,
                 &cancelled,
                 crate::overlay::Spec {
-                    lower: mutable.join("lower"),
+                    lower: vec![mutable.join("lower")],
                     upper: mutable.join("upper"),
                     work: mutable.join("work"),
                 },
