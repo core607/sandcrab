@@ -31,6 +31,24 @@ use std::{
 pub struct Capture {
     pub path: String,
     pub format: Format,
+    #[serde(default)]
+    pub frozen: bool,
+    #[serde(default)]
+    pub scope: CaptureScope,
+}
+#[derive(Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureScope {
+    #[default]
+    Workspace,
+    Filesystem,
+}
+impl Capture {
+    fn valid(&self) -> bool {
+        valid_path(&self.path, self.format == Format::Tar)
+            && (self.scope == CaptureScope::Workspace
+                || (self.frozen && self.path == "." && self.format == Format::Tar))
+    }
 }
 pub struct Snapshot {
     pub file: File,
@@ -484,13 +502,14 @@ impl Service {
             .ok()
             .and_then(|v| serde_json::from_value::<Capture>(v).ok())
             .ok_or((400, "INVALID_REQUEST"))?;
-        if !valid_path(&request.path, request.format == Format::Tar) {
+        if !request.valid() {
             return Err((400, "INVALID_PATH"));
         }
         if selection.is_some() && request.format != Format::Raw {
             return Err((400, "INVALID_SELECTION"));
         }
         let lease = self.file_lease(session, incarnation)?;
+        let frozen = frozen || request.frozen;
         self.capture_file(lease, request, selection, frozen, false)
     }
 
@@ -505,6 +524,8 @@ impl Service {
             Capture {
                 path: ".".into(),
                 format: Format::Tar,
+                frozen: false,
+                scope: CaptureScope::Workspace,
             },
             None,
             false,
@@ -535,12 +556,28 @@ impl Service {
                 .files
                 .begin_stage(&stage, &self.runtime.config)?;
             let mut job = job(
-                if difference { "difference" } else { "snapshot" },
+                if difference {
+                    "difference"
+                } else if request.scope == CaptureScope::Filesystem {
+                    "checkpoint"
+                } else {
+                    "snapshot"
+                },
                 &request.path,
                 request.format,
                 &lease.access,
                 &path,
             );
+            if request.scope == CaptureScope::Filesystem {
+                job.entry_limit = crate::templates::ENTRY_LIMIT;
+                if lease.access.rootfs {
+                    job.workspace = job
+                        .workspace
+                        .parent()
+                        .ok_or_else(|| invalid("INVALID_PATH"))?
+                        .to_owned();
+                }
+            }
             job.selection = selection.cloned();
             let value = lease.access.frozen(frozen, || {
                 if lease.cancelled.load(Ordering::SeqCst) {
@@ -687,6 +724,42 @@ fn pipe_body(
                 }
                 Err(e) => return Err(e),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod capture_tests {
+    use super::*;
+
+    #[test]
+    fn a_filesystem_capture_requires_a_frozen_whole_tree() {
+        let parse = |value: Value| serde_json::from_value::<Capture>(value);
+        assert!(parse(json!({"path":".","format":"tar"})).unwrap().valid());
+        assert!(
+            parse(json!({"path":"file","format":"raw","frozen":true}))
+                .unwrap()
+                .valid()
+        );
+        assert!(
+            parse(json!({"path":".","format":"tar","scope":"filesystem","frozen":true}))
+                .unwrap()
+                .valid()
+        );
+        for value in [
+            json!({"path":".","format":"tar","scope":"filesystem"}),
+            json!({"path":"file","format":"raw","scope":"filesystem","frozen":true}),
+            json!({"path":"subdir","format":"tar","scope":"filesystem","frozen":true}),
+            json!({"path":"../outside","format":"tar","frozen":true}),
+        ] {
+            assert!(!parse(value).unwrap().valid());
+        }
+        for value in [
+            json!({"path":".","format":"tar","scope":"host","frozen":true}),
+            json!({"path":".","format":"tar","frozen":"true"}),
+            json!({"path":".","format":"tar","root":"/etc"}),
+        ] {
+            assert!(parse(value).is_err());
         }
     }
 }

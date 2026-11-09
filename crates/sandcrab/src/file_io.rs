@@ -649,17 +649,19 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         || job.byte_limit > 1_073_741_824
         || job.mode > 0o777
         || (job.action.starts_with("stream-") && job.format != Format::Raw)
-        || !(1..=if job.action == "template-receive" {
+        || !(1..=if ["template-receive", "checkpoint"].contains(&job.action.as_str()) {
             100_000
         } else {
             10_000
         })
             .contains(&job.entry_limit)
         || (job.action == "template-receive" && job.format != Format::Tar)
-        || (job.action == "difference" && (job.path != "." || job.format != Format::Tar))
+        || (["difference", "checkpoint"].contains(&job.action.as_str())
+            && (job.path != "." || job.format != Format::Tar))
         || !valid_path(
             &job.path,
-            ["snapshot", "difference"].contains(&job.action.as_str()) && job.format == Format::Tar,
+            ["snapshot", "difference", "checkpoint"].contains(&job.action.as_str())
+                && job.format == Format::Tar,
         )
     {
         return Err(invalid("Invalid file helper authority"));
@@ -673,6 +675,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         "publish",
         "stream-publish",
         "snapshot",
+        "checkpoint",
         "sdk-publish",
         "sdk-query",
         "sdk-mutate",
@@ -689,7 +692,13 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         .parent()
         .ok_or_else(|| invalid("Missing stage parent"))?;
     let layout = if owner.rootfs {
-        owner.volume_id.is_none() && job.workspace == parent.join("data/workspace")
+        owner.volume_id.is_none()
+            && job.workspace
+                == parent.join(if job.action == "checkpoint" {
+                    "data"
+                } else {
+                    "data/workspace"
+                })
     } else {
         job.workspace.parent() == Some(parent)
     };
@@ -710,7 +719,7 @@ pub fn execute(path: &Path) -> io::Result<serde_json::Value> {
         sandcrab_core::fs::protected_directory(&upper)?;
         crate::storage::no_mounts_below(&upper, true)?;
     }
-    if ["snapshot", "difference"].contains(&job.action.as_str()) {
+    if ["snapshot", "difference", "checkpoint"].contains(&job.action.as_str()) {
         return snapshot(&job);
     }
     if job.action == "template-receive" {

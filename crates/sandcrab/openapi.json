@@ -1078,7 +1078,7 @@
       ],
       "post": {
         "operationId": "snapshotFiles",
-        "description": "Read live workspace files; callers coordinate writers for a consistent collection. Capture a raw file or an ordinary tar of a directory. Symlinks in tar remain links and are never followed. The Content-Length and quoted SHA-256 ETag describe immutable captured bytes. Complete delivery confirms stage cleanup; a failure may truncate the body. Snapshots are request-scoped and are not retained for reconnect. This response closes its connection.",
+        "description": "Capture a raw file or ordinary tar. frozen=true quiesces the owning session cgroup, including child shells, while capturing; it thaws before delivery. The default workspace scope reads /workspace. scope=filesystem requires frozen=true, path=. and format=tar, and captures the entire merged template root for a rootfs session or /workspace otherwise, using the template entry limit. Runtime-only mounts and process, variable and cwd state are absent. Callers coordinate application transactions and external host writers. Symlinks remain links and are never followed. Content-Length and quoted SHA-256 ETag describe immutable bytes. Complete delivery confirms stage cleanup; failure may truncate the body. Captures are request-scoped, not retained for reconnect, and close the connection.",
         "requestBody": {
           "required": true,
           "content": {
@@ -3030,8 +3030,34 @@
               "raw",
               "tar"
             ]
+          },
+          "frozen": {
+            "type": "boolean",
+            "default": false,
+            "description": "Temporarily freeze all session workload processes during capture. Expiry and command deadlines continue."
+          },
+          "scope": {
+            "enum": ["workspace", "filesystem"],
+            "default": "workspace",
+            "description": "filesystem includes a rootfs session's complete merged root and requires frozen=true, path=. and format=tar. No arbitrary host path is accepted."
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["scope"],
+              "properties": {"scope": {"const": "filesystem"}}
+            },
+            "then": {
+              "required": ["frozen"],
+              "properties": {
+                "path": {"const": "."},
+                "format": {"const": "tar"},
+                "frozen": {"const": true}
+              }
+            }
+          }
+        ]
       },
       "EventCursor": {
         "type": "string",

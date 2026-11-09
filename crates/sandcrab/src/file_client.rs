@@ -233,6 +233,7 @@ pub fn get(
         &serde_json::to_vec(&json!({"path":path,"format":options.format}))?,
         destination,
         options.replace,
+        None,
     )
 }
 
@@ -249,6 +250,26 @@ pub fn difference(
         &[],
         destination,
         replace,
+        None,
+    )
+}
+
+pub fn checkpoint(socket: &Endpoint, session: &str, destination: &Path) -> io::Result<i32> {
+    let current = client::request(socket, "GET", &format!("/v1/sessions/{session}"), None)?;
+    let epoch = current["serverId"]
+        .as_str()
+        .filter(|id| sandcrab_core::uuid(id))
+        .ok_or_else(|| invalid("Session has no valid server epoch"))?;
+    download(
+        socket,
+        "POST",
+        &format!("/v1/sessions/{session}/snapshot"),
+        &serde_json::to_vec(&json!({
+            "path":".", "format":"tar", "frozen":true, "scope":"filesystem"
+        }))?,
+        destination,
+        false,
+        Some(epoch),
     )
 }
 
@@ -259,6 +280,7 @@ fn download(
     body: &[u8],
     destination: &Path,
     replace: bool,
+    expected_epoch: Option<&str>,
 ) -> io::Result<i32> {
     let mut stream = client::connect(socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(75)))?;
@@ -286,6 +308,11 @@ fn download(
     }
     if head.length > 1_073_741_824 {
         return Err(invalid("Snapshot exceeds the 1 GiB transfer limit"));
+    }
+    if let Some(epoch) = expected_epoch
+        && head.header("x-sandcrab-server-id") != Some(epoch)
+    {
+        return Err(invalid("Session epoch changed before filesystem capture"));
     }
     let expected = head
         .header("etag")
