@@ -38,6 +38,12 @@ overlay exporter can clone its own mount through an authenticated daemon channel
 The service treats those helpers and its protected binary directory as privileged
 host components. See the [workload and installation boundaries](crates/sandcrab/README.md#custom-installation).
 
+The fixed [deletion-layer importer](crates/sandcrab/README.md#deletion-layers)
+receives `CAP_MKNOD` only to convert validated empty markers into device 0:0
+whiteouts in protected staging. Archives cannot supply device nodes. Ordinary
+file helpers and workloads receive no additional capability; imported layers
+remain behind the root-only store and are exposed through the overlay view.
+
 The default network has no path to external hosts. An enabled profile allows
 exact destination names through a daemon-owned CONNECT or SOCKS proxy. The
 daemon resolves each request and connects to a checked address. The allowlist

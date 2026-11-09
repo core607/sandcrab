@@ -195,9 +195,10 @@ The equivalent import is `POST /v1/templates?profile=python` with a plain tar bo
 using Content-Length or chunked framing. `GET /v1/templates` returns up to 64
 objects and a `nextAfter` cursor; continue with `?after=SHA256`.
 `GET` and `DELETE /v1/templates/SHA256` inspect and remove an object.
-The CLI packs a directory locally; it neither contacts an image registry nor
-interprets OCI layer archives. Supply the merged, unpacked root tree. Coordinate
-source writers before packaging it.
+The CLI packs a directory locally and does not contact an image registry. Supply
+a merged, unpacked root tree for `--directory`; use the explicit
+[layer format](#deletion-layers) for tar deletion markers. Coordinate source
+writers before packaging it.
 
 Set `templateId` on `POST /v1/sessions`, or use `session open --template`.
 It is mutually exclusive with `volumeId` and requires the template's execution
@@ -299,11 +300,12 @@ does not grant host paths, network access, capabilities or stronger limits.
 Rootfs anchor validation applies to the final merged view.
 
 Later layers win conflicts, including file/directory and symlink replacements;
-directories merge unless hidden by an upper file. Each session adds its own
-writable upper. Plain imported `.wh.*` names remain ordinary files; plain tar
-import does not apply OCI whiteouts. Writable-layer deletions and opaque
-directories retain the [diff semantics](#templates) described above. Use a
-[filesystem capture](#filesystem-capture) to publish a complete merged state.
+directories merge unless hidden by an upper file or an explicit opaque layer
+directory. Each session adds its own writable upper. Plain imported `.wh.*`
+names remain ordinary files; [deletion layers](#deletion-layers) interpret them
+explicitly. Writable-layer deletions retain the [diff semantics](#templates)
+described above. Use a [filesystem capture](#filesystem-capture) to publish a
+complete merged state.
 
 The recipe ID hashes `sandcrab-template-recipe-v1` followed by a zero byte, the
 layer count as a four-byte little-endian integer, then each 64-byte lowercase
@@ -322,6 +324,40 @@ contains old workloads, verifies all references and removes incomplete staging;
 missing layers or corrupt committed recipes refuse readiness. A failed recipe
 commit returns `TEMPLATE_PUBLICATION_UNKNOWN` and fences catalog mutations until
 recovery. Composition adds no runtime dependency or resident process.
+
+### Deletion layers
+
+Import a native diff or a tar layer with `--layer`, or add `format=layer` to
+`POST /v1/templates?profile=NAME`. The flag is explicit: ordinary tar and
+`--directory` imports keep their existing literal-name semantics.
+
+```sh
+sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --layer changes.tar
+sandcrab template compose --socket /var/lib/sandcrab-demo/runtime/control.sock BASE_ID CHANGES_ID
+```
+
+An empty regular `.wh.NAME` marker hides the lower path `NAME`.
+`.wh..wh..opq` hides all lower children of its containing directory. Both forms
+disappear from the merged view and affect only earlier layers. Same-layer
+additions survive regardless of archive order; deleting and recreating a
+directory makes it opaque. Nonempty, linked, symlink or directory markers,
+invalid target names and supplied device nodes are rejected. Other entries use
+the existing template importer and its path, byte, count and execution bounds.
+This supports tar deletion semantics, without registry access, decompression,
+OCI manifest resolution, xattrs or ACL import.
+
+The fixed layer helper converts validated markers into device 0:0 whiteouts
+and `user.overlay.opaque=y` inside protected staging. It alone receives
+`CAP_MKNOD`; workload capabilities and ordinary file helpers remain unchanged.
+The read-only layer store remains inaccessible to workloads. Overlay mounts
+hide whiteouts; full filesystem captures contain merged files and preserve
+deletions through absence, with no marker devices in the captured tar.
+
+Layer identity uses the `sandcrab-template-layer-v1` hash domain. It includes
+the normalized tree metadata and contents, whiteouts and directory opacity;
+it differs from a plain-tree import of the same archive. `--expected-id` or
+`expectedId` also applies to layer imports. Publication, lost-reply recovery,
+reference pins and restart rules are the same as for other immutable trees.
 
 ## Host calls
 

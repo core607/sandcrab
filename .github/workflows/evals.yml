@@ -89,7 +89,7 @@ jobs:
         run: |
           printf '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
           sudo python3 crates/sandcrab/conformance.py \
-            --suite native egress queue retention streaming templates contexts overlays rootfs recipes diff delegation sdk \
+            --suite native egress queue retention streaming templates contexts overlays rootfs recipes layers diff delegation sdk \
             --binary build/bin/sandcrab --tools /var/lib/sandcrab-evals/tools \
             --python /var/lib/sandcrab-evals/sdk-python/bin/python --java "$JAVA_HOME/bin/java" \
             --jvm-libs evals/sdk/jvm/build/install/sandcrab-sdk-conformance/lib \

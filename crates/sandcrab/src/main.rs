@@ -49,6 +49,7 @@ mod storage;
 mod template_api;
 mod template_client;
 mod template_io;
+mod template_layers;
 mod templates;
 mod transport;
 mod usage;
@@ -135,20 +136,22 @@ fn execute(args: &[String]) -> io::Result<i32> {
             storage::copy_tree(Path::new(source), Path::new(destination), Path::new(pool))?;
             Ok(0)
         }
-        [mode, path] if mode == "__file" => match file_io::execute(Path::new(path)) {
-            Ok(value) => {
-                println!("{value}");
-                Ok(0)
+        [mode, path] if ["__file", "__template-layer"].contains(&mode.as_str()) => {
+            match file_io::execute(Path::new(path), mode == "__template-layer") {
+                Ok(value) => {
+                    println!("{value}");
+                    Ok(0)
+                }
+                Err(error) => {
+                    println!(
+                        "{}",
+                        serde_json::json!({"error":file_io::error_code(&error)})
+                    );
+                    eprintln!("{error}");
+                    Ok(1)
+                }
             }
-            Err(error) => {
-                println!(
-                    "{}",
-                    serde_json::json!({"error":file_io::error_code(&error)})
-                );
-                eprintln!("{error}");
-                Ok(1)
-            }
-        },
+        }
         [mode, flag, path] if ["serve", "check"].contains(&mode.as_str()) && flag == "--config" => {
             if rustix::process::geteuid().as_raw() != 0 {
                 return Err(config::invalid(

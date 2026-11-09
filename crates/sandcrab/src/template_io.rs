@@ -35,6 +35,7 @@ struct Scan {
     allocated_bytes: u64,
     entries: usize,
     normalize: bool,
+    layer: bool,
 }
 
 impl Scan {
@@ -70,7 +71,12 @@ impl Scan {
                 FileType::Directory => {
                     self.allocate(meta.st_blocks)?;
                     self.hash.update(b"d");
-                    self.visit(&sandcrab_core::transfer::dir(dir, name)?, &path, job)?;
+                    let child = sandcrab_core::transfer::dir(dir, name)?;
+                    if self.layer {
+                        self.hash
+                            .update([u8::from(crate::template_layers::opaque(&child)?)]);
+                    }
+                    self.visit(&child, &path, job)?;
                 }
                 FileType::RegularFile => {
                     let inode = (meta.st_dev, meta.st_ino);
@@ -117,6 +123,12 @@ impl Scan {
                     let target = rustix::fs::readlinkat(dir, name, Vec::new())?;
                     field(&mut self.hash, target.as_bytes());
                 }
+                FileType::CharacterDevice
+                    if self.layer && meta.st_rdev == 0 && meta.st_mode & 0o777 == 0 =>
+                {
+                    self.allocate(meta.st_blocks)?;
+                    self.hash.update(b"w");
+                }
                 _ => return Err(invalid("UNSUPPORTED_ARCHIVE_ENTRY")),
             }
         }
@@ -134,16 +146,20 @@ impl Scan {
 }
 
 pub fn identify(root: &Path, job: &Job) -> io::Result<Tree> {
-    identify_tree(root, job, false)
+    identify_tree(root, job, false, false)
 }
 
 /// Predict import identity while the source is frozen; imports normalize owners
 /// and the root mode but preserve supported entry modes and hard-link topology.
 pub fn identify_capture(root: &Path, job: &Job) -> io::Result<Tree> {
-    identify_tree(root, job, true)
+    identify_tree(root, job, true, false)
 }
 
-fn identify_tree(root: &Path, job: &Job, normalize: bool) -> io::Result<Tree> {
+pub fn identify_layer(root: &Path, job: &Job) -> io::Result<Tree> {
+    identify_tree(root, job, false, true)
+}
+
+fn identify_tree(root: &Path, job: &Job, normalize: bool, layer: bool) -> io::Result<Tree> {
     let directory = crate::file_io::directory(root)?;
     let meta = directory.metadata()?;
     if !normalize && (meta.uid() != job.uid || meta.gid() != job.gid) {
@@ -159,8 +175,13 @@ fn identify_tree(root: &Path, job: &Job, normalize: bool) -> io::Result<Tree> {
             .ok_or_else(|| invalid("FILE_LIMIT"))?,
         entries: 0,
         normalize,
+        layer,
     };
-    scan.hash.update(b"sandcrab-template-tree-v1\0");
+    scan.hash.update(if layer {
+        b"sandcrab-template-layer-v1\0".as_slice()
+    } else {
+        b"sandcrab-template-tree-v1\0".as_slice()
+    });
     scan.hash.update(job.uid.to_le_bytes());
     scan.hash.update(job.gid.to_le_bytes());
     scan.hash.update(
@@ -171,6 +192,10 @@ fn identify_tree(root: &Path, job: &Job, normalize: bool) -> io::Result<Tree> {
         })
         .to_le_bytes(),
     );
+    if layer {
+        scan.hash
+            .update([u8::from(crate::template_layers::opaque(&directory)?)]);
+    }
     scan.visit(&directory, "", job)?;
     Ok(Tree {
         id: format!("{:x}", scan.hash.finalize()),
@@ -184,7 +209,12 @@ fn identify_tree(root: &Path, job: &Job, normalize: bool) -> io::Result<Tree> {
 
 pub fn receive(job: &Job) -> io::Result<serde_json::Value> {
     crate::file_io::receive(job, false)?;
-    let tree = identify(&job.stage.join("tree"), job)?;
+    let tree = if job.action == "template-layer-receive" {
+        crate::template_layers::convert(job)?;
+        identify_layer(&job.stage.join("tree"), job)?
+    } else {
+        identify(&job.stage.join("tree"), job)?
+    };
     // The archive is transport staging; the normalized tree is the stored object.
     fs::remove_file(job.stage.join("content"))?;
     Ok(serde_json::to_value(tree)?)
