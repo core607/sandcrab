@@ -387,7 +387,8 @@ while True: time.sleep(1)
             path.chmod(0o600)
         os.chown(client_key, *native_probe.CLIENT)
         authority = f'{address[0]}:{address[1]}'
-        self.config.write_text(original + f'\n[tcp]\nlisten = "{authority}"\ntoken_file = {json.dumps(str(server_key))}\n')
+        with_sdk = original.replace('[service]', '[service]\nopensandbox = true', 1)
+        self.config.write_text(with_sdk + f'\n[tcp]\nlisten = "{authority}"\ntoken_file = {json.dumps(str(server_key))}\n')
         self.restart()
         run = self.submit(program(b'TCP request'))
         with Calls(self.socket, run, connection=socket.create_connection(address, timeout=8),
@@ -417,9 +418,104 @@ while True: time.sleep(1)
         assert [json.loads(line)['event'] for line in result.stdout.splitlines()] == ['state', 'result']
         assert key not in result.stdout + result.stderr
         self.forget(run)
+        self.opensandbox_interop(address, key)
         self.config.write_text(original)
         self.restart()
         self.done('authenticated-tcp-host-call-events-and-cli-replies-refuse-unauthenticated-bodies')
+
+    def opensandbox_interop(self, address, key):
+        master = {'OPEN-SANDBOX-API-KEY': key}
+        bearer = {'Authorization': 'Bearer ' + key}
+
+        def sdk_json(method, path, body=None, headers=None):
+            with closing(HTTPConnection(*address, timeout=15)) as conn:
+                data = None if body is None else json.dumps(body).encode()
+                conn.request(method, path, data, headers=master if headers is None else headers)
+                resp = conn.getresponse()
+                raw = resp.read(65537)
+                return resp.status, json.loads(raw) if raw else None
+
+        def sdk_stream(sandbox_id, headers, action, command):
+            conn = HTTPConnection(*address, timeout=15)
+            conn.request('POST', f'/opensandbox/{sandbox_id}/{action}', json.dumps({'command': command}).encode(), headers=headers)
+            resp = conn.getresponse()
+            assert resp.status == 200
+            while True:
+                line = resp.readline(32769)
+                assert line and len(line) <= 32768
+                if line.startswith(b'data: '):
+                    first = json.loads(line[6:])
+                    assert first['type'] == 'init'
+                    return conn, resp, first['text']
+
+        def drain_sdk(conn, resp):
+            events = []
+            try:
+                while True:
+                    line = resp.readline(32769)
+                    if not line:
+                        break
+                    if line.startswith(b'data: '):
+                        events.append(json.loads(line[6:]))
+            finally:
+                resp.close()
+                conn.close()
+            assert events and events[-1]['type'] == 'execution_complete', events
+            assert not any(event['type'] == 'error' for event in events), events
+            return ''.join(event.get('text', '') for event in events if event['type'] == 'stdout')
+
+        status, sandbox = sdk_json('POST', '/v1/sandboxes', {
+            'image': {'uri': 'python'}, 'entrypoint': ['tail', '-f', '/dev/null'],
+            'resourceLimits': {'cpu': '0.25', 'memory': '32Mi'}, 'timeout': 60})
+        assert status == 202, sandbox
+        self.session_wait(sandbox)
+        status, endpoint = sdk_json('GET', f'/v1/sandboxes/{sandbox["id"]}/endpoints/44772')
+        assert status == 200
+        execd = endpoint['headers']
+
+        conn, resp, fg_id = sdk_stream(sandbox['id'], execd, 'command', 'python3 -c ' + shlex.quote(program(b'sdk-fg')))
+        run_ref = {'id': fg_id, 'serverId': self.info['serverId']}
+        with Calls(self.socket, run_ref, connection=socket.create_connection(address, timeout=8), headers=bearer) as events:
+            req = events.until('call')
+            assert base64.b64decode(req['base64']) == b'sdk-fg'
+            status, replied = sdk_json('POST', f'/v1/runs/{fg_id}/calls/{req["id"]}/reply',
+                                       {'base64': base64.b64encode(b'sdk-fg-reply').decode()}, headers=bearer)
+            assert status == 200 and replied['state'] == 'replied'
+            stdout = drain_sdk(conn, resp)
+            parsed = json.loads(stdout)
+            assert base64.b64decode(parsed['out']) == b'sdk-fg-reply' and 'runId=' + fg_id in parsed['err']
+            done = events.until('result')
+            assert done['run']['state'] == 'succeeded' and done['calls']['closed'] is True
+            events.end()
+        assert self.records(run_ref)['calls'][0]['state'] == 'replied'
+        assert self.reply(run_ref, req, b'sdk-fg-reply')[0] == 200
+        assert self.reply(run_ref, req, b'conflict')[1]['error']['code'] == 'CALL_REPLY_CONFLICT'
+        self.forget(run_ref)
+
+        status, created_ctx = sdk_json('POST', f'/opensandbox/{sandbox["id"]}/session', {}, headers=execd)
+        assert status == 200
+        ctx_id = created_ctx['session_id']
+        conn, resp, plain_id = sdk_stream(sandbox['id'], execd, f'session/{ctx_id}/run', 'printf plain-sdk')
+        assert drain_sdk(conn, resp) == 'plain-sdk'
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and http(self.socket, 'GET', '/v1/runs/' + plain_id)[0] != 404:
+            time.sleep(.025)
+        assert http(self.socket, 'GET', '/v1/runs/' + plain_id)[0] == 404
+
+        conn, resp, ctx_cmd = sdk_stream(sandbox['id'], execd, f'session/{ctx_id}/run',
+                                         'python3 -c ' + shlex.quote(program(b'sdk-ctx')))
+        ctx_ref = {'id': ctx_cmd, 'serverId': self.info['serverId']}
+        with Calls(self.socket, ctx_ref) as events:
+            req2 = events.until('call')
+            assert base64.b64decode(req2['base64']) == b'sdk-ctx'
+            assert self.reply(ctx_ref, req2, b'sdk-ctx-reply')[0] == 200
+            assert events.until('result')['run']['state'] == 'succeeded'
+            events.end()
+        assert base64.b64decode(json.loads(drain_sdk(conn, resp))['out']) == b'sdk-ctx-reply'
+        assert self.records(ctx_ref)['calls'][0]['state'] == 'replied'
+        assert sdk_json('DELETE', f'/v1/sandboxes/{sandbox["id"]}')[0] == 204
+        assert http(self.socket, 'GET', '/v1/runs/' + ctx_cmd)[0] == 404
+        self.done('opensandbox-foreground-and-context-commands-interoperate-with-native-host-calls')
 
     def command_limits(self):
         code = '''import subprocess

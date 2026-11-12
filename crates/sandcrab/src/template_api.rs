@@ -113,6 +113,7 @@ impl Service {
                 bytes: 0,
                 sha256: String::new(),
                 replace: false,
+                parents: false,
                 mode: 0o755,
                 uid: profile.uid,
                 gid: profile.gid,

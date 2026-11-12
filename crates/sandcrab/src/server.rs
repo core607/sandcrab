@@ -167,7 +167,7 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
                         return crate::opensandbox::write(stream, status, &value, true);
                     }
                 };
-                return send_snapshot(stream, service, snapshot, true);
+                return send_snapshot(stream, service, snapshot, true, true);
             }
             let close =
                 head.close || index + 1 == REQUEST_LIMIT || service.stopped.load(Ordering::SeqCst);
@@ -363,7 +363,29 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
                     return json_reply(stream, status, &error(status, code).1, true);
                 }
             };
-            return send_snapshot(stream, service, snapshot, false);
+            return send_snapshot(stream, service, snapshot, false, false);
+        }
+        if head.method == "GET"
+            && let Some((id, query)) = crate::file_stream::endpoint(&head.path)
+        {
+            if !bytes.is_empty() {
+                return json_reply(stream, 400, &error(400, "INVALID_REQUEST").1, true);
+            }
+            if head.header("if-range").is_some() {
+                return json_reply(
+                    stream,
+                    400,
+                    &error(400, "CONDITIONAL_RANGE_UNSUPPORTED").1,
+                    true,
+                );
+            }
+            let snapshot = match service.read_file(id, query, head.header("range")) {
+                Ok(snapshot) => snapshot,
+                Err((status, code)) => {
+                    return json_reply(stream, status, &error(status, code).1, true);
+                }
+            };
+            return send_snapshot(stream, service, snapshot, false, true);
         }
         let (status, reply) = service.route(&head.method, &head.path, &bytes);
         json_reply(stream, status, &reply, close)?;
@@ -447,13 +469,14 @@ fn snapshot(stream: &mut Stream, service: &Service, id: &str, body: &[u8]) -> io
         Ok(s) => s,
         Err((status, code)) => return json_reply(stream, status, &error(status, code).1, true),
     };
-    send_snapshot(stream, service, snapshot, false)
+    send_snapshot(stream, service, snapshot, false, false)
 }
 fn send_snapshot(
     stream: &mut Stream,
     service: &Service,
     mut snapshot: crate::files::Snapshot,
     sdk: bool,
+    rangeable: bool,
 ) -> io::Result<()> {
     let bytes = snapshot.bytes;
     let etag = format!("\"{}\"", snapshot.sha256);
@@ -494,7 +517,7 @@ fn send_snapshot(
     } else if !snapshot.text {
         headers.push(("ETag", etag.as_str()));
     }
-    if sdk && !snapshot.text {
+    if rangeable && !snapshot.text {
         headers.push(("Accept-Ranges", "bytes"));
     }
     let cancelled = snapshot.lease.cancelled.clone();

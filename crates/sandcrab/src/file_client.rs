@@ -20,8 +20,15 @@ pub struct Put {
     pub id: Option<String>,
     pub format: Format,
     pub replace: bool,
+    pub parents: bool,
     pub mode: Option<u32>,
     pub keep_result: bool,
+}
+pub struct ReadOptions {
+    pub bytes: Option<String>,
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+    pub replace: bool,
 }
 fn hash(file: &mut File) -> io::Result<(u64, String)> {
     let mut hash = Sha256::new();
@@ -138,12 +145,15 @@ pub fn put(
         if bytes > 1_073_741_824 {
             return Err(invalid("File exceeds the 1 GiB transfer limit"));
         }
-        let route = format!(
+        let mut route = format!(
             "/v1/sessions/{session}/files?path={}&replace={}&mode={}",
             query_path(destination),
             options.replace,
             options.mode.unwrap_or(0o644)
         );
+        if options.parents {
+            route.push_str("&parents=true");
+        }
         let result = transfer(
             socket,
             &route,
@@ -162,8 +172,11 @@ pub fn put(
         None => sandcrab_core::new_uuid()?,
     };
     eprintln!("uploadId={id}");
-    let plan = json!({"id":id,"serverId":info["serverId"],"sessionId":session,"path":destination,"format":options.format,
+    let mut plan = json!({"id":id,"serverId":info["serverId"],"sessionId":session,"path":destination,"format":options.format,
         "bytes":bytes,"sha256":sha256,"replace":options.replace,"mode":options.mode,"keepResult":options.keep_result});
+    if options.parents {
+        plan["parents"] = json!(true);
+    }
     let registered = client::request(socket, "POST", "/v1/uploads", Some(&plan))?;
     if registered["state"] != "waiting" {
         return outcome(socket, registered, options.keep_result);
@@ -391,5 +404,213 @@ fn download(
         receipt["template"] = template;
     }
     println!("{receipt}");
+    Ok(0)
+}
+
+fn receive_exact(input: &mut impl Read, output: &mut impl Write, bytes: u64) -> io::Result<String> {
+    let mut hash = Sha256::new();
+    let mut count = 0u64;
+    let mut buffer = [0u8; 32768];
+    loop {
+        let n = input.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        output.write_all(&buffer[..n])?;
+        hash.update(&buffer[..n]);
+        count += n as u64;
+    }
+    if count != bytes {
+        return Err(invalid("File response length did not match"));
+    }
+    output.flush()?;
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+pub fn read(
+    socket: &Endpoint,
+    session: &str,
+    path: &str,
+    destination: &Path,
+    options: ReadOptions,
+) -> io::Result<i32> {
+    if !valid_path(path, false) {
+        return Err(invalid("Source must be a relative workspace file path"));
+    }
+    if options.bytes.is_some() && (options.offset.is_some() || options.limit.is_some()) {
+        return Err(invalid("Choose either --bytes or --offset/--limit"));
+    }
+    if let Some(range) = &options.bytes
+        && (range.is_empty()
+            || !range.contains('-')
+            || range.chars().any(|c| !c.is_ascii_digit() && c != '-'))
+    {
+        return Err(invalid("Expected --bytes START-END, START- or -SUFFIX"));
+    }
+    let mut route = format!("/v1/sessions/{session}/files?path={}", query_path(path));
+    if let Some(offset) = options.offset {
+        route.push_str(&format!("&offset={offset}"));
+    }
+    if let Some(limit) = options.limit {
+        route.push_str(&format!("&limit={limit}"));
+    }
+    let mut stream = client::connect(socket)?;
+    stream.set_read_timeout(Some(Duration::from_secs(75)))?;
+    write!(stream, "GET {route} HTTP/1.1\r\nConnection: close\r\n")?;
+    if let Some(range) = &options.bytes {
+        write!(stream, "Range: bytes={range}\r\n")?;
+    }
+    socket.headers(&mut stream)?;
+    stream.write_all(b"\r\n")?;
+    let (head, mut response) = sandcrab_core::http::response(&mut stream)
+        .map_err(|_| invalid("Invalid file read response"))?;
+    let expected_status = if options.bytes.is_some() { 206 } else { 200 };
+    if head.status != expected_status {
+        if head.length > 65536 {
+            return Err(invalid("File read error response too large"));
+        }
+        let mut body = Vec::new();
+        response.read_to_end(&mut body)?;
+        let value: Value = serde_json::from_slice(&body)?;
+        return Err(invalid(format!(
+            "HTTP {}: {}",
+            head.status, value["error"]["code"]
+        )));
+    }
+    if head.length > 1_073_741_824 {
+        return Err(invalid("File read exceeds the 1 GiB transfer limit"));
+    }
+    let full = options.bytes.is_none() && options.offset.is_none() && options.limit.is_none();
+    let expected_sha = if full {
+        Some(
+            head.header("etag")
+                .and_then(|s| s.strip_prefix('"')?.strip_suffix('"'))
+                .filter(|s| digest(s))
+                .ok_or_else(|| invalid("File response has no SHA-256 ETag"))?,
+        )
+    } else {
+        None
+    };
+    if destination == Path::new("-") {
+        let mut stdout = io::stdout().lock();
+        if let Some(expected) = expected_sha {
+            receive(&mut response, &mut stdout, head.length, expected)?;
+        } else {
+            receive_exact(&mut response, &mut stdout, head.length)?;
+        }
+        return Ok(0);
+    }
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let temporary = parent.join(format!(".sandcrab-{}.part", sandcrab_core::new_uuid()?));
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary)?;
+    let mut partial = Partial {
+        path: temporary,
+        file,
+        installed: false,
+    };
+    let sha256 = if let Some(expected) = expected_sha {
+        receive(&mut response, &mut partial.file, head.length, expected)?;
+        expected.to_owned()
+    } else {
+        receive_exact(&mut response, &mut partial.file, head.length)?
+    };
+    partial.file.sync_all()?;
+    if options.replace {
+        match fs::symlink_metadata(destination) {
+            Ok(info) if !info.is_file() => {
+                return Err(invalid("Local destination is not a regular file"));
+            }
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+            _ => (),
+        }
+    }
+    renameat_with(
+        CWD,
+        &partial.path,
+        CWD,
+        destination,
+        if options.replace {
+            RenameFlags::empty()
+        } else {
+            RenameFlags::NOREPLACE
+        },
+    )?;
+    partial.installed = true;
+    File::open(parent)?.sync_all()?;
+    println!(
+        "{}",
+        json!({"bytes": head.length, "sha256": sha256, "destination": destination})
+    );
+    Ok(0)
+}
+
+pub fn mkdir(socket: &Endpoint, session: &str, path: &str, mode: Option<u32>) -> io::Result<i32> {
+    if !valid_path(path, false) {
+        return Err(invalid("Directory path must be a relative workspace path"));
+    }
+    let mut body = json!({"path": path});
+    if let Some(mode) = mode {
+        body["mode"] = json!(mode);
+    }
+    println!(
+        "{}",
+        client::request(
+            socket,
+            "POST",
+            &format!("/v1/sessions/{session}/files/mkdir"),
+            Some(&body),
+        )?
+    );
+    Ok(0)
+}
+
+pub fn ls(socket: &Endpoint, session: &str, path: &str, depth: Option<usize>) -> io::Result<i32> {
+    if !valid_path(path, true) {
+        return Err(invalid(
+            "Directory path must be . or a relative workspace path",
+        ));
+    }
+    let mut route = format!(
+        "/v1/sessions/{session}/files/list?path={}",
+        query_path(path)
+    );
+    if let Some(depth) = depth {
+        route.push_str(&format!("&depth={depth}"));
+    }
+    println!("{}", client::request(socket, "GET", &route, None)?);
+    Ok(0)
+}
+
+pub fn search(socket: &Endpoint, session: &str, path: &str, pattern: &str) -> io::Result<i32> {
+    if !valid_path(path, true) {
+        return Err(invalid(
+            "Directory path must be . or a relative workspace path",
+        ));
+    }
+    let route = format!(
+        "/v1/sessions/{session}/files/search?path={}&pattern={}",
+        query_path(path),
+        query_path(pattern)
+    );
+    println!("{}", client::request(socket, "GET", &route, None)?);
+    Ok(0)
+}
+
+pub fn rm(socket: &Endpoint, session: &str, path: &str, recursive: bool) -> io::Result<i32> {
+    if !valid_path(path, false) {
+        return Err(invalid("Target must be a relative workspace path"));
+    }
+    let route = format!(
+        "/v1/sessions/{session}/files?path={}&recursive={recursive}",
+        query_path(path)
+    );
+    println!("{}", client::request(socket, "DELETE", &route, None)?);
     Ok(0)
 }

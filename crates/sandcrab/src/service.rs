@@ -283,16 +283,8 @@ impl Service {
         if crate::template_api::import_path(path) || path.starts_with("/v1/templates/") {
             return self.template_route(method, path, body);
         }
-        if method == "DELETE"
-            && let Some((id, query)) = path
-                .strip_prefix("/v1/sessions/")
-                .and_then(|value| value.split_once("/files?"))
-                .filter(|(id, _)| sandcrab_core::uuid(id))
-        {
-            return match self.remove_file(id, query) {
-                Ok(value) => (200, value),
-                Err((status, code)) => error(status, code),
-            };
+        if let Some(response) = self.session_file_route(method, path, body) {
+            return response;
         }
         if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
             return self.session_route(method, path, body);

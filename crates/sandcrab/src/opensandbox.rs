@@ -154,15 +154,20 @@ impl Service {
     }
     fn sdk_value(self: &Arc<Self>, sandbox: &Sandbox) -> Result<Value> {
         let native = self.sdk_native(sandbox, "", None)?;
+        let mut status = json!({"state":state(&native)});
+        if let Some(code) = native["code"].as_str() {
+            status["reason"] = code.into();
+        }
         Ok(
             json!({"id":sandbox.id,"image":{"uri":sandbox.image},"entrypoint":sdk_types::IDLE,
             "metadata":sandbox.metadata,"createdAt":sdk_types::timestamp(sandbox.created),
             "expiresAt":sdk_types::timestamp(native["expiresAtMillis"].as_u64().ok_or((503,"INVALID_NATIVE_STATE"))?),
-            "status":{"state":state(&native)}}),
+            "status":status}),
         )
     }
     fn sdk_create(self: &Arc<Self>, bytes: &[u8]) -> Result<(u16, Value)> {
         let request: sdk_types::Create = sdk_types::parse(bytes)?;
+        let volume = request.volume()?;
         if !request.supported() {
             return Err((400, "UNSUPPORTED_CREATE_OPTION"));
         }
@@ -177,10 +182,29 @@ impl Service {
             * 1000;
         let resources = request.resource_limits.native()?;
         let (profile, template) = request.image.selection()?;
+        if template.is_some() && volume.is_some() {
+            return Err((400, "UNSUPPORTED_CREATE_OPTION"));
+        }
+        if let Some(volume_id) = &volume {
+            let store = self
+                .runtime
+                .storage
+                .as_ref()
+                .ok_or((409, "VOLUMES_DISABLED"))?;
+            let profile_cfg = self
+                .runtime
+                .config
+                .profiles
+                .get(profile)
+                .ok_or((400, "PROFILE_NOT_FOUND"))?;
+            store
+                .preflight_bind(volume_id, profile_cfg)
+                .map_err(|f| (f.status, f.code))?;
+        }
         self.sdk_reap();
         let id = sandcrab_core::new_uuid().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
         let token = Token::random().map_err(|_| (503, "SANDBOX_UNAVAILABLE"))?;
-        let input = json!({"id":id,"serverId":self.id,"profile":profile,"templateId":template,"rootfs":template.is_some(),"ttlMillis":ttl,"resources":resources,"keepResult":true});
+        let input = json!({"id":id,"serverId":self.id,"profile":profile,"volumeId":volume,"templateId":template,"rootfs":template.is_some(),"ttlMillis":ttl,"resources":resources,"keepResult":true});
         let accepted = sdk_types::native(self.session_route(
             "POST",
             "/v1/sessions",
@@ -246,7 +270,7 @@ impl Service {
             .cloned()
             .collect::<Vec<_>>();
         for command in commands {
-            self.sdk_collect(&command);
+            self.sdk_release_command(&command);
         }
         self.sdk_close_contexts(sandbox)?;
         self.sdk_native(sandbox, "forget", Some(&json!({})))?;
@@ -278,16 +302,33 @@ impl Service {
             if !["closed", "expired", "failed"].contains(&native["state"].as_str().unwrap_or("")) {
                 continue;
             }
-            if self
+            let active_commands = self
                 .sdk
                 .state
                 .lock()
                 .unwrap()
                 .commands
                 .iter()
-                .any(|c| c.sandbox == sandbox.id && c.observed.load(Ordering::SeqCst))
+                .filter(|c| c.sandbox == sandbox.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            if active_commands
+                .iter()
+                .any(|c| c.observed.load(Ordering::SeqCst))
             {
                 continue;
+            }
+            {
+                let registry = self.registry.lock().unwrap();
+                if active_commands.iter().any(|c| {
+                    registry
+                        .runs
+                        .get(&c.id)
+                        .and_then(|run| run.calls.as_ref())
+                        .is_some_and(|calls| calls.observed())
+                }) {
+                    continue;
+                }
             }
             let _ = self.sdk_remove(&sandbox);
         }

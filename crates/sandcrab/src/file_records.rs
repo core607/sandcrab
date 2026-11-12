@@ -35,6 +35,8 @@ pub struct Upload {
     pub sha256: String,
     #[serde(default)]
     pub replace: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub parents: bool,
     pub mode: Option<u32>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_result: bool,

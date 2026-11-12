@@ -66,13 +66,21 @@ pub fn subscribe(
     if cursor.incarnation != incarnation || cursor.sequence > calls.length() {
         return Err(error(409, "CALL_CURSOR_MISMATCH"));
     }
+    let admission = events::admit(service)?;
+    calls.add_observer();
     Ok(Subscription {
         service: service.clone(),
         id: id.into(),
         calls,
         cursor,
-        _admission: events::admit(service)?,
+        _admission: admission,
     })
+}
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        self.calls.remove_observer();
+        self.service.sdk_completed(&self.id);
+    }
 }
 impl Subscription {
     fn frame(&self, stream: &Stream, kind: &str, value: &Value) -> io::Result<()> {

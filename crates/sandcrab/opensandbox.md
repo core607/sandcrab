@@ -58,10 +58,19 @@ Create, get, filtered list, renew and delete use `/v1/sandboxes`. Endpoint looku
 maps ports 44772 and 18080 to path-routed command and read-only egress services.
 The returned network policy reports the selected profile's [egress allowlist](README.md#network-egress)
 with a deny default, or an empty allowlist for `network = "none"`. Custom networking,
-registry images, snapshots, separate template options, scheduling, credential proxies and volume requests
+registry images, snapshots, separate template options, scheduling and credential proxies
 are refused. Unused snapshot, template, platform, resource-request, lifecycle,
 network, credential-proxy and volume options may be omitted or null. Unknown
 fields fail.
+
+`volumes` accepts a single read-write `/workspace` entry whose `pvc.claimName`
+names a `ready` [native volume](README.md#durable-volumes) with matching execution
+UID/GID. Empty or multi-volume arrays, `host` or `ossfs` sources, `readOnly: true`,
+`subPath`, mounts outside `/workspace`, `deleteOnSandboxTermination: true`,
+storage-class/size/access-mode requests and combining a volume with
+`PROFILE@sha256:TEMPLATE_ID` are refused. `createIfNotExists` does not create a
+missing volume (`VOLUME_NOT_FOUND`). Sandbox deletion and expiry release the
+exclusive volume lease only after confirmed containment while preserving volume data.
 
 Supply an explicit timeout between 60 and 86400 seconds within the profile's
 session lifetime limit. Renewal sets an absolute expiry and remains bounded by
@@ -100,9 +109,15 @@ workspace and retains its storage and admission until restart recovery.
 
 Output is decoded incrementally as UTF-8; invalid bytes become U+FFFD. Use file
 downloads for binary results. An uncertain command outcome emits an error without
-a successful completion event. The [native host-call interface](host-calls.md)
-has separate result ownership; composing it with SDK command retention is not
-yet supported by the adapter.
+a successful completion event. On profiles with `host_calls = true`, foreground
+and named-context SDK commands receive `SANDBOX_EXECUTION_ID` matching the SSE
+`init` command ID and `/sandcrab` on `PATH` for `sandcrab call`. Callers observe
+and reply on the [native host-call routes](host-calls.md). Active
+`/v1/runs/ID/calls/events` streams hold the native run record until observation
+ends; commands that issue at least one host call retain their native run and call
+records under `result_ttl_millis`, or until `POST /v1/runs/ID/forget` or sandbox
+deletion, so callers can reconcile replies after SSE completion. Commands without
+host calls release their native run record when observation ends.
 
 ## Shell contexts
 

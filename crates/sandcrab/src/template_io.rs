@@ -245,6 +245,7 @@ mod tests {
             bytes: 0,
             sha256: String::new(),
             replace: false,
+            parents: false,
             mode: 0o755,
             uid: 65534,
             gid: 65534,

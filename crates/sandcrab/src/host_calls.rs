@@ -8,7 +8,7 @@ use std::{
     io,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -63,6 +63,7 @@ pub struct Calls {
     state: Mutex<State>,
     cancelled: Arc<AtomicBool>,
     stopped: AtomicBool,
+    observers: AtomicUsize,
 }
 impl Calls {
     pub fn new(cancelled: Arc<AtomicBool>) -> Arc<Self> {
@@ -70,7 +71,21 @@ impl Calls {
             state: Mutex::default(),
             cancelled,
             stopped: AtomicBool::new(false),
+            observers: AtomicUsize::new(0),
         })
+    }
+    pub fn add_observer(&self) {
+        self.observers.fetch_add(1, Ordering::SeqCst);
+    }
+    pub fn remove_observer(&self) {
+        self.observers.fetch_sub(1, Ordering::SeqCst);
+    }
+    pub fn observed(&self) -> bool {
+        self.observers.load(Ordering::SeqCst) > 0
+    }
+    pub fn used(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        !state.calls.is_empty() || state.failure.is_some()
     }
     pub fn start(self: &Arc<Self>, mailbox: Arc<Mailbox>, execution: &str) -> io::Result<Guard> {
         mailbox.reset(execution)?;

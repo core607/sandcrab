@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import socket
 import time
+import uuid
 
 from .native import call, http
 
@@ -412,6 +413,81 @@ class Contract:
         self.delete(identity)
         self.probe.done('sdk-partial-download-headers-long-lines-sparse-files-and-selection-limits')
 
+    def native_volume(self, profile='python'):
+        request = {'id': str(uuid.uuid4()), 'serverId': self.probe.info['serverId'], 'profile': profile}
+        status, _ = http(self.probe.socket, 'POST', '/v1/volumes', request)
+        assert status == 202
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            status, value = http(self.probe.socket, 'GET', '/v1/volumes/' + request['id'])
+            assert status == 200
+            if value['state'] == 'ready':
+                return request['id']
+            time.sleep(.025)
+        raise AssertionError('Native volume did not become ready')
+
+    def forget_volume(self, volume_id):
+        assert http(self.probe.socket, 'POST', f'/v1/volumes/{volume_id}/delete', {})[0] in (200, 202)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if http(self.probe.socket, 'GET', '/v1/volumes/' + volume_id)[1]['state'] == 'deleted':
+                break
+            time.sleep(.025)
+        assert http(self.probe.socket, 'POST', f'/v1/volumes/{volume_id}/forget', {})[0] == 200
+
+    def volumes(self):
+        vol_id = self.native_volume('python')
+        other_vol = self.native_volume('other')
+        pvc_entry = lambda claim, **extra: {
+            'name': 'workspace', 'host': None,
+            'pvc': {'claimName': claim, 'createIfNotExists': True, 'deleteOnSandboxTermination': False,
+                    'storageClass': None, 'storage': None, 'accessModes': None, **extra.pop('pvc', {})},
+            'ossfs': None, 'mountPath': '/workspace', 'readOnly': False, 'subPath': None, **extra}
+        missing = str(uuid.uuid4())
+        for create_flag in (True, False):
+            status, err = self.request('POST', '/v1/sandboxes',
+                                       {**self.spec(), 'volumes': [pvc_entry(missing, pvc={'createIfNotExists': create_flag})]})
+            assert (status, err['code']) == (404, 'VOLUME_NOT_FOUND'), (status, err)
+        assert http(self.probe.socket, 'GET', '/v1/volumes/' + missing)[0] == 404
+        status, err = self.request('POST', '/v1/sandboxes', {**self.spec(), 'volumes': [pvc_entry('not-a-uuid')]})
+        assert (status, err['code']) == (400, 'INVALID_VOLUME')
+        status, err = self.request('POST', '/v1/sandboxes', {**self.spec(), 'volumes': [pvc_entry(other_vol)]})
+        assert (status, err['code']) == (409, 'VOLUME_PROFILE_MISMATCH'), (status, err)
+        for bad_spec in [
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, readOnly=True)]},
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, subPath='child')]},
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, mountPath='/data')]},
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, pvc={'deleteOnSandboxTermination': True})]},
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, pvc={'storageClass': 'fast'})]},
+            {**self.spec(), 'volumes': [pvc_entry(vol_id, host={'path': '/tmp'})]},
+            {**self.spec(), 'image': {'uri': 'python@sha256:' + '0' * 64}, 'volumes': [pvc_entry(vol_id)]},
+        ]:
+            status, err = self.request('POST', '/v1/sandboxes', bad_spec)
+            assert (status, err['code']) == (400, 'UNSUPPORTED_CREATE_OPTION'), (bad_spec, status, err)
+
+        status, first = self.request('POST', '/v1/sandboxes', {**self.spec(), 'volumes': [pvc_entry(vol_id)]})
+        assert status == 202, first
+        self.probe.session_wait(first)
+        assert http(self.probe.socket, 'GET', '/v1/volumes/' + vol_id)[1]['attachedTo'] == first['id']
+        status, busy = self.request('POST', '/v1/sandboxes', {**self.spec(), 'volumes': [pvc_entry(vol_id)]})
+        assert (status, busy['code']) == (409, 'VOLUME_IN_USE'), (status, busy)
+        headers = self.request('GET', f'/v1/sandboxes/{first["id"]}/endpoints/44772')[1]['headers']
+        assert self.upload(first['id'], headers, self.multipart([({'path': 'durable.bin'}, b'persisted-bytes')]))[0] == 200
+        self.delete(first['id'])
+        vol_state = http(self.probe.socket, 'GET', '/v1/volumes/' + vol_id)[1]
+        assert vol_state['state'] == 'ready' and vol_state['attachedTo'] is None
+
+        status, second = self.request('POST', '/v1/sandboxes', {**self.spec(), 'volumes': [pvc_entry(vol_id)]})
+        assert status == 202, second
+        self.probe.session_wait(second)
+        headers2 = self.request('GET', f'/v1/sandboxes/{second["id"]}/endpoints/44772')[1]['headers']
+        status, _, data = self.download(second['id'], headers2, 'path=durable.bin')
+        assert status == 200 and data == b'persisted-bytes'
+        self.delete(second['id'])
+        self.forget_volume(vol_id)
+        self.forget_volume(other_vol)
+        self.probe.done('sdk-pvc-volume-attachment-enforces-exclusive-lease-profile-and-persistence')
+
     def tests(self):
         self.authorization()
         self.refusal()
@@ -420,3 +496,4 @@ class Contract:
         self.files()
         self.filesystem()
         self.selections()
+        self.volumes()

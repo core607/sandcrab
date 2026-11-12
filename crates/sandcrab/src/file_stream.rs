@@ -23,11 +23,12 @@ pub fn endpoint(path: &str) -> Option<(&str, &str)> {
 struct Request {
     path: String,
     replace: bool,
+    parents: bool,
     mode: u32,
 }
 impl Request {
     fn parse(query: &str) -> Result<Self> {
-        let (mut path, mut replace, mut mode) = (None, None, None);
+        let (mut path, mut replace, mut parents, mut mode) = (None, None, None, None);
         for (key, value) in crate::sdk_types::query(query)? {
             match key.as_str() {
                 "path" if path.is_none() && crate::file_io::valid_path(&value, false) => {
@@ -35,6 +36,9 @@ impl Request {
                 }
                 "replace" if replace.is_none() && ["true", "false"].contains(&value.as_str()) => {
                     replace = Some(value == "true");
+                }
+                "parents" if parents.is_none() && ["true", "false"].contains(&value.as_str()) => {
+                    parents = Some(value == "true");
                 }
                 "mode" if mode.is_none() => {
                     mode = Some(
@@ -51,6 +55,7 @@ impl Request {
         Ok(Self {
             path: path.ok_or((400, "INVALID_PATH"))?,
             replace: replace.unwrap_or(true),
+            parents: parents.unwrap_or(false),
             mode: mode.unwrap_or(0o644),
         })
     }
@@ -108,6 +113,7 @@ impl Service {
                 &path,
             );
             job.replace = request.replace;
+            job.parents = request.parents;
             job.mode = request.mode;
             let (received, ended) = self.pipe_upload(&job, &lease, body, deadline);
             contained &= ended;
@@ -149,16 +155,19 @@ mod tests {
 
     #[test]
     fn upload_options_preserve_paths_and_reject_ambiguous_authority() {
-        let request = Request::parse("path=dir%2Fhello%20world&mode=416&replace=false").unwrap();
+        let request =
+            Request::parse("path=dir%2Fhello%20world&mode=416&replace=false&parents=true").unwrap();
         assert_eq!(request.path, "dir/hello world");
         assert_eq!(request.mode, 0o640);
         assert!(!request.replace);
+        assert!(request.parents);
         for query in [
             "",
             "path=../outside",
             "path=a&path=b",
             "path=a&mode=512",
             "path=a&replace=1",
+            "path=a&parents=1",
             "path=a&freeze=true",
         ] {
             assert!(Request::parse(query).is_err(), "{query}");
