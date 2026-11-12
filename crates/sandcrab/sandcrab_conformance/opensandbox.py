@@ -37,10 +37,23 @@ class SdkProbe(ResourcesProbe):
             self.port = free.getsockname()[1]
         self.endpoint = f'127.0.0.1:{self.port}'
         config = self.config.read_text().replace('[service]', '[service]\nopensandbox = true', 1)
+        config = config.replace('session_ttl_millis = 180000', 'session_ttl_millis = 180000')
         config = config.replace('session_ttl_millis = 60000', 'session_ttl_millis = 180000')
         config = config.replace('output_limit_bytes = 4096', 'output_limit_bytes = 65536')
         config = config.replace('[profiles.python]', '[profiles.python]\ntransfer_bytes = 1048576')
-        self.config.write_text(config + f'\n[tcp]\nlisten = "{self.endpoint}"\ntoken_file = {json.dumps(str(server))}\n')
+        other = config.split('[profiles.python]\n', 1)[1].split('\n[profiles.', 1)[0].replace('exec_user = "nobody"', 'exec_user = "bin"')
+        self.storage = self.root / 'storage'
+        (self.storage / 'data').mkdir(parents=True, mode=0o755)
+        self.storage.chmod(0o755)
+        (self.storage / 'data').chmod(0o755)
+        self.config.write_text(
+            config
+            + '\n[profiles.other]\n'
+            + other
+            + f'\n[storage]\nroot = {json.dumps(str(self.storage))}\npool_bytes = 536870912\n'
+              'max_volume_bytes = 8388608\nmax_volume_inodes = 256\nmax_volumes = 4\nmax_records = 12\n'
+            + f'\n[tcp]\nlisten = "{self.endpoint}"\ntoken_file = {json.dumps(str(server))}\n'
+        )
         helpers = self.root / 'context-cleanup-fault'
         helpers.mkdir(mode=0o755)
         self.context_cleanup_fault = helpers / 'fail-id'

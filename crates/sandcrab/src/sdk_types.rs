@@ -54,6 +54,14 @@ pub fn native((status, value): (u16, Value)) -> Result<Value> {
         Some("SESSION_NOT_READY" | "SESSION_CLOSED") => "SANDBOX_NOT_READY",
         Some("STOPPING") => "STOPPING",
         Some("CONTAINMENT_UNCONFIRMED") => "CONTAINMENT_UNCONFIRMED",
+        Some("VOLUMES_DISABLED") => "VOLUMES_DISABLED",
+        Some("VOLUME_NOT_FOUND") => "VOLUME_NOT_FOUND",
+        Some("VOLUME_NOT_READY") => "VOLUME_NOT_READY",
+        Some("VOLUME_PROFILE_MISMATCH") => "VOLUME_PROFILE_MISMATCH",
+        Some("VOLUME_LIMIT") => "VOLUME_LIMIT",
+        Some("VOLUME_IN_USE") => "VOLUME_IN_USE",
+        Some("STORAGE_UNCERTAIN") => "STORAGE_UNCERTAIN",
+        Some("STORAGE_UNAVAILABLE") => "STORAGE_UNAVAILABLE",
         _ => "NATIVE_OPERATION_FAILED",
     };
     Err((status, code))
@@ -168,12 +176,74 @@ pub struct Create {
     pub credential_proxy: Option<Value>,
     pub volumes: Option<Value>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SdkPvc {
+    claim_name: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    create_if_not_exists: bool,
+    #[serde(default)]
+    delete_on_sandbox_termination: bool,
+    storage_class: Option<Value>,
+    storage: Option<Value>,
+    access_modes: Option<Value>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SdkVolume {
+    name: String,
+    host: Option<Value>,
+    pvc: Option<SdkPvc>,
+    ossfs: Option<Value>,
+    mount_path: String,
+    #[serde(default)]
+    read_only: bool,
+    sub_path: Option<Value>,
+}
 impl Create {
+    pub fn volume(&self) -> Result<Option<String>> {
+        let Some(raw) = &self.volumes else {
+            return Ok(None);
+        };
+        let list: Vec<SdkVolume> =
+            serde_json::from_value(raw.clone()).map_err(|_| (400, "UNSUPPORTED_CREATE_OPTION"))?;
+        let Ok([vol]) = <[SdkVolume; 1]>::try_from(list) else {
+            return Err((400, "UNSUPPORTED_CREATE_OPTION"));
+        };
+        if vol.name.trim().is_empty()
+            || vol.name.len() > 64
+            || vol.name.chars().any(char::is_control)
+            || vol.host.is_some()
+            || vol.ossfs.is_some()
+            || vol.read_only
+            || vol.sub_path.is_some()
+            || vol.mount_path != "/workspace"
+        {
+            return Err((400, "UNSUPPORTED_CREATE_OPTION"));
+        }
+        let Some(pvc) = vol.pvc else {
+            return Err((400, "UNSUPPORTED_CREATE_OPTION"));
+        };
+        if pvc.delete_on_sandbox_termination
+            || pvc.storage_class.is_some()
+            || pvc.storage.is_some()
+            || pvc.access_modes.is_some()
+        {
+            return Err((400, "UNSUPPORTED_CREATE_OPTION"));
+        }
+        if !sandcrab_core::uuid(&pvc.claim_name) {
+            return Err((400, "INVALID_VOLUME"));
+        }
+        Ok(Some(pvc.claim_name))
+    }
+
     pub fn supported(&self) -> bool {
         self.image.auth.is_none()
             && self.entrypoint == IDLE
             && self.extensions.is_empty()
             && !self.secure_access
+            && self.volume().is_ok()
             && [
                 &self.snapshot_id,
                 &self.template_id,
@@ -182,7 +252,6 @@ impl Create {
                 &self.lifecycle,
                 &self.network_policy,
                 &self.credential_proxy,
-                &self.volumes,
             ]
             .into_iter()
             .all(Option::is_none)
@@ -385,5 +454,56 @@ mod tests {
         assert!(source.starts_with("(cd -- '/workspace' && exec env -- "));
         assert!(source.ends_with("'a'\\''; touch /tmp/escape; '\\''')"));
         assert!(parse::<Execute>(br#"{"command":"true","mounts":["/"]}"#).is_err());
+    }
+    #[test]
+    fn workspace_pvc_volume_accepts_sdk_null_defaults_and_rejects_other_mounts() {
+        let id = "01234567-89ab-4def-8012-3456789abcde";
+        let base = |vol: Value| {
+            let raw = serde_json::to_vec(&json!({
+                "image":{"uri":"python","auth":null},
+                "entrypoint":IDLE,
+                "resourceLimits":{"cpu":"0.25","memory":"32Mi"},
+                "timeout":60,
+                "volumes":vol
+            }))
+            .unwrap();
+            parse::<Create>(&raw).unwrap()
+        };
+        let valid = base(json!([{
+            "name":"workspace",
+            "host":null,
+            "pvc":{
+                "claimName":id,
+                "createIfNotExists":true,
+                "deleteOnSandboxTermination":false,
+                "storageClass":null,
+                "storage":null,
+                "accessModes":null
+            },
+            "ossfs":null,
+            "mountPath":"/workspace",
+            "readOnly":false,
+            "subPath":null
+        }]));
+        assert!(valid.supported());
+        assert_eq!(valid.volume().unwrap().as_deref(), Some(id));
+        for rejected in [
+            json!([]),
+            json!([{"name":"w","pvc":{"claimName":id},"mountPath":"/data"}]),
+            json!([{"name":"w","pvc":{"claimName":id},"mountPath":"/workspace","readOnly":true}]),
+            json!([{"name":"w","pvc":{"claimName":id},"mountPath":"/workspace","subPath":"sub"}]),
+            json!([{"name":"w","host":{"path":"/tmp"},"mountPath":"/workspace"}]),
+            json!([{"name":"w","pvc":{"claimName":id,"deleteOnSandboxTermination":true},"mountPath":"/workspace"}]),
+        ] {
+            assert_eq!(
+                base(rejected).volume(),
+                Err((400, "UNSUPPORTED_CREATE_OPTION"))
+            );
+        }
+        assert_eq!(
+            base(json!([{"name":"w","pvc":{"claimName":"not-a-uuid"},"mountPath":"/workspace"}]))
+                .volume(),
+            Err((400, "INVALID_VOLUME"))
+        );
     }
 }

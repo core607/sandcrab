@@ -8,13 +8,16 @@ import io
 import json
 from pathlib import Path
 import sys
+import time
+import urllib.request
+import uuid
 
 from opensandbox import Sandbox
 from opensandbox.config import ConnectionConfig
 from opensandbox.exceptions import SandboxApiException
 from opensandbox.manager import SandboxManager
 from opensandbox.models.execd import RunCommandOpts
-from opensandbox.models.sandboxes import SandboxFilter
+from opensandbox.models.sandboxes import PVC, SandboxFilter, Volume
 from opensandbox.models.filesystem import ContentReplaceEntry, DirectoryListEntry, MoveEntry, SearchEntry, SetPermissionEntry, WriteEntry
 
 
@@ -212,6 +215,76 @@ async def directories(sandbox, commands, checks):
     checks.append('directory-creation-metadata-depth-links-mode-move-and-recursive-deletion')
 
 
+async def persistent_volume(args, config, token, identities, checks):
+    def native(method, route, payload=None):
+        req = urllib.request.Request(
+            f'http://{args.endpoint}{route}',
+            data=None if payload is None else json.dumps(payload).encode(),
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            method=method,
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status, json.loads(resp.read())
+
+    _, info = native('GET', '/v1/info')
+    if 'volumes' not in info.get('capabilities', ()):
+        return
+    vol_id = str(uuid.uuid4())
+    first = second = None
+    try:
+        native('POST', '/v1/volumes', {'id': vol_id, 'serverId': info['serverId'], 'profile': args.profile})
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if native('GET', f'/v1/volumes/{vol_id}')[1]['state'] == 'ready':
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise AssertionError('Native volume did not become ready')
+        mount = [Volume(name='workspace', pvc=PVC(claim_name=vol_id), mount_path='/workspace')]
+        first = await Sandbox.create(args.profile, connection_config=config,
+                                     timeout=timedelta(seconds=60),
+                                     resource={'cpu': '0.25', 'memory': '32Mi'},
+                                     volumes=mount)
+        identities.append(first.id)
+        await first.files.write_file('sdk-pvc.txt', 'persisted across sandboxes\n')
+        try:
+            await Sandbox.create(args.profile, connection_config=config,
+                                 timeout=timedelta(seconds=60),
+                                 resource={'cpu': '0.25', 'memory': '32Mi'},
+                                 volumes=mount)
+        except SandboxApiException as error:
+            assert error.status_code == 409
+        else:
+            raise AssertionError('Attached volume accepted a second concurrent sandbox')
+        await first.kill()
+        await first.close()
+        first = None
+        second = await Sandbox.create(args.profile, connection_config=config,
+                                      timeout=timedelta(seconds=60),
+                                      resource={'cpu': '0.25', 'memory': '32Mi'},
+                                      volumes=mount)
+        identities.append(second.id)
+        assert await second.files.read_file('sdk-pvc.txt') == 'persisted across sandboxes\n'
+        await second.kill()
+        await second.close()
+        second = None
+    finally:
+        for active in (first, second):
+            if active is not None:
+                try:
+                    await active.kill()
+                finally:
+                    await active.close()
+        native('POST', f'/v1/volumes/{vol_id}/delete', {})
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if native('GET', f'/v1/volumes/{vol_id}')[1]['state'] == 'deleted':
+                break
+            await asyncio.sleep(0.05)
+        native('POST', f'/v1/volumes/{vol_id}/forget', {})
+    checks.append('pvc-volume-attachment-exclusive-lease-and-persistence')
+
+
 async def exercise(args):
     assert importlib.metadata.version('opensandbox') == '1.1.0'
     token = args.token_file.read_text().strip()
@@ -310,6 +383,7 @@ async def exercise(args):
         else:
             raise AssertionError('Deleted sandbox remains available')
         checks.append('renew-and-explicit-delete')
+        await persistent_volume(args, config, token, identities, checks)
     finally:
         if sandbox is not None:
             try:

@@ -61,7 +61,7 @@ use cli::{ClientArgs, Connection, Env};
 use client::Endpoint;
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     process::ExitCode,
     sync::{Arc, atomic::AtomicBool},
 };
@@ -720,7 +720,87 @@ fn volume(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32
     }
 }
 
-const FILE_HELP: &str = "\nFiles:\n  sandcrab files put [--socket PATH] SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get [--socket PATH] SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace]\n  sandcrab files status|cancel|forget [--socket PATH] UPLOAD_ID\n  sandcrab files list [--socket PATH] [--after UUID]\n\nRaw put streams one request. --id, --keep-result or --tar selects staged upload.\nget writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
+const FILE_HELP: &str = "\nFiles:\n  sandcrab files put [--socket PATH] SESSION_ID LOCAL_FILE WORKSPACE_PATH [--tar] [--replace] [--parents] [--id UUID] [--mode OCTAL] [--keep-result]\n  sandcrab files get [--socket PATH] SESSION_ID WORKSPACE_PATH LOCAL_FILE [--tar] [--replace]\n  sandcrab files read [--socket PATH] SESSION_ID WORKSPACE_PATH [LOCAL_FILE] [--bytes RANGE | --offset LINE [--limit LINES]] [--replace]\n  sandcrab files mkdir [--socket PATH] SESSION_ID WORKSPACE_PATH [--mode OCTAL]\n  sandcrab files ls [--socket PATH] SESSION_ID [WORKSPACE_PATH] [--depth N]\n  sandcrab files search [--socket PATH] SESSION_ID PATTERN [--path WORKSPACE_PATH]\n  sandcrab files rm [--socket PATH] SESSION_ID WORKSPACE_PATH [--recursive]\n  sandcrab files status|cancel|forget [--socket PATH] UPLOAD_ID\n  sandcrab files list [--socket PATH] [--after UUID]\n\nRaw put streams one request; --parents creates missing workspace directories. --id, --keep-result or --tar selects staged upload.\nread defaults LOCAL_FILE to - (stdout); get writes raw bytes to stdout when LOCAL_FILE is -. Existing destinations require --replace.\n";
+
+fn parse_octal_mode(value: &str) -> io::Result<u32> {
+    u32::from_str_radix(value, 8)
+        .ok()
+        .filter(|m| *m <= 0o777)
+        .ok_or_else(|| config::invalid("--mode must be 000..777"))
+}
+
+fn parse_read_args(
+    rest: &[String],
+) -> io::Result<(String, String, PathBuf, file_client::ReadOptions)> {
+    let (mut bytes, mut offset, mut limit, mut replace) = (None, None, None, false);
+    let mut positional = Vec::new();
+    let mut iter = rest.iter();
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(item) = iter.next() {
+        if item.starts_with("--") {
+            if !seen.insert(item.as_str()) {
+                return Err(config::invalid("Repeated file option"));
+            }
+            match item.as_str() {
+                "--replace" => replace = true,
+                "--bytes" => {
+                    bytes = Some(
+                        iter.next()
+                            .ok_or_else(|| config::invalid("--bytes requires START-END"))?
+                            .clone(),
+                    );
+                }
+                "--offset" => {
+                    let raw = iter.next().ok_or_else(|| {
+                        config::invalid("--offset requires a positive line number")
+                    })?;
+                    offset = Some(
+                        raw.parse::<u64>()
+                            .ok()
+                            .filter(|n| *n >= 1)
+                            .ok_or_else(|| config::invalid("--offset must be >= 1"))?,
+                    );
+                }
+                "--limit" => {
+                    let raw = iter
+                        .next()
+                        .ok_or_else(|| config::invalid("--limit requires a positive line count"))?;
+                    limit = Some(
+                        raw.parse::<u64>()
+                            .ok()
+                            .filter(|n| *n >= 1)
+                            .ok_or_else(|| config::invalid("--limit must be >= 1"))?,
+                    );
+                }
+                _ => return Err(config::invalid("Unknown file option")),
+            }
+        } else if item.starts_with('-') && item != "-" {
+            return Err(config::invalid("Unknown file option"));
+        } else {
+            positional.push(item.as_str());
+        }
+    }
+    let (session, path, destination) = match positional.as_slice() {
+        [session, path] => (*session, *path, PathBuf::from("-")),
+        [session, path, destination] => (*session, *path, PathBuf::from(destination)),
+        _ => return Err(config::invalid(FILE_HELP)),
+    };
+    if !sandcrab_core::uuid(session) {
+        return Err(config::invalid(FILE_HELP));
+    }
+    Ok((
+        session.into(),
+        path.into(),
+        destination,
+        file_client::ReadOptions {
+            bytes,
+            offset,
+            limit,
+            replace,
+        },
+    ))
+}
+
 fn file_command(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32> {
     use file_io::Format;
     if matches!(args, [flag] if ["--help", "-h"].contains(&flag.as_str())) {
@@ -759,9 +839,114 @@ fn file_command(args: &[String], connection: &Connection, env: &Env) -> io::Resu
             println!("{}", client::request(&endpoint, "GET", &path, None)?);
             Ok(0)
         }
+        ("read", rest) => {
+            let (session, path, destination, options) = parse_read_args(rest)?;
+            file_client::read(&endpoint, &session, &path, &destination, options)
+        }
+        ("mkdir", rest) => {
+            let mut permissions = None;
+            let mut positional = Vec::new();
+            let mut iter = rest.iter();
+            while let Some(item) = iter.next() {
+                if item == "--mode" && permissions.is_none() {
+                    let value = iter
+                        .next()
+                        .ok_or_else(|| config::invalid("--mode requires octal permissions"))?;
+                    permissions = Some(parse_octal_mode(value)?);
+                } else if !item.starts_with('-') {
+                    positional.push(item.as_str());
+                } else {
+                    return Err(config::invalid(FILE_HELP));
+                }
+            }
+            let [session, path] = positional.as_slice() else {
+                return Err(config::invalid(FILE_HELP));
+            };
+            if !sandcrab_core::uuid(session) {
+                return Err(config::invalid(FILE_HELP));
+            }
+            file_client::mkdir(&endpoint, session, path, permissions)
+        }
+        ("ls", rest) => {
+            let mut depth = None;
+            let mut positional = Vec::new();
+            let mut iter = rest.iter();
+            while let Some(item) = iter.next() {
+                if item == "--depth" && depth.is_none() {
+                    let value = iter
+                        .next()
+                        .ok_or_else(|| config::invalid("--depth requires 0..64"))?;
+                    depth = Some(
+                        value
+                            .parse::<usize>()
+                            .ok()
+                            .filter(|n| *n <= 64)
+                            .ok_or_else(|| config::invalid("--depth must be 0..64"))?,
+                    );
+                } else if !item.starts_with('-') {
+                    positional.push(item.as_str());
+                } else {
+                    return Err(config::invalid(FILE_HELP));
+                }
+            }
+            let (session, path) = match positional.as_slice() {
+                [session] => (*session, "."),
+                [session, path] => (*session, *path),
+                _ => return Err(config::invalid(FILE_HELP)),
+            };
+            if !sandcrab_core::uuid(session) {
+                return Err(config::invalid(FILE_HELP));
+            }
+            file_client::ls(&endpoint, session, path, depth)
+        }
+        ("search", rest) => {
+            let mut dir = None;
+            let mut positional = Vec::new();
+            let mut iter = rest.iter();
+            while let Some(item) = iter.next() {
+                if item == "--path" && dir.is_none() {
+                    dir = Some(
+                        iter.next()
+                            .ok_or_else(|| config::invalid("--path requires a directory"))?
+                            .as_str(),
+                    );
+                } else if !item.starts_with('-') {
+                    positional.push(item.as_str());
+                } else {
+                    return Err(config::invalid(FILE_HELP));
+                }
+            }
+            let [session, pattern] = positional.as_slice() else {
+                return Err(config::invalid(FILE_HELP));
+            };
+            if !sandcrab_core::uuid(session) {
+                return Err(config::invalid(FILE_HELP));
+            }
+            file_client::search(&endpoint, session, dir.unwrap_or("."), pattern)
+        }
+        ("rm", rest) => {
+            let mut recursive = false;
+            let mut positional = Vec::new();
+            for item in rest {
+                if (item == "--recursive" || item == "-r") && !recursive {
+                    recursive = true;
+                } else if !item.starts_with('-') {
+                    positional.push(item.as_str());
+                } else {
+                    return Err(config::invalid(FILE_HELP));
+                }
+            }
+            let [session, path] = positional.as_slice() else {
+                return Err(config::invalid(FILE_HELP));
+            };
+            if !sandcrab_core::uuid(session) {
+                return Err(config::invalid(FILE_HELP));
+            }
+            file_client::rm(&endpoint, session, path, recursive)
+        }
         ("put" | "get", rest) => {
-            let (mut format, mut replace, mut keep, mut id, mut permissions) =
-                (Format::Raw, false, false, None, None);
+            let (mut format, mut replace, mut parents, mut keep, mut id, mut permissions) =
+                (Format::Raw, false, false, false, None, None);
             let mut positional = Vec::new();
             let mut iter = rest.iter();
             let mut seen = std::collections::BTreeSet::new();
@@ -773,6 +958,7 @@ fn file_command(args: &[String], connection: &Connection, env: &Env) -> io::Resu
                     match item.as_str() {
                         "--tar" => format = Format::Tar,
                         "--replace" => replace = true,
+                        "--parents" if mode == "put" => parents = true,
                         "--keep-result" if mode == "put" => keep = true,
                         "--id" if mode == "put" => {
                             id = Some(
@@ -786,12 +972,7 @@ fn file_command(args: &[String], connection: &Connection, env: &Env) -> io::Resu
                             let value = iter.next().ok_or_else(|| {
                                 config::invalid("--mode requires octal permissions")
                             })?;
-                            permissions = Some(
-                                u32::from_str_radix(value, 8)
-                                    .ok()
-                                    .filter(|m| *m <= 0o777)
-                                    .ok_or_else(|| config::invalid("--mode must be 000..777"))?,
-                            );
+                            permissions = Some(parse_octal_mode(value)?);
                         }
                         _ => return Err(config::invalid("Unknown file option")),
                     }
@@ -817,6 +998,7 @@ fn file_command(args: &[String], connection: &Connection, env: &Env) -> io::Resu
                         id,
                         format,
                         replace,
+                        parents,
                         mode: permissions,
                         keep_result: keep,
                     },
@@ -878,5 +1060,37 @@ mod tests {
             session_exec_options(&args).unwrap(),
             (id, Some(30_000), true, true)
         );
+    }
+
+    #[test]
+    fn file_read_options_default_to_stdout_and_accept_reordered_ranges() {
+        let id = "01234567-89ab-4def-8012-3456789abcde";
+        let (session, path, dest, opts) = parse_read_args(&vec_args(&[
+            "--offset",
+            "2",
+            "--limit",
+            "5",
+            id,
+            "src/app.py",
+        ]))
+        .unwrap();
+        assert_eq!((session.as_str(), path.as_str()), (id, "src/app.py"));
+        assert_eq!(dest, PathBuf::from("-"));
+        assert_eq!(
+            (opts.offset, opts.limit, opts.replace),
+            (Some(2), Some(5), false)
+        );
+        let (_, _, dest2, opts2) = parse_read_args(&vec_args(&[
+            id,
+            "out.bin",
+            "local.bin",
+            "--bytes",
+            "0-15",
+            "--replace",
+        ]))
+        .unwrap();
+        assert_eq!(dest2, PathBuf::from("local.bin"));
+        assert_eq!(opts2.bytes.as_deref(), Some("0-15"));
+        assert!(opts2.replace);
     }
 }

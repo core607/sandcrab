@@ -759,7 +759,12 @@ retains data and can be reattached for recovery.
 ## Files
 
 ```sh
-sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./input.bin input.bin
+sandcrab files mkdir --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID src/pkg --mode 750
+sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./input.bin nested/input.bin --parents
+sandcrab files ls --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID . --depth 2
+sandcrab files search --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID '*.bin' --path .
+sandcrab files read --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID nested/input.bin --bytes 0-63
+sandcrab files rm --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID nested --recursive
 tar -cf project.tar -C ./project .
 sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./project.tar project --tar
 sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'cd project; python3 main.py'
@@ -772,30 +777,58 @@ sandcrab files list --socket /var/lib/sandcrab-demo/runtime/control.sock
 
 Raw `files put` streams one request without hashing the source first. `--id`,
 `--keep-result` or `--tar` selects a staged upload. Discovery exposes ordinary
-transfers under `capability=files` and staged operations under `capability=uploads`.
+transfers and workspace inspection under `capability=files` and staged operations
+under `capability=uploads`.
 
 ```sh
 curl --unix-socket /var/lib/sandcrab-demo/runtime/control.sock --upload-file ./input.bin \
-  'http://localhost/v1/sessions/SESSION_ID/files?path=input.bin'
+  'http://localhost/v1/sessions/SESSION_ID/files?path=nested/input.bin&parents=true'
 ```
 
 `PUT /v1/sessions/ID/files?path=PATH` accepts fixed-length or chunked raw bytes,
 including an empty file. It replaces a regular file atomically by default;
 `replace=false` refuses an existing target. Optional `mode` is a decimal permission
-mask, default 420 (0644). The reply contains `path`, received `bytes` and `sha256`.
+mask, default 420 (0644). Optional `parents=true` (CLI `--parents`, also accepted on
+staged `POST /v1/uploads`) creates missing relative parent directories with mode
+0755 after validating existing ancestors; symlink or non-directory ancestors are
+refused before mutating. The reply contains `path`, received `bytes` and `sha256`.
 Publication and staging cleanup finish before success. The session keeps running;
 concurrent commands can change the destination. A lost reply or `PUBLICATION_UNKNOWN`
 requires destination inspection before another write. This route retains no upload ID.
 
-Paths are relative to `/workspace`, preserving case and Unicode. Upload parents
-must already exist. Raw uploads install one file; tar uploads install one complete
-directory. Existing targets require `--replace`; tar replacement replaces the
-whole directory rather than merging its entries. `--mode OCTAL` chooses ordinary
-permission bits for a raw file or the tar root. Archive entries retain ordinary
-modes and links, with ownership assigned to the profile. Special nodes, sparse
-entries, traversal paths and writes through symlinks are refused. Symlinks remain
-opaque; snapshots never follow them. Hard links must name an earlier regular entry
-inside the archive. Extended attributes and original ownership are not preserved.
+`GET /v1/sessions/ID/files?path=PATH` (CLI `files read`, defaulting destination to
+`-` stdout) reads a workspace regular file from a private frozen snapshot, emitting
+`X-Sandcrab-Server-Id` and a quoted SHA-256 `ETag` on full reads. Supplying `Range`
+(`bytes=START-END`, `bytes=START-` or `bytes=-SUFFIX`, CLI `--bytes RANGE`) returns
+HTTP 206 with `Content-Range` and `Accept-Ranges: bytes`; empty files, zero suffixes
+and starts past EOF return 416. Supplying one-based `offset` and/or positive `limit`
+(CLI `--offset` and `--limit`) returns HTTP 200 `text/plain; charset=utf-8` with
+selected lines stripped of CR/LF endings and joined with LF. Symlinks, `If-Range`,
+multiple byte ranges and combined byte/line selections are refused. Partial reads
+omit `ETag`, bound selected and scanned bytes by `transfer_bytes`, and do not form
+a multi-request transaction. Local file destinations on `files read` verify length
+(and full-file `ETag`) and require `--replace` for an existing regular file.
+
+`POST /v1/sessions/ID/files/mkdir`, `GET /v1/sessions/ID/files/list` (`path`, default
+`.`; `depth` 0..64, default 1) and `GET /v1/sessions/ID/files/search` (`pattern` up
+to 1024 bytes, optional `path`) run in the bounded frozen file helper without
+traversing symlinks. Directory creation creates missing relative parents and applies
+optional decimal `mode` (CLI `--mode OCTAL`, default 0755) to new directories.
+Listing and search return workspace-relative paths, `type` (`file`, `directory`,
+`symlink`, `other`), `size`, decimal permission bits (`mode`), `modifiedAt` and
+`createdAt` within a 60,000-byte JSON response bound; search walks at most 10,000
+entries and 64 levels matching non-directory basenames.
+
+Paths are relative to `/workspace`, preserving case and Unicode. Unless
+`parents=true` or `--parents` is set, upload parents must already exist. Raw uploads
+install one file; tar uploads install one complete directory. Existing staged or CLI
+targets require `--replace`; tar replacement replaces the whole directory rather
+than merging its entries. `--mode OCTAL` chooses ordinary permission bits for a raw
+file or the tar root. Archive entries retain ordinary modes and links, with
+ownership assigned to the profile. Special nodes, sparse entries, traversal paths
+and writes through symlinks are refused. Symlinks remain opaque; snapshots never
+follow them. Hard links must name an earlier regular entry inside the archive.
+Extended attributes and original ownership are not preserved.
 
 Staged uploads verify declared length and SHA-256 before publication. Native
 transfers keep workspace processes running unless a snapshot requests `frozen=true`.
@@ -805,14 +838,20 @@ private manifest format. A transfer pins its
 session and volume until helper containment and staging cleanup finish; cancellation,
 expiry and shutdown cannot detach storage underneath it. Unconfirmed cleanup holds
 admission until restart. Temporary staging counts against workspace or volume limits.
-`DELETE /v1/sessions/ID/files?path=PATH` removes a file without executing shell
-source; add `recursive=true` for a directory tree. Paths follow the same workspace
-boundary and opaque-symlink rules. Deletion remains available during storage overage.
+`DELETE /v1/sessions/ID/files?path=PATH` (CLI `files rm`, with `--recursive` for
+`recursive=true`) removes a file or directory tree without executing shell source.
+Paths follow the same workspace boundary and opaque-symlink rules. Deletion remains
+available during storage overage.
 
 | Request | Result |
 |---|---|
-| `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace` and `mode` |
-| `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `mode`, `keepResult`; returns 201 |
+| `GET /v1/sessions/ID/files?path=PATH` | Read a raw file, a single `Range` byte slice (206) or `offset`/`limit` UTF-8 lines |
+| `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace`, `parents` and `mode` |
+| `DELETE /v1/sessions/ID/files?path=PATH` | Remove a file, or a directory tree with `recursive=true` |
+| `POST /v1/sessions/ID/files/mkdir` | Ensure `path` and missing relative parents with optional `mode` |
+| `GET /v1/sessions/ID/files/list` | List workspace entries under `path` (default `.`) up to `depth` (0..64, default 1) |
+| `GET /v1/sessions/ID/files/search` | Search non-directory basenames under `path` matching glob `pattern` |
+| `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `parents`, `mode`, `keepResult`; returns 201 |
 | `PUT /v1/uploads/ID/content` | Send exactly the registered Content-Length; return the upload record |
 | `GET /v1/uploads/ID` | Read outcome and publication certainty |
 | `GET /v1/uploads?after=UUID` | Up to ten records in UUID order; continue with `nextAfter` |

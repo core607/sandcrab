@@ -191,6 +191,24 @@ class FileProbe(VolumeProbe):
         self.forget_upload(request)
         self.done('files-refusals-and-checksum-failure-preserve-the-old-file')
 
+        request, result = self.upload(session, 'staged-parents/a/raw.bin', b'nested-staged', parents=True)
+        assert result['state'] == 'succeeded' and result['publication'] == 'committed', result
+        assert self.capture(session, 'staged-parents/a/raw.bin') == b'nested-staged'
+        assert http(self.socket, 'POST', '/v1/uploads', request) == (200, result)
+        without_parents = {k: v for k, v in request.items() if k != 'parents'}
+        assert http(self.socket, 'POST', '/v1/uploads', without_parents)[1]['error']['code'] == 'ID_CONFLICT'
+        self.forget_upload(request)
+        bad_parent, failed = self.upload(session, 'staged-parents/a/raw.bin/child', b'refused', parents=True)
+        assert failed['state'] == 'failed' and failed['code'] == 'NOT_DIRECTORY' and failed['publication'] == 'none', failed
+        assert self.capture(session, 'staged-parents/a/raw.bin') == b'nested-staged'
+        self.forget_upload(bad_parent)
+        tar_parent, tar_result = self.upload(session, 'staged-parents/b/tree',
+                                             archive([('ok.txt', tarfile.REGTYPE, b'tar-parents', 0o644)]),
+                                             format='tar', parents=True)
+        assert tar_result['state'] == 'succeeded' and self.capture(session, 'staged-parents/b/tree/ok.txt') == b'tar-parents'
+        self.forget_upload(tar_parent)
+        self.done('files-staged-uploads-bind-parents-in-plan-digest-and-refuse-file-ancestors')
+
         data = archive([('pkg', tarfile.DIRTYPE, b'', 0o750), ('pkg/你好.txt', tarfile.REGTYPE, 'hello 世界'.encode(), 0o640),
                         ('pkg/alias.txt', tarfile.LNKTYPE, 'pkg/你好.txt', 0o640),
                         ('pkg/link', tarfile.SYMTYPE, '你好.txt', 0o777), ('host', tarfile.SYMTYPE, str(self.secret), 0o777)])

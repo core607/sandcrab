@@ -40,6 +40,8 @@ pub struct Job {
     pub bytes: u64,
     pub sha256: String,
     pub replace: bool,
+    #[serde(default)]
+    pub parents: bool,
     pub mode: u32,
     pub uid: u32,
     pub gid: u32,
@@ -288,10 +290,49 @@ pub(crate) fn receive(job: &Job, checked: bool) -> io::Result<serde_json::Value>
     Ok(serde_json::json!({"bytes":bytes,"sha256":sha}))
 }
 
+fn publish_parent(
+    root: &File,
+    path: &str,
+    job: &Job,
+    attempted: &mut bool,
+) -> io::Result<(File, String)> {
+    if !job.parents {
+        return parent(root, path, false);
+    }
+    if !valid_path(path, false) {
+        return Err(invalid("INVALID_PATH"));
+    }
+    let mut dir = root.try_clone()?;
+    let mut creating = false;
+    let mut parts = path.split('/').peekable();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            return Ok((dir, part.into()));
+        }
+        if !creating {
+            match child_dir(&dir, part) {
+                Ok(child) => {
+                    dir = child;
+                    continue;
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => creating = true,
+                Err(error) => return Err(error),
+            }
+        }
+        *attempted = true;
+        mkdirat(&dir, part, Mode::from_raw_mode(0o700))?;
+        let child = child_dir(&dir, part)?;
+        ownership(&child, job, 0o755)?;
+        dir.sync_all()?;
+        dir = child;
+    }
+    Err(invalid("INVALID_PATH"))
+}
+
 fn publish(job: &Job, attempted: &mut bool) -> io::Result<()> {
     let workspace = directory(&job.workspace)?;
     let stage = directory(&job.stage)?;
-    let (dir, name) = parent(&workspace, &job.path, false)?;
+    let (dir, name) = publish_parent(&workspace, &job.path, job, attempted)?;
     let source = if job.format == Format::Raw {
         "content"
     } else {
@@ -333,8 +374,16 @@ fn publish(job: &Job, attempted: &mut bool) -> io::Result<()> {
             Err(error) => return Err(error.into()),
         }
     } else {
-        *attempted = true;
-        renameat_with(&stage, source, &dir, &name, flags)?;
+        match renameat_with(&stage, source, &dir, &name, flags) {
+            Ok(()) => *attempted = true,
+            Err(rustix::io::Errno::EXIST) if !job.replace => {
+                return Err(io::ErrorKind::AlreadyExists.into());
+            }
+            Err(error) => {
+                *attempted = true;
+                return Err(error.into());
+            }
+        }
     }
     dir.sync_all()?;
     stage.sync_all()?;
@@ -745,7 +794,7 @@ pub fn execute(path: &Path, layer_helper: bool) -> io::Result<serde_json::Value>
     if ["receive", "stream-receive"].contains(&job.action.as_str()) {
         return receive(&job, job.action == "receive");
     }
-    if job.action == "stream-publish" {
+    if ["publish", "stream-publish"].contains(&job.action.as_str()) {
         let mut attempted = false;
         let receipt = match publish(&job, &mut attempted) {
             Ok(()) => Publication::Succeeded,
@@ -758,7 +807,6 @@ pub fn execute(path: &Path, layer_helper: bool) -> io::Result<serde_json::Value>
     }
     match job.action.as_str() {
         "sdk-receive" => crate::sdk_file_io::receive(&job),
-        "publish" => publish(&job, &mut false),
         "cleanup" => {
             for entry in fs::read_dir(&job.stage)? {
                 let entry = entry?;

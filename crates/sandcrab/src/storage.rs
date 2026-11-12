@@ -684,6 +684,30 @@ impl Store {
         state.active.is_none() && !state.fenced
     }
 
+    pub fn preflight_bind(&self, id: &str, profile: &Profile) -> Result<()> {
+        let state = self.state.lock().unwrap();
+        Self::usable(&state)?;
+        let record = state
+            .records
+            .get(id)
+            .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+        if record.state != "ready" {
+            return Err(fault(409, "VOLUME_NOT_READY"));
+        }
+        if record.uid != profile.uid || record.gid != profile.gid {
+            return Err(fault(409, "VOLUME_PROFILE_MISMATCH"));
+        }
+        if record.bytes > self.config.max_volume_bytes
+            || record.inodes > self.config.max_volume_inodes
+        {
+            return Err(fault(409, "VOLUME_LIMIT"));
+        }
+        if state.bindings.contains_key(id) {
+            return Err(fault(409, "VOLUME_IN_USE"));
+        }
+        Ok(())
+    }
+
     pub fn bind(
         self: &Arc<Self>,
         id: &str,

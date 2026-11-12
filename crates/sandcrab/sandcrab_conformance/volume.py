@@ -476,6 +476,65 @@ os.execv('/usr/bin/umount',['umount',*sys.argv[1:]])
         self.restart()
         assert (self.data / 'volumes' / source['id'] / 'data/0x-source.bin').read_bytes()[0:1] == b'A'
         self.done('volume-namespace-change-preserves-data-and-refuses-startup')
+        self.opensandbox_pvc(source)
+
+    def opensandbox_pvc(self, source):
+        from http.client import HTTPConnection
+        import secrets
+        import socket
+        original = self.config.read_text()
+        with socket.socket() as free:
+            free.bind(('127.0.0.1', 0))
+            port = free.getsockname()[1]
+        token = secrets.token_hex(32)
+        key_file = self.root / 'sdk-vol.token'
+        key_file.write_text(token + '\n')
+        key_file.chmod(0o600)
+        endpoint = f'127.0.0.1:{port}'
+        self.config.write_text(original.replace('[service]', '[service]\nopensandbox = true', 1)
+                               + f'\n[tcp]\nlisten = "{endpoint}"\ntoken_file = {json.dumps(str(key_file))}\n')
+        self.restart()
+        try:
+            def sdk_req(method, path, body=None):
+                conn = HTTPConnection(endpoint, timeout=15)
+                try:
+                    conn.request(method, path, None if body is None else json.dumps(body).encode(),
+                                 headers={'OPEN-SANDBOX-API-KEY': token})
+                    resp = conn.getresponse()
+                    raw = resp.read(65537)
+                    return resp.status, json.loads(raw) if raw else None
+                finally:
+                    conn.close()
+
+            spec = lambda profile, claim: {
+                'image': {'uri': profile}, 'entrypoint': ['tail', '-f', '/dev/null'],
+                'resourceLimits': {'cpu': '0.25', 'memory': '32Mi'}, 'timeout': 60,
+                'volumes': [{'name': 'workspace', 'pvc': {'claimName': claim, 'createIfNotExists': True},
+                             'mountPath': '/workspace'}]}
+            assert sdk_req('POST', '/v1/sandboxes', spec('python', str(uuid.uuid4())))[0] == 404
+            assert sdk_req('POST', '/v1/sandboxes', spec('other', source['id'])) == (
+                409, {'code': 'VOLUME_PROFILE_MISMATCH', 'message': 'VOLUME_PROFILE_MISMATCH'})
+            status, s1 = sdk_req('POST', '/v1/sandboxes', spec('python', source['id']))
+            assert status == 202, s1
+            self.session_wait(s1)
+            assert http(self.socket, 'GET', '/v1/volumes/' + source['id'])[1]['attachedTo'] == s1['id']
+            assert sdk_req('POST', '/v1/sandboxes', spec('python', source['id']))[0] == 409
+            run, res = self.session_exec(s1, 'printf xfs-sdk > sdk-vol.txt')
+            assert res['state'] == 'succeeded'
+            self.forget(run)
+            assert sdk_req('DELETE', '/v1/sandboxes/' + s1['id'])[0] == 204
+            assert http(self.socket, 'GET', '/v1/volumes/' + source['id'])[1]['attachedTo'] is None
+            status, s2 = sdk_req('POST', '/v1/sandboxes', spec('python', source['id']))
+            assert status == 202, s2
+            self.session_wait(s2)
+            run2, res2 = self.session_exec(s2, 'cat sdk-vol.txt')
+            assert res2['state'] == 'succeeded' and res2['result']['stdout'] == 'xfs-sdk'
+            self.forget(run2)
+            assert sdk_req('DELETE', '/v1/sandboxes/' + s2['id'])[0] == 204
+            self.done('volume-opensandbox-pvc-attachment-exclusivity-and-persistence')
+        finally:
+            self.config.write_text(original)
+            self.restart()
 
     def unmount_fixture(self, mount):
         if mount == self.data:

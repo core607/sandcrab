@@ -69,16 +69,17 @@ pub fn document(capability: Option<&str>) -> Value {
                 } else if capability == "calls" {
                     path.starts_with("/v1/runs/{id}/calls")
                 } else if capability == "files" {
-                    [
-                        "/v1/sessions/{id}/snapshot",
-                        "/v1/sessions/{id}/files",
-                        "/v1/sessions/{id}/diff",
-                    ]
-                    .contains(&path.as_str())
+                    path.starts_with("/v1/sessions/{id}/files/")
+                        || [
+                            "/v1/sessions/{id}/snapshot",
+                            "/v1/sessions/{id}/files",
+                            "/v1/sessions/{id}/diff",
+                        ]
+                        .contains(&path.as_str())
                 } else {
                     (path == &prefix || path.starts_with(&format!("{prefix}/")))
                         && !path.ends_with("/snapshot")
-                        && !path.ends_with("/files")
+                        && !path.contains("/files")
                         && !path.ends_with("/diff")
                         && !path.ends_with("/events")
                         && !path.contains("/calls")

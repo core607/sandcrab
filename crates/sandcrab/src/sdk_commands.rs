@@ -66,16 +66,26 @@ impl Drop for Observer {
 impl Service {
     pub(crate) fn sdk_completed(&self, id: &str) {
         if let Some(command) = self.sdk.command(id) {
-            self.sdk_collect(&command);
+            if self.sdk.sandbox(&command.sandbox).is_err() {
+                self.sdk_release_command(&command);
+            } else {
+                self.sdk_collect(&command);
+            }
         }
     }
     pub(crate) fn sdk_collect(&self, command: &Command) {
+        self.sdk_finish_command(command, false);
+    }
+    pub(crate) fn sdk_release_command(&self, command: &Command) {
+        self.sdk_finish_command(command, true);
+    }
+    fn sdk_finish_command(&self, command: &Command, force_forget: bool) {
         let incarnation = command.incarnation.lock().unwrap().clone();
         let Some(incarnation) = incarnation else {
             return;
         };
         let mut registry = self.registry.lock().unwrap();
-        let Some(run) = registry.runs.get(&command.id) else {
+        let Some(run) = registry.runs.get_mut(&command.id) else {
             return;
         };
         if run.stream_id != incarnation || !run.terminal() {
@@ -86,7 +96,22 @@ impl Service {
         if outcome.is_none() {
             *outcome = Some(Outcome::of(run));
         }
-        if !command.observed.load(Ordering::SeqCst) {
+        if command.observed.load(Ordering::SeqCst) {
+            return;
+        }
+        let calls_observed = run.calls.as_ref().is_some_and(|calls| calls.observed());
+        if calls_observed {
+            if force_forget {
+                run.request["keepResult"] = Value::Bool(false);
+            }
+            return;
+        }
+        let calls_used = run.calls.as_ref().is_some_and(|calls| calls.used());
+        if calls_used && !force_forget {
+            // Host-call runs stay inspectable and reconcilable across resultTtlMillis or until
+            // explicit /v1/runs/{id}/forget or sandbox deletion, without leaking keepResult=true.
+            run.request["keepResult"] = Value::Bool(false);
+        } else {
             let _ = registry.forget(&command.id);
         }
     }
@@ -132,6 +157,7 @@ impl Service {
             observed: AtomicBool::new(true),
             outcome: Mutex::new(None),
         });
+        let mut evicted = None;
         {
             let mut book = self.sdk.state.lock().unwrap();
             if book.commands.len() >= self.runtime.config.service.max_records {
@@ -142,9 +168,12 @@ impl Service {
                         !c.observed.load(Ordering::SeqCst) && c.outcome.lock().unwrap().is_some()
                     })
                     .ok_or((429, "COMMAND_HISTORY_CAPACITY"))?;
-                book.commands.remove(index);
+                evicted = book.commands.remove(index);
             }
             book.commands.push_back(command.clone());
+        }
+        if let Some(previous) = evicted {
+            self.sdk_release_command(&previous);
         }
         let accepted = self.sdk_context_native(
             context,

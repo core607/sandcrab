@@ -398,6 +398,7 @@ impl Runtime {
                 bytes: 0,
                 sha256: String::new(),
                 replace: false,
+                parents: false,
                 mode: 0o600,
                 uid: stage.uid,
                 gid: stage.gid,

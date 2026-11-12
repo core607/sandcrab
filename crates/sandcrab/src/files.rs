@@ -125,6 +125,7 @@ pub(crate) fn job(
         bytes: 0,
         sha256: String::new(),
         replace: false,
+        parents: false,
         mode: if format == Format::Tar { 0o755 } else { 0o644 },
         uid: access.profile.uid,
         gid: access.profile.gid,
@@ -135,7 +136,187 @@ pub(crate) fn job(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MkdirRequest {
+    path: String,
+    mode: Option<u32>,
+}
+
+fn native_entries(raw: Value) -> Result<Value> {
+    let items = raw.as_array().ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+    let mut entries = Vec::with_capacity(items.len());
+    for item in items {
+        let raw_path = item["path"]
+            .as_str()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        let path = if raw_path == "/workspace" {
+            "."
+        } else {
+            raw_path
+                .strip_prefix("/workspace/")
+                .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?
+        };
+        let raw_mode = item["mode"]
+            .as_u64()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        let mode = u32::from_str_radix(&raw_mode.to_string(), 8)
+            .map_err(|_| (503, "FILE_METADATA_UNAVAILABLE"))?;
+        let kind = item["type"]
+            .as_str()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        let size = item["size"]
+            .as_u64()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        let modified_at = item["modified_at"]
+            .as_str()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        let created_at = item["created_at"]
+            .as_str()
+            .ok_or((503, "FILE_METADATA_UNAVAILABLE"))?;
+        entries.push(json!({
+            "path": path,
+            "type": kind,
+            "size": size,
+            "mode": mode,
+            "modifiedAt": modified_at,
+            "createdAt": created_at,
+        }));
+    }
+    Ok(json!({"entries": entries}))
+}
+
 impl Service {
+    pub(crate) fn session_file_route(
+        &self,
+        method: &str,
+        path: &str,
+        body: &[u8],
+    ) -> Option<(u16, Value)> {
+        let rest = path.strip_prefix("/v1/sessions/")?;
+        let (id, tail) = rest.split_once('/')?;
+        if !sandcrab_core::uuid(id) {
+            return None;
+        }
+        let outcome = if tail == "files" || tail.starts_with("files?") {
+            if method != "DELETE" {
+                return None;
+            }
+            self.remove_file(id, tail.strip_prefix("files?").unwrap_or(""))
+        } else if tail == "files/mkdir" {
+            if method != "POST" {
+                return Some(error(404, "NOT_FOUND"));
+            }
+            self.mkdir_file(id, body)
+        } else if tail == "files/list" || tail.starts_with("files/list?") {
+            if method != "GET" {
+                return Some(error(404, "NOT_FOUND"));
+            }
+            self.list_files(id, tail.strip_prefix("files/list?").unwrap_or(""))
+        } else if tail == "files/search" || tail.starts_with("files/search?") {
+            if method != "GET" {
+                return Some(error(404, "NOT_FOUND"));
+            }
+            self.search_files(id, tail.strip_prefix("files/search?").unwrap_or(""))
+        } else {
+            return None;
+        };
+        Some(match outcome {
+            Ok(value) => (200, value),
+            Err((status, code)) => error(status, code),
+        })
+    }
+
+    pub(crate) fn mkdir_file(&self, id: &str, body: &[u8]) -> Result<Value> {
+        let value = sandcrab_core::parse(body).map_err(|_| (400, "INVALID_REQUEST"))?;
+        let request: MkdirRequest =
+            serde_json::from_value(value).map_err(|_| (400, "INVALID_REQUEST"))?;
+        if !valid_path(&request.path, false) {
+            return Err((400, "INVALID_PATH"));
+        }
+        let mode = request.mode.unwrap_or(0o755);
+        if mode > 0o777 {
+            return Err((400, "INVALID_FILE_MODE"));
+        }
+        let op = crate::sdk_fs::Request::Mkdir {
+            entries: vec![crate::sdk_fs::Mode {
+                path: request.path.clone(),
+                mode,
+            }],
+        };
+        op.validate()?;
+        self.filesystem(self.file_lease(id, None)?, &op)?;
+        Ok(json!({"path": request.path, "created": true}))
+    }
+
+    pub(crate) fn list_files(&self, id: &str, query: &str) -> Result<Value> {
+        let (mut path, mut depth) = (None, None);
+        for (key, value) in crate::sdk_types::query(query)? {
+            match key.as_str() {
+                "path" if path.is_none() => path = Some(value),
+                "depth" if depth.is_none() => {
+                    let parsed = (!value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+                        .then(|| value.parse::<usize>().ok())
+                        .flatten()
+                        .filter(|n| *n <= 64)
+                        .ok_or((400, "INVALID_DEPTH"))?;
+                    depth = Some(parsed);
+                }
+                _ => return Err((400, "INVALID_QUERY")),
+            }
+        }
+        let path = path.unwrap_or_else(|| ".".into());
+        if !valid_path(&path, true) {
+            return Err((400, "INVALID_PATH"));
+        }
+        let op = crate::sdk_fs::Request::List {
+            path,
+            depth: depth.unwrap_or(1),
+        };
+        op.validate()?;
+        native_entries(self.filesystem(self.file_lease(id, None)?, &op)?)
+    }
+
+    pub(crate) fn search_files(&self, id: &str, query: &str) -> Result<Value> {
+        let (mut path, mut pattern) = (None, None);
+        for (key, value) in crate::sdk_types::query(query)? {
+            match key.as_str() {
+                "path" if path.is_none() => path = Some(value),
+                "pattern" if pattern.is_none() => pattern = Some(value),
+                _ => return Err((400, "INVALID_QUERY")),
+            }
+        }
+        let path = path.unwrap_or_else(|| ".".into());
+        if !valid_path(&path, true) {
+            return Err((400, "INVALID_PATH"));
+        }
+        let pattern = pattern.ok_or((400, "INVALID_QUERY"))?;
+        let op = crate::sdk_fs::Request::Search { path, pattern };
+        op.validate()?;
+        native_entries(self.filesystem(self.file_lease(id, None)?, &op)?)
+    }
+
+    pub(crate) fn read_file(&self, id: &str, query: &str, range: Option<&str>) -> Result<Snapshot> {
+        let mut raw_path = None;
+        for (key, value) in crate::sdk_types::query(query)? {
+            if key == "path" && raw_path.is_none() {
+                raw_path = Some(value);
+            }
+        }
+        let raw_path = raw_path.ok_or((400, "INVALID_PATH"))?;
+        if !valid_path(&raw_path, false) {
+            return Err((400, "INVALID_PATH"));
+        }
+        let (path, selection) = crate::sdk_download::request(query, range)?;
+        self.capture(
+            id,
+            &serde_json::to_vec(&json!({"path": path, "format": "raw"})).unwrap(),
+            None,
+            selection.as_ref(),
+            false,
+        )
+    }
+
     pub(crate) fn remove_file(&self, id: &str, query: &str) -> Result<Value> {
         let (mut path, mut recursive) = (None, None);
         for (key, value) in crate::sdk_types::query(query)? {
@@ -150,6 +331,9 @@ impl Service {
             }
         }
         let path = path.ok_or((400, "INVALID_PATH"))?;
+        if !valid_path(&path, false) {
+            return Err((400, "INVALID_PATH"));
+        }
         let request = crate::sdk_fs::Request::parse(
             "DELETE",
             if recursive.unwrap_or(false) {
@@ -355,6 +539,7 @@ impl Service {
             job.bytes = length;
             job.sha256 = record.request.sha256.clone();
             job.replace = record.request.replace;
+            job.parents = record.request.parents;
             job.mode = record.request.mode();
             let (received, ended) = self.pipe_upload(&job, &lease, body, deadline);
             contained &= ended;
@@ -381,7 +566,12 @@ impl Service {
                 Input::Null,
             );
             contained &= ended;
-            published?;
+            let receipt: crate::file_io::Publication =
+                serde_json::from_value(published?).map_err(|_| invalid("PUBLICATION_UNKNOWN"))?;
+            if let crate::file_io::Publication::Rejected { code } = receipt {
+                attempted = false;
+                return Err(invalid(code));
+            }
             if !contained {
                 return Err(invalid("FILE_CLEANUP_UNCONFIRMED"));
             }
@@ -406,18 +596,7 @@ impl Service {
                 ("closing", Some("FILE_CLEANUP_UNCONFIRMED"))
             } else if confirmed {
                 ("succeeded", None)
-            } else if attempted
-                && !failure.as_deref().is_some_and(|s| {
-                    [
-                        "PATH_EXISTS",
-                        "NOT_DIRECTORY",
-                        "FILE_NOT_FOUND",
-                        "INVALID_PATH",
-                        "NOT_REGULAR_FILE",
-                    ]
-                    .contains(&s)
-                })
-            {
+            } else if attempted {
                 (
                     "unknown",
                     failure.as_deref().or(Some("PUBLICATION_UNKNOWN")),
