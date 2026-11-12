@@ -90,6 +90,20 @@ class TcpProbe(FileProbe):
         env = call('runuser', '-u', 'daemon', '--', 'env', 'SANDCRAB_TOKEN_FILE=' + str(self.client_token),
                    str(self.binary), 'info', '--endpoint', self.url)
         assert json.loads(env.stdout) == self.info
+        env_defaults = call('runuser', '-u', 'daemon', '--', 'env',
+                            'SANDCRAB_TOKEN_FILE=' + str(self.client_token),
+                            'SANDCRAB_ENDPOINT=' + self.authority,
+                            str(self.binary), 'info')
+        assert json.loads(env_defaults.stdout) == self.info
+        reordered = call('runuser', '-u', 'daemon', '--', str(self.binary),
+                         'info', '--endpoint', self.url, '--token-file', str(self.client_token))
+        assert json.loads(reordered.stdout) == self.info
+        ambiguous = call('runuser', '-u', 'daemon', '--', 'env',
+                         'SANDCRAB_SOCKET=' + str(self.socket),
+                         'SANDCRAB_ENDPOINT=' + self.url,
+                         'SANDCRAB_TOKEN_FILE=' + str(self.client_token),
+                         str(self.binary), 'info', check=False)
+        assert ambiguous.returncode != 0 and 'Both SANDCRAB_SOCKET and SANDCRAB_ENDPOINT' in ambiguous.stderr
         run = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'], 'profile': 'python', 'command': ['true']}
         routes = [('GET', '/v1/info', None), ('GET', '/v1/openapi', None), ('POST', '/v1/runs', run),
                   ('GET', f'/v1/runs/{run["id"]}/events', None), ('POST', '/v1/sessions', run),
@@ -294,6 +308,20 @@ class TcpProbe(FileProbe):
         result = call('runuser', '-u', 'daemon', '--', str(self.binary), '--token-file', str(client_alias / self.client_token.name),
                       'info', '--endpoint', self.url, check=False)
         assert result.returncode != 0 and 'Token file ancestors' in result.stderr
+        provisioned = self.root / 'provisioned-client.token'
+        bad_exec = call(str(self.binary), 'client-token', '--config', str(self.config),
+                        '--user', 'nobody', '--output', str(provisioned), check=False)
+        assert bad_exec.returncode != 0 and not provisioned.exists()
+        receipt = json.loads(call(str(self.binary), 'client-token', '--config', str(self.config),
+                                  '--user', 'daemon', '--output', str(provisioned)).stdout)
+        assert receipt['mode'] == '0600' and self.key not in json.dumps(receipt)
+        provisioned_run = call('runuser', '-u', 'daemon', '--', 'env',
+                               'SANDCRAB_ENDPOINT=' + self.url,
+                               'SANDCRAB_PROFILE=python',
+                               'SANDCRAB_TOKEN_FILE=' + str(provisioned),
+                               str(self.binary), 'run', '--timeout', '5s', '--memory', '32Mi',
+                               '--', 'printf', 'provisioned')
+        assert json.loads(provisioned_run.stdout)['result']['stdout'] == 'provisioned'
         self.done('tcp-credentials-reject-insecure-files-mount-aliases-and-nonlocal-listeners')
 
     def listener_lifecycle(self):

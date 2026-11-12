@@ -2,9 +2,16 @@
 
 [Quickstart](../../../README.md#quickstart) installs the bundled executables, notices and
 source into `/var/lib/sandcrab-release`. Keep that directory installed because systemd
-uses its executable. Replaying the same bundle reuses matching protected files.
-For a different bundle in an existing installation, use the
-[custom installation](../README.md#custom-installation) and manage the service unit explicitly.
+uses its executable. When `/usr/local/bin` is a root-owned directory not writable by
+other accounts, `sandcrab install` also links `/usr/local/bin/sandcrab` to the
+installed binary without altering `/usr/local/bin` ownership or permissions.
+Replaying the same bundle reuses matching protected files. Pass `--upgrade` to the
+release archive (`sudo python3 -I sandcrab-linux-x86_64.zip --upgrade`) or run
+`sudo sandcrab upgrade [--dry-run]` from a staged release directory to stop the
+active service, atomically replace managed release and unit files, preserve
+`/etc/sandcrab/config.toml`, `/etc/sandcrab/token` and `/var/lib/sandcrab`, and
+restart `sandcrab.service`. Review release notes for any 0.x metadata steps under
+[custom installation](../README.md#custom-installation) before upgrading.
 
 Source-built ZIPs also install the project's `LICENSE` and `THREAT-MODEL.md` beside
 the executables. Container builds retain the same documents under `/opt/sandcrab`.
@@ -13,7 +20,10 @@ the executables. Container builds retain the same documents under `/opt/sandcrab
 units and activation commands without changing the machine or generating a
 credential. Run `sudo sandcrab install` to apply them. Installation preserves an
 existing protected configuration and token and refuses to replace conflicting
-units or accounts.
+units, links or accounts unless `--upgrade` is specified.
+`sudo sandcrab uninstall [--dry-run]` stops and disables `sandcrab.service` and
+`sandcrab.slice`, removes managed unit, AppArmor and `/usr/local/bin/sandcrab` link
+files, and preserves `/etc/sandcrab`, `/var/lib/sandcrab` and `sandcrab-exec`.
 
 The service listens on a root-only Unix client interface and on `127.0.0.1:9011`
 with a private token in `/etc/sandcrab/token`. The installed service enables the
@@ -21,7 +31,9 @@ with a private token in `/etc/sandcrab/token`. The installed service enables the
 `sandcrab-exec`, mounts the host's `/usr` and runtime libraries read-only and has
 no network. The [default configuration](default.toml) and [slice](sandcrab.slice)
 own the limits. Edit `/etc/sandcrab/config.toml` and restart `sandcrab.service`
-to change profiles. Give authorized external clients a private copy of the token.
+to change profiles. Provision a private copy of the token for a non-root client
+account with `sudo sandcrab client-token --user USER --output FILE` (see
+[loopback TCP](../README.md#loopback-tcp)).
 
 `sudo sandcrab doctor [--config FILE]` checks kernel namespaces, the verified
 helper, the delegated cgroup, storage and service discovery. It runs bash and
