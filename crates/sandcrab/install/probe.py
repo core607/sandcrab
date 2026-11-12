@@ -101,6 +101,45 @@ def systemd(bundle, passed):
         finally:
             helper.chmod(0o755)
         passed('doctor reports an actionable damaged-helper failure')
+        local_bin = Path('/usr/local/bin')
+        if local_bin.exists() and local_bin.lstat().st_uid == 0 and (local_bin.lstat().st_mode & 0o022) == 0:
+            link = local_bin / 'sandcrab'
+            assert link.is_symlink() and link.resolve(strict=True) == exe
+            assert 'OK  sandbox:' in run([link, 'doctor']).stdout
+            passed('protected /usr/local/bin symlink resolves bundled bwrap')
+        client_dir = Path('/var/lib/sandcrab-client-probe')
+        client_dir.mkdir(mode=0o700)
+        try:
+            daemon_pw = pwd.getpwnam('daemon')
+            os.chown(client_dir, daemon_pw.pw_uid, daemon_pw.pw_gid)
+            assert run([exe, 'client-token', '--user', 'sandcrab-exec', '--output', client_dir / 'bad'], check=False).returncode != 0
+            provisioned = run([exe, 'client-token', '--user', 'daemon', '--output', client_dir / 'token'])
+            assert secret.decode().strip() not in provisioned.stdout + provisioned.stderr
+            env_run = subprocess.run(
+                [str(exe), 'run', '--timeout', '5s', '--memory', '32Mi', '--', '/usr/bin/printf', 'ok'],
+                user=daemon_pw.pw_uid, group=daemon_pw.pw_gid, extra_groups=[],
+                env={
+                    'PATH': '/usr/bin:/bin',
+                    'SANDCRAB_ENDPOINT': '127.0.0.1:9011',
+                    'SANDCRAB_PROFILE': 'default',
+                    'SANDCRAB_TOKEN_FILE': str(client_dir / 'token'),
+                },
+                capture_output=True, text=True, timeout=30, check=True,
+            )
+            assert json.loads(env_run.stdout)['result']['stdout'] == 'ok'
+            passed('client-token provisions a non-root credential usable with env defaults and human quantities')
+        finally:
+            shutil.rmtree(client_dir, ignore_errors=True)
+        run([exe, 'upgrade'])
+        assert token.read_bytes() == secret and cfg.read_bytes() == customized
+        assert 'OK  sandbox:' in run([exe, 'doctor']).stdout
+        passed('upgrade restarts the service while preserving operator configuration and credentials')
+        run([exe, 'uninstall'])
+        assert not Path('/etc/systemd/system/sandcrab.service').exists()
+        assert not Path('/usr/local/bin/sandcrab').exists()
+        assert run(['systemctl', 'is-active', 'sandcrab.service'], check=False).returncode != 0
+        assert token.read_bytes() == secret and cfg.read_bytes() == customized
+        passed('uninstall removes units and symlink while preserving configuration and state')
     finally:
         if Path('/etc/systemd/system/sandcrab.service').is_file():
             run(['systemctl', 'stop', 'sandcrab.service', 'sandcrab.slice'])

@@ -68,7 +68,7 @@ fn storage(cfg: &Config) -> io::Result<String> {
 }
 
 fn cli(cfg: &Config) -> io::Result<Command> {
-    let mut command = Command::new(std::env::current_exe()?);
+    let mut command = Command::new(std::env::current_exe()?.canonicalize()?);
     if rustix::process::geteuid().as_raw() == 0 {
         command
             .gid(cfg.service.client_gid)
@@ -157,7 +157,10 @@ pub fn doctor(path: &Path) -> io::Result<i32> {
     );
     ok &= report(
         "bubblewrap",
-        sandcrab_launch::verify_bundled_bwrap(&std::env::current_exe()?)
+        std::env::current_exe()
+            .and_then(|p| p.canonicalize())
+            .map_err(sandcrab_launch::Error::from)
+            .and_then(|exe| sandcrab_launch::verify_bundled_bwrap(&exe))
             .map(|p| p.display().to_string())
             .map_err(io::Error::other),
         "Install the matching bwrap next to sandcrab in the protected release directory.",

@@ -108,6 +108,25 @@ class BundleFiles(unittest.TestCase):
         self.assertEqual(binary.stat().st_ino, original)
         self.assertFalse((self.release / 'LICENSE').exists())
 
+    def test_explicit_upgrade_replaces_changed_or_incomplete_release_atomically(self):
+        self.entry.install_files(self.archive, self.release)
+        (self.release / 'LICENSE').unlink()
+        (self.release / 'sandcrab').write_bytes(b'prior-release-binary')
+        events = []
+        replaced = self.entry.install_files(
+            self.archive,
+            self.release,
+            upgrade=True,
+            before_replace=lambda: events.append((self.release / 'sandcrab').read_bytes()),
+        )
+        self.assertTrue(replaced)
+        self.assertEqual(events, [b'prior-release-binary'])
+        for name, mode in self.entry.FILES.items():
+            path = self.release / name
+            self.assertEqual(path.read_bytes(), name.encode())
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+        self.assertFalse(self.entry.install_files(self.archive, self.release, upgrade=True))
+
 
 if __name__ == '__main__':
     unittest.main()

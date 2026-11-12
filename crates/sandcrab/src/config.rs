@@ -225,7 +225,7 @@ impl Config {
         if let Some(tcp) = &mut config.tcp {
             tcp.token = Some(crate::auth::read_token(&tcp.token_file, 0)?);
         }
-        sandcrab_launch::verify_bundled_bwrap(&std::env::current_exe()?)
+        sandcrab_launch::verify_bundled_bwrap(&std::env::current_exe()?.canonicalize()?)
             .map_err(io::Error::other)?;
         for profile in config.profiles.values_mut() {
             (profile.uid, profile.gid) = execution_account(

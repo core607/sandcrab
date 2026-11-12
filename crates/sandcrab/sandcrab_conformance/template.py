@@ -93,6 +93,16 @@ class TemplateProbe(StreamingProbe):
         cli = call('runuser', '-u', 'daemon', '--', str(self.binary), 'template', 'import',
                    '--socket', str(self.socket), '--profile', 'python', str(source))
         assert json.loads(cli.stdout) == first
+        import gzip
+        compressed = self.root / 'template.tar.gz'
+        compressed.write_bytes(gzip.compress(archive(entries)))
+        compressed.chmod(0o644)
+        cli_gz = call('runuser', '-u', 'daemon', '--', 'env',
+                      'SANDCRAB_SOCKET=' + str(self.socket),
+                      'SANDCRAB_PROFILE=python',
+                      str(self.binary), 'template', 'import',
+                      str(compressed), '--expected-id', first['id'])
+        assert json.loads(cli_gz.stdout) == first
         directory = self.root / 'unpacked-rootfs'
         directory.mkdir(mode=0o755)
         for name, kind, content, mode in entries:

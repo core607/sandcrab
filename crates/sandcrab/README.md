@@ -148,6 +148,18 @@ command's exit result. Inspect or forget the printed ID instead of rerunning it.
 `--keep-result` on `run`, `session exec`, `session open`, `session shell` or
 `files put` retains the result until explicit forgetting; it also works with streaming commands.
 
+Client commands accept `--socket PATH` or `--endpoint URL` anywhere before `--`,
+or fall back to `SANDCRAB_SOCKET` or `SANDCRAB_ENDPOINT`. Setting both environment
+variables without an explicit connection flag fails rather than guessing a transport.
+Commands that select a profile (`run`, `session open`, `volume create`,
+`template import`) accept `--profile NAME` in any option position or fall back to
+`SANDCRAB_PROFILE`. Byte and duration flags (`--memory-bytes` / `--memory`, `--bytes`,
+`--timeout-ms` / `--timeout`, `--ttl-ms` / `--ttl`) accept plain integer units or
+exact suffixes (`Ki`, `Mi`, `Gi`, `Ti`, `KiB`, `MiB`, `GiB`, `TiB`, `k`, `M`, `G`,
+`T`, `B`; `ms`, `s`, `m`, `h`, `d`). `--cpu-percent` accepts integer percentages, and
+`--cpu` accepts fractional cores or millicores (`0.5`, `500m`); HTTP JSON fields
+remain numeric.
+
 ## Templates
 
 Import a plain tar archive or an already unpacked OCI root tree through the
@@ -184,6 +196,7 @@ length/hash and installs local output atomically. Use `-` for stdout or
 
 ```sh
 sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python environment.tar
+sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python rootfs.tar.gz
 sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --directory unpacked-image/rootfs
 sandcrab template list --socket /var/lib/sandcrab-demo/runtime/control.sock
 sandcrab template get --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
@@ -195,10 +208,11 @@ The equivalent import is `POST /v1/templates?profile=python` with a plain tar bo
 using Content-Length or chunked framing. `GET /v1/templates` returns up to 64
 objects and a `nextAfter` cursor; continue with `?after=SHA256`.
 `GET` and `DELETE /v1/templates/SHA256` inspect and remove an object.
-The CLI packs a directory locally and does not contact an image registry. Supply
-a merged, unpacked root tree for `--directory`; use the explicit
-[layer format](#deletion-layers) for tar deletion markers. Coordinate source
-writers before packaging it.
+The CLI packs a directory or decompresses `.tar.gz`, `.tgz` and `--gzip` archives
+locally within the 1 GiB client bound before streaming plain tar to the daemon;
+neither contacts an image registry. Supply a merged, unpacked root tree for
+`--directory`; use the explicit [layer format](#deletion-layers) for tar deletion
+markers. Coordinate source writers before packaging it.
 
 Set `templateId` on `POST /v1/sessions`, or use `session open --template`.
 It is mutually exclusive with `volumeId` and requires the template's execution
@@ -390,11 +404,17 @@ also ends live runs and sessions under the existing lifecycle contract.
 Any client command can replace `--socket PATH` with `--endpoint URL`:
 
 ```sh
-sandcrab --token-file ./client.token info --endpoint http://127.0.0.1:9011
-sandcrab --token-file ./client.token run --endpoint http://127.0.0.1:9011 --profile python --stream -- python3 -c 'print(6 * 7)'
+sudo sandcrab client-token --user app --output /etc/sandcrab-client/token
+sandcrab --token-file /etc/sandcrab-client/token info --endpoint http://127.0.0.1:9011
+sandcrab run --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile python --stream -- python3 -c 'print(6 * 7)'
 ```
 
-`SANDCRAB_TOKEN_FILE` supplies the client path when the global flag is absent.
+`client-token` validates `--config` (default `/etc/sandcrab/config.toml`), refuses
+root and configured sandbox execution accounts or groups, checks ancestor directory
+ownership and mount disjointness, and writes an atomic `0600` copy owned by `--user`
+(`--replace` rotates an existing regular file). `--token-file` may appear anywhere
+before `--`, and `SANDCRAB_TOKEN_FILE` supplies the client path when the flag is absent.
+`--endpoint` and `SANDCRAB_ENDPOINT` accept `http://LOOPBACK:PORT` or `LOOPBACK:PORT`.
 The client copy and every directory above it must belong to root or that client;
 the file has no group/other permissions and directories are not writable by other
 accounts. Symlinks, hard-linked files and parent traversal are refused. Credentials

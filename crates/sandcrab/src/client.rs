@@ -37,15 +37,19 @@ impl Endpoint {
         match flag {
             "--socket" => Ok(Self::Unix(value.into())),
             "--endpoint" => {
-                let address = value.strip_prefix("http://").ok_or_else(|| {
-                    invalid("TCP endpoint must use http:// with a literal loopback address")
-                })?;
+                let address = match value.split_once("://") {
+                    Some(("http", rest)) => rest,
+                    Some(_) => {
+                        return Err(invalid(
+                            "TCP endpoint must use http:// with a literal loopback address",
+                        ));
+                    }
+                    None => value,
+                };
                 let address =
                     transport::local_address(address.strip_suffix('/').unwrap_or(address))?;
                 let path = token_file.ok_or_else(|| {
-                    invalid(
-                        "TCP requires --token-file FILE before the command or SANDCRAB_TOKEN_FILE",
-                    )
+                    invalid("TCP requires --token-file FILE or SANDCRAB_TOKEN_FILE")
                 })?;
                 let token = Arc::new(auth::read_token(path, rustix::process::geteuid().as_raw())?);
                 Ok(Self::Tcp { address, token })
