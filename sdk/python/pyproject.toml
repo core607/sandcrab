@@ -3,13 +3,16 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sandcrab-templates"
+name = "sandcrab"
 version = "0.2.0"
-description = "Immutable Sandcrab environments for native and OpenSandbox clients"
+description = "Native Python client, template workflows, host-call dispatcher and stdio MCP server for Sandcrab"
 requires-python = ">=3.11"
 dependencies = ["httpx>=0.28.1,<1"]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+
+[project.scripts]
+sandcrab-mcp = "sandcrab.mcp:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
