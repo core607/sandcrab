@@ -299,7 +299,8 @@ network = "none"
         response = self.wait(request)
         assert response['state'] == 'succeeded', response
         observed = json.loads(response['result']['stdout'])
-        assert len(observed['checks']) == len(set(observed['checks'])) == 64, observed
+        expected_seccomp_checks = 64 if os.uname().machine == 'x86_64' else 62
+        assert len(observed['checks']) == len(set(observed['checks'])) == expected_seccomp_checks, observed
         self.receipt['nativeSeccomp'] = observed
         self.forget(request)
         for name in observed['checks']:

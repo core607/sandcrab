@@ -1,8 +1,8 @@
 # Bundled bubblewrap source
 
-`lock.json` pins the source archives and the static executable's size and SHA-256.
+`lock.json` pins the source archives and each supported architecture's (`x86_64` and `aarch64`) static executable size and SHA-256.
 `loopback-index.patch` is the only bubblewrap modification. `build.sh` installs
-build dependencies and runs `build.py` in the pinned Rust/Alpine build image.
+build dependencies and runs `build.py` in the pinned Rust/Alpine build image (pass `--platform linux/arm64` to reproduce the `aarch64` helper).
 The output directory must be new; the build also requires an unused `/bwrap-build`.
 
 To reproduce the helper from this directory:

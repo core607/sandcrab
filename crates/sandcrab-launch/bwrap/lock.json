@@ -1,7 +1,15 @@
 {
   "version": "0.13.1",
-  "binarySha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
-  "binaryBytes": 141736,
+  "targets": {
+    "x86_64": {
+      "binarySha256": "661da77e268a68e1f83e28fd1365459b1fb196d70ec1fc17d516b9881650357d",
+      "binaryBytes": 141736
+    },
+    "aarch64": {
+      "binarySha256": "98c23d3396d288de3175a0ecf2fca3a134c0d334dbf3b1e1bf7cbbe7f50a49a3",
+      "binaryBytes": 198952
+    }
+  },
   "sources": [
     {
       "name": "bubblewrap-0.13.1.tar.xz",

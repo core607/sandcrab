@@ -15,6 +15,8 @@ on:
     outputs:
       release_archive:
         value: ${{ jobs.build.outputs.release_archive }}
+      release_archive_aarch64:
+        value: ${{ jobs.build-aarch64.outputs.release_archive }}
       tested_image:
         value: ${{ jobs.container.outputs.tested_image }}
 
@@ -59,6 +61,61 @@ jobs:
           path: build/bin/
           if-no-files-found: error
           retention-days: 14
+
+  build-aarch64:
+    outputs:
+      release_archive: ${{ steps.fingerprint.outputs.archive_name }}
+      bundle_sha256: ${{ steps.fingerprint.outputs.sha256 }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - run: docker build --target release --output type=local,dest=build/bin .
+      - name: Check release staging on aarch64
+        run: |
+          python3 -m unittest discover -s scripts -p test_third_party_notices.py -v
+          sudo python3 -m unittest discover -s crates/sandcrab/install -p test_quickstart.py -v
+      - name: Read the aarch64 release digest
+        id: fingerprint
+        run: |
+          echo "archive_name=sandcrab-release-aarch64-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          (cd build/bin && sha256sum -c SHA256SUMS)
+          echo "sha256=$(sha256sum build/bin/sandcrab-linux-aarch64.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.fingerprint.outputs.archive_name }}
+          path: build/bin/
+          if-no-files-found: error
+          retention-days: 14
+
+  native-aarch64:
+    needs: build-aarch64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build-aarch64.outputs.release_archive }}
+          path: build/bin
+      - name: Run native seccomp conformance and installer acceptance on aarch64
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sudo bash scripts/prepare-tools.sh /var/lib/sandcrab-arm64-tools
+          printf '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
+          sudo python3 crates/sandcrab/conformance.py --suite native \
+            --binary build/bin/sandcrab --tools /var/lib/sandcrab-arm64-tools \
+            --output "$RUNNER_TEMP/conformance-aarch64"
+          sudo rm -rf /var/lib/sandcrab-arm64-tools
+          sudo env SANDCRAB_INSTALL_DISPOSABLE=1 python3 crates/sandcrab/install/probe.py \
+            --bundle build/bin --report "$RUNNER_TEMP/readiness-native-aarch64.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: readiness-native-aarch64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/readiness-native-aarch64.json
+          if-no-files-found: warn
+          retention-days: 30
 
   quickstart:
     name: quickstart (${{ matrix.os }})

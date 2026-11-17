@@ -8,17 +8,17 @@ use std::io::Read;
 // Its generator is vendor/seccomp-src/seccomp-unix-block.c at upstream commit
 // 40804af269e1616092e9971de12a1f358f58eba9. This reference preserves the actual
 // ABI guard actions, which differ from seccompiler's default architecture guard.
-fn reference() -> Vec<sock_filter> {
+fn reference(audit_arch: u32, socket_nr: u32) -> Vec<sock_filter> {
     [
         (0x20, 0, 0, 4),
-        (0x15, 0, 14, 0xc000_003e),
+        (0x15, 0, 14, audit_arch),
         (0x20, 0, 0, 0),
         (0x35, 0, 1, 0x4000_0000),
         (0x15, 0, 11, u32::MAX),
         (0x15, 9, 0, 425),
         (0x15, 8, 0, 426),
         (0x15, 7, 0, 427),
-        (0x15, 0, 5, 41),
+        (0x15, 0, 5, socket_nr),
         (0x20, 0, 0, 20),
         (0x54, 0, 0, 0),
         (0x15, 0, 2, 0),
@@ -64,111 +64,174 @@ fn evaluate(program: &[sock_filter], nr: u32, arch: u32, args: [u64; 3]) -> u32 
 }
 
 #[test]
-fn compiled_filter_matches_the_pinned_binary_across_rules_and_abi_boundaries() {
-    let reference = reference();
-    let calls = (0..=512).chain([
-        0x4000_0000,
-        0x4000_0029,
-        0x4000_01a9,
-        u32::MAX - 1,
-        u32::MAX,
-    ]);
-    for nr in calls {
-        for arch in [0xc000_003e, 0x4000_0003, 0xc000_00b7] {
-            for domain in [
-                0,
-                1,
-                2,
-                10,
-                40,
-                0x0000_0001_0000_0001,
-                0xffff_ffff_0000_0001,
-                u64::MAX,
-            ] {
-                assert_eq!(
-                    action(BOOTSTRAP_FILTER, nr, arch, domain),
-                    action(&reference, nr, arch, domain),
-                    "nr={nr:x}, arch={arch:x}, domain={domain:x}"
-                );
+fn compiled_filters_match_the_pinned_reference_across_x86_64_and_aarch64_abi_boundaries() {
+    for (bootstrap, audit_arch, socket_nr) in [
+        (X86_64_BOOTSTRAP_FILTER, 0xc000_003e, 41),
+        (AARCH64_BOOTSTRAP_FILTER, 0xc000_00b7, 198),
+    ] {
+        let reference = reference(audit_arch, socket_nr);
+        let calls = (0..=512).chain([
+            0x4000_0000,
+            0x4000_0029,
+            0x4000_00c6,
+            0x4000_01a9,
+            u32::MAX - 1,
+            u32::MAX,
+        ]);
+        for nr in calls {
+            for arch in [0xc000_003e, 0x4000_0003, 0xc000_00b7, 0x4000_0028] {
+                for domain in [
+                    0,
+                    1,
+                    2,
+                    10,
+                    40,
+                    0x0000_0001_0000_0001,
+                    0xffff_ffff_0000_0001,
+                    u64::MAX,
+                ] {
+                    assert_eq!(
+                        action(bootstrap, nr, arch, domain),
+                        action(&reference, nr, arch, domain),
+                        "target={audit_arch:x}, nr={nr:x}, arch={arch:x}, domain={domain:x}"
+                    );
+                }
             }
         }
-    }
-    let mut seed = 20261102u64;
-    for _ in 0..10000 {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-        let nr = seed as u32;
-        let arch = if seed & 1 == 0 {
-            0xc000_003e
-        } else {
-            (seed >> 32) as u32
-        };
-        let domain = seed.rotate_left(17);
-        assert_eq!(
-            action(BOOTSTRAP_FILTER, nr, arch, domain),
-            action(&reference, nr, arch, domain)
-        );
+        let mut seed = 20261102u64;
+        for _ in 0..10000 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let nr = seed as u32;
+            let arch = if seed & 1 == 0 {
+                audit_arch
+            } else {
+                (seed >> 32) as u32
+            };
+            let domain = seed.rotate_left(17);
+            assert_eq!(
+                action(bootstrap, nr, arch, domain),
+                action(&reference, nr, arch, domain)
+            );
+        }
     }
 }
 
 #[test]
-fn workloads_deny_kernel_admin_calls_without_breaking_fork_or_personality_queries() {
-    let arch = 0xc000_003e;
+fn workloads_deny_kernel_admin_calls_on_both_x86_64_and_aarch64() {
     let allow = 0x7fff_0000;
     let denied = 0x0005_0001;
-    for nr in [
+    let x86_denied: &[u32] = &[
         101, 155, 165, 166, 174, 175, 176, 246, 248, 249, 250, 298, 308, 313, 320, 321, 323, 425,
         426, 427, 428, 429, 430, 431, 432, 433, 442, 457, 458, 467,
+    ];
+    let aarch64_denied: &[u32] = &[
+        117, 41, 40, 39, 105, 106, 273, 104, 294, 217, 218, 219, 241, 268, 280, 282, 425, 426, 427,
+        428, 429, 430, 431, 432, 433, 442, 457, 458, 467,
+    ];
+    for (
+        program,
+        arch,
+        foreign_arch,
+        admin_calls,
+        socket_nr,
+        socketpair_nr,
+        clone_nr,
+        unshare_nr,
+        personality_nr,
+    ) in [
+        (
+            X86_64_WORKLOAD_FILTER,
+            0xc000_003e,
+            0xc000_00b7,
+            x86_denied,
+            41,
+            53,
+            56,
+            272,
+            135,
+        ),
+        (
+            AARCH64_WORKLOAD_FILTER,
+            0xc000_00b7,
+            0xc000_003e,
+            aarch64_denied,
+            198,
+            199,
+            220,
+            97,
+            92,
+        ),
     ] {
-        assert_eq!(action(WORKLOAD_FILTER, nr, arch, 0), denied, "syscall {nr}");
-    }
-    for bits in [1, 40, 0x1_0000_0028, 0xffff_ffff_0000_0001] {
-        assert_eq!(action(WORKLOAD_FILTER, 41, arch, bits), denied);
-    }
-    for flag in [
-        0x80,
-        0x0002_0000,
-        0x0200_0000,
-        0x0400_0000,
-        0x0800_0000,
-        0x1000_0000,
-        0x2000_0000,
-        0x4000_0000,
-    ] {
-        for nr in [56, 272] {
+        assert_eq!(action(program, 0, foreign_arch, 0), 0);
+        for &nr in admin_calls {
             assert_eq!(
-                action(WORKLOAD_FILTER, nr, arch, flag | 0x100),
+                action(program, nr, arch, 0),
                 denied,
-                "{nr} {flag:x}"
+                "arch={arch:x} syscall {nr}"
             );
         }
+        for bits in [1, 40, 0x1_0000_0028, 0xffff_ffff_0000_0001] {
+            assert_eq!(action(program, socket_nr, arch, bits), denied);
+        }
+        for flag in [
+            0x80,
+            0x0002_0000,
+            0x0200_0000,
+            0x0400_0000,
+            0x0800_0000,
+            0x1000_0000,
+            0x2000_0000,
+            0x4000_0000,
+        ] {
+            for nr in [clone_nr, unshare_nr] {
+                assert_eq!(
+                    action(program, nr, arch, flag | 0x100),
+                    denied,
+                    "{arch:x} {nr} {flag:x}"
+                );
+            }
+        }
+        assert_eq!(action(program, clone_nr, arch, 1 << 37), denied);
+        assert_eq!(action(program, unshare_nr, arch, 0x0010_0000), denied);
+        assert_eq!(action(program, clone_nr, arch, 0x0010_0000 | 17), allow);
+        assert_eq!(action(program, unshare_nr, arch, 0), allow);
+        assert_eq!(action(program, 435, arch, u64::MAX), 0x0005_0026);
+        for value in [0, u64::from(u32::MAX), u64::MAX] {
+            assert_eq!(action(program, personality_nr, arch, value), allow);
+        }
+        for value in [8, 0x40000, 0x1_0000_0008] {
+            assert_eq!(action(program, personality_nr, arch, value), denied);
+        }
+        assert_eq!(action(program, socket_nr, arch, 2), allow);
+        assert_eq!(action(program, socketpair_nr, arch, 1), allow);
     }
-    assert_eq!(action(WORKLOAD_FILTER, 56, arch, 1 << 37), denied);
-    assert_eq!(action(WORKLOAD_FILTER, 272, arch, 0x0010_0000), denied);
-    assert_eq!(action(WORKLOAD_FILTER, 56, arch, 0x0010_0000 | 17), allow);
-    assert_eq!(action(WORKLOAD_FILTER, 272, arch, 0), allow);
-    assert_eq!(action(WORKLOAD_FILTER, 435, arch, u64::MAX), 0x0005_0026);
-    for value in [0, u64::from(u32::MAX), u64::MAX] {
-        assert_eq!(action(WORKLOAD_FILTER, 135, arch, value), allow);
-    }
-    for value in [8, 0x40000, 0x1_0000_0008] {
-        assert_eq!(action(WORKLOAD_FILTER, 135, arch, value), denied);
-    }
-    assert_eq!(action(WORKLOAD_FILTER, 41, arch, 2), allow);
-    assert_eq!(action(WORKLOAD_FILTER, 53, arch, 1), allow);
 }
 
 #[test]
 fn only_the_fixed_overlay_exporter_can_clone_its_mount() {
+    assert_eq!(u64::from(rustix::fs::OFlags::CLOEXEC.bits()) | 1, 0x80001);
     let dirfd = (-100i64) as u64;
-    let arch = 0xc000_003e;
-    for (nr, args, expected) in [
-        (428, [dirfd, 0, 0x80001], 0x7fff_0000),
-        (428, [dirfd, 0, 1], 0x0005_0001),
-        (428, [5, 0, 0x80001], 0x0005_0001),
-        (429, [dirfd, 0, 0x80001], 0x0005_0001),
+    for (export_filter, workload_filter, arch) in [
+        (
+            X86_64_OVERLAY_EXPORT_FILTER,
+            X86_64_WORKLOAD_FILTER,
+            0xc000_003e,
+        ),
+        (
+            AARCH64_OVERLAY_EXPORT_FILTER,
+            AARCH64_WORKLOAD_FILTER,
+            0xc000_00b7,
+        ),
     ] {
-        assert_eq!(evaluate(OVERLAY_EXPORT_FILTER, nr, arch, args), expected);
-        assert_eq!(evaluate(WORKLOAD_FILTER, nr, arch, args), 0x0005_0001);
+        for (nr, args, expected) in [
+            (428, [dirfd, 0, 0x80001], 0x7fff_0000),
+            (428, [dirfd, 0, 1], 0x0005_0001),
+            (428, [5, 0, 0x80001], 0x0005_0001),
+            (429, [dirfd, 0, 0x80001], 0x0005_0001),
+        ] {
+            assert_eq!(evaluate(export_filter, nr, arch, args), expected);
+            assert_eq!(evaluate(workload_filter, nr, arch, args), 0x0005_0001);
+        }
     }
 }
 

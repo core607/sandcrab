@@ -28,12 +28,15 @@ or compiled consumer traits.
 
 ### Runtime and authority
 
-A static daemon and checksum-verified bundled bubblewrap reduce host preparation.
-Native seccomp avoids a Node/npm/SRT provisioning dependency; interpreters used by
-workloads remain consumer or operator choices. Systemd installation and a delegated
-container are supported operating choices, not extra resident services required
-by the core runtime. The [installation guide](../../crates/sandcrab/install/README.md)
-owns host preparation and release materials.
+Static `x86_64` and `aarch64` daemons and per-architecture checksum-verified bundled
+bubblewrap helpers reduce host preparation on standard Linux servers without KVM.
+The release installer checks the archive's ELF machine against the host before
+modifying `/var/lib/sandcrab-release`. Native seccomp avoids a Node/npm/SRT
+provisioning dependency; interpreters used by workloads remain consumer or operator
+choices. Systemd installation and a delegated container are supported operating
+choices, not extra resident services required by the core runtime. The
+[installation guide](../../crates/sandcrab/install/README.md) owns host preparation
+and release materials.
 
 Direct cgroup v2 delegation avoids a service-manager transaction per sandbox.
 [Direct placement](../../crates/sandcrab-spawn/src/lib.rs) uses a small syscall/exec
@@ -49,9 +52,11 @@ The [bootstrap filter](../../crates/sandcrab-launch/src/seccomp.rs) protects
 bubblewrap and its reaper before sandbox setup. Sealed workload filters take effect
 before guest execution: applying mount and namespace denials before setup would
 prevent construction, while postponing all filtering would expose the reaper.
-Explicit ABI guards preserve the pinned reference policy; trusted overlay-export
-exceptions belong to a fixed helper, not arbitrary workloads. Helper compatibility
-cannot weaken or defer installation of a filter.
+Explicit per-architecture ABI guards (`AUDIT_ARCH_X86_64` and `AUDIT_ARCH_AARCH64`)
+and native syscall tables preserve the pinned reference policy and reject foreign
+compat ABIs; trusted overlay-export exceptions belong to a fixed helper, not
+arbitrary workloads. Helper compatibility cannot weaken or defer installation of a
+filter.
 
 Operator profiles bound identities, mounts, networking and resources. Unix peers
 and loopback tokens authenticate callers; guest fields and caller labels cannot
@@ -59,7 +64,10 @@ grant stronger authority. The [threat model](../../THREAT-MODEL.md) owns shared-
 hardening, helper trust and egress. Namespaces and seccomp retain a shared kernel;
 they do not provide a microVM trust boundary. Opaque
 [host calls](../../crates/sandcrab/host-calls.md) keep authorization, durable
-deduplication and outside effects with the caller.
+deduplication and outside effects with the caller; the
+[Python](../../sdk/python/README.md) and [TypeScript](../../sdk/typescript/README.md)
+dispatchers and stdio MCP server wrap the public API in the caller's process without
+adding application state or credentials to the daemon.
 
 Ordinary directories keep non-XFS hosts usable. Periodic accounting can overshoot
 between scans; optional XFS project quotas enforce a different storage contract
@@ -152,7 +160,8 @@ follows the pre-1.0 rebuild rule.
 ## Verification
 
 [Readiness acceptance](../../.github/workflows/sandcrab-readiness.yml) replays the
-three-command installation on Ubuntu 22.04, Ubuntu 24.04 and Debian 12.
+three-command installation on Ubuntu 22.04, Ubuntu 24.04 and Debian 12, and runs
+native `aarch64` seccomp conformance and installer acceptance on `ubuntu-24.04-arm`.
 [Native and published SDK conformance](../../.github/workflows/evals.yml), Rust
 filter/process tests and [evaluation integrity](../../evidence/sandcrab-evaluation-integrity-2026-11-09/summary.json)
 exercise their distinct boundaries. The

@@ -5,8 +5,11 @@ source into `/var/lib/sandcrab-release`. Keep that directory installed because s
 uses its executable. When `/usr/local/bin` is a root-owned directory not writable by
 other accounts, `sandcrab install` also links `/usr/local/bin/sandcrab` to the
 installed binary without altering `/usr/local/bin` ownership or permissions.
-Replaying the same bundle reuses matching protected files. Pass `--upgrade` to the
-release archive (`sudo python3 -I sandcrab-linux-x86_64.zip --upgrade`) or run
+Replaying the same bundle reuses matching protected files, and the ZIP entrypoint
+verifies that the bundled ELF binaries match the host architecture (`x86_64` or
+`aarch64`) before modifying `/var/lib/sandcrab-release`. Pass `--upgrade` to the
+release archive (`sudo python3 -I sandcrab-linux-x86_64.zip --upgrade` or
+`sudo python3 -I sandcrab-linux-aarch64.zip --upgrade`) or run
 `sudo sandcrab upgrade [--dry-run]` from a staged release directory to stop the
 active service, atomically replace managed release and unit files, preserve
 `/etc/sandcrab/config.toml`, `/etc/sandcrab/token` and `/var/lib/sandcrab`, and
