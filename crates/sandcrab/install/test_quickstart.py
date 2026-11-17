@@ -127,6 +127,19 @@ class BundleFiles(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
         self.assertFalse(self.entry.install_files(self.archive, self.release, upgrade=True))
 
+    def test_mismatched_elf_architecture_is_refused_before_installation(self):
+        def elf_header(e_machine):
+            return b'\x7fELF\x02\x01\x01' + b'\x00' * 9 + (2).to_bytes(2, 'little') + e_machine.to_bytes(2, 'little')
+
+        arm_zip = self.stack.enter_context(ZipFile(BytesIO(), 'w'))
+        for name in [*self.entry.FILES, '__main__.py']:
+            content = elf_header(183) if name in ('sandcrab', 'bwrap') else name.encode()
+            arm_zip.writestr(name, content)
+        with self.assertRaisesRegex(RuntimeError, 'targets aarch64, but host architecture is x86_64'):
+            self.entry.install_files(arm_zip, self.release, host_arch='x86_64')
+        self.assertFalse(self.release.exists())
+        self.assertTrue(self.entry.install_files(arm_zip, self.release, host_arch='aarch64'))
+
 
 if __name__ == '__main__':
     unittest.main()

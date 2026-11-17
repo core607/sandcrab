@@ -5,10 +5,12 @@ import sys
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 
-def package(directory, entrypoint):
+def package(directory, entrypoint, arch='x86_64'):
+    if arch not in ('x86_64', 'aarch64'):
+        raise ValueError(f'Unsupported release architecture: {arch}')
     files = ['sandcrab', 'bwrap', 'bwrap-notices.txt', 'bwrap-source.tar.xz', 'LICENSE', 'THREAT-MODEL.md',
              'THIRD-PARTY-NOTICES.txt', 'rust-library-copyright.html']
-    archive = directory / 'sandcrab-linux-x86_64.zip'
+    archive = directory / f'sandcrab-linux-{arch}.zip'
     with ZipFile(archive, 'x') as bundle:
         for path in [entrypoint, *(directory / name for name in files)]:
             entry = ZipInfo(path.name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -21,4 +23,4 @@ def package(directory, entrypoint):
 
 
 if __name__ == '__main__':
-    package(Path(sys.argv[1]), Path(sys.argv[2]))
+    package(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] if len(sys.argv) > 3 else 'x86_64')

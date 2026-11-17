@@ -89,6 +89,7 @@ class Probe:
         self.secret.chmod(0o644)
         user = pwd.getpwnam('nobody')
         self.uid = user.pw_uid
+        read_mounts = [p for p in ('/usr', '/bin', '/lib', '/lib64', '/etc/ld.so.cache') if Path(p).exists()]
         self.config.write_text(f'''[service]
 runtime_root = {json.dumps(str(self.socket.parent))}
 socket = {json.dumps(str(self.socket))}
@@ -103,7 +104,7 @@ max_output_bytes = 1048576
 [profiles.python]
 exec_user = "nobody"
 tools = {json.dumps(str(tools))}
-read_only = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]
+read_only = {json.dumps(read_mounts)}
 memory_bytes = 67108864
 temporary_bytes = 8388608
 temporary_inodes = 1024
@@ -299,7 +300,8 @@ network = "none"
         response = self.wait(request)
         assert response['state'] == 'succeeded', response
         observed = json.loads(response['result']['stdout'])
-        assert len(observed['checks']) == len(set(observed['checks'])) == 64, observed
+        expected_seccomp_checks = 64 if os.uname().machine == 'x86_64' else 62
+        assert len(observed['checks']) == len(set(observed['checks'])) == expected_seccomp_checks, observed
         self.receipt['nativeSeccomp'] = observed
         self.forget(request)
         for name in observed['checks']:

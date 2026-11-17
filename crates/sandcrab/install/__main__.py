@@ -14,6 +14,25 @@ RELEASE = Path('/var/lib/sandcrab-release')
 FILES = {'sandcrab': 0o755, 'bwrap': 0o755, 'bwrap-notices.txt': 0o644, 'bwrap-source.tar.xz': 0o644,
          'LICENSE': 0o644, 'THREAT-MODEL.md': 0o644, 'THIRD-PARTY-NOTICES.txt': 0o644,
          'rust-library-copyright.html': 0o644}
+ELF_MACHINES = {62: 'x86_64', 183: 'aarch64'}
+
+
+def _check_archive_arch(archive, host_arch=None):
+    machine = os.uname().machine if host_arch is None else host_arch
+    for member in ('sandcrab', 'bwrap'):
+        with archive.open(member) as handle:
+            head = handle.read(20)
+        if head.startswith(b'\x7fELF'):
+            if len(head) < 20 or head[5] != 1:
+                raise RuntimeError(f'Invalid ELF header in release member {member}')
+            target_arch = ELF_MACHINES.get(int.from_bytes(head[18:20], 'little'))
+            if target_arch is None:
+                raise RuntimeError(f'Unsupported ELF architecture in release member {member}')
+            if target_arch != machine:
+                raise RuntimeError(
+                    f'Release archive member {member} targets {target_arch}, '
+                    f'but host architecture is {machine}; download sandcrab-linux-{machine}.zip'
+                )
 
 
 def protected_directory(path):
@@ -60,9 +79,10 @@ def _extract_release(archive, release):
     release.chmod(0o755)
 
 
-def install_files(archive, target, *, upgrade=False, before_replace=None):
+def install_files(archive, target, *, upgrade=False, before_replace=None, host_arch=None):
     if sorted(archive.namelist()) != sorted([*FILES, '__main__.py']):
         raise ValueError('The release ZIP must contain Sandcrab, bwrap, notices, source, license and threat model')
+    _check_archive_arch(archive, host_arch=host_arch)
     protected_directory(target.parent)
     parent = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -105,7 +125,7 @@ def main():
     if sys.argv[1:] == ['--upgrade']:
         upgrade = True
     elif sys.argv[1:]:
-        raise SystemExit('Usage: python3 -I sandcrab-linux-x86_64.zip [--upgrade]')
+        raise SystemExit('Usage: python3 -I sandcrab-linux-<arch>.zip [--upgrade]')
     if os.geteuid() != 0:
         raise SystemExit('Run the release installer as root')
     with ZipFile(sys.argv[0]) as archive:

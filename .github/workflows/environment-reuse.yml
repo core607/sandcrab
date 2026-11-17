@@ -34,8 +34,9 @@ jobs:
           helper = (temporary / 'reuse-helper/bwrap').read_bytes()
           for root in [Path.cwd(), temporary / 'sandcrab-reuse-baseline']:
               lock = json.loads((root / 'crates/sandcrab-launch/bwrap/lock.json').read_text())
-              assert hashlib.sha256(helper).hexdigest() == lock['binarySha256']
-              assert len(helper) == lock['binaryBytes']
+              target = lock.get('targets', {}).get('x86_64', lock)
+              assert hashlib.sha256(helper).hexdigest() == target['binarySha256']
+              assert len(helper) == target['binaryBytes']
           PY
           build_binary() {
             docker build --target binary --tag "$1" "$2"

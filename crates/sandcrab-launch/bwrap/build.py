@@ -35,6 +35,11 @@ def main():
         raise SystemExit('Usage: build.sh NEW_ABSOLUTE_OUTPUT_DIRECTORY')
     source = Path(__file__).resolve().parent
     lock = json.loads((source / 'lock.json').read_text())
+    arch = os.uname().machine
+    if arch not in lock['targets']:
+        raise RuntimeError('Unsupported helper target architecture: ' + arch)
+    expected_target = lock['targets'][arch]
+    expected_elf_machine = 'Advanced Micro Devices X86-64' if arch == 'x86_64' else 'AArch64'
     output = Path(sys.argv[1])
     output.mkdir(mode=0o755)
     work = Path('/bwrap-build')
@@ -68,14 +73,16 @@ def main():
     run('strip', 'build/bwrap', cwd=work)
     binary = work / 'build/bwrap'
     version = subprocess.check_output([binary, '--version'], text=True).strip()
+    elf_header = subprocess.check_output(['readelf', '-h', binary], text=True)
     headers = subprocess.check_output(['readelf', '-l', binary], text=True)
     dynamic = subprocess.check_output(['readelf', '-d', binary], text=True)
-    if version != 'bubblewrap ' + lock['version'] or 'INTERP' in headers or 'NEEDED' in dynamic:
-        raise RuntimeError('The bundled helper must have the pinned version and no dynamic loader or dependencies')
+    if (version != 'bubblewrap ' + lock['version'] or expected_elf_machine not in elf_header
+            or 'INTERP' in headers or 'NEEDED' in dynamic):
+        raise RuntimeError('The bundled helper must have the pinned version, architecture and no dynamic loader or dependencies')
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
     size = binary.stat().st_size
-    print(json.dumps({'binarySha256': digest, 'binaryBytes': size}), flush=True)
-    if digest != lock['binarySha256'] or size != lock['binaryBytes']:
+    print(json.dumps({'arch': arch, 'binarySha256': digest, 'binaryBytes': size}), flush=True)
+    if digest != expected_target['binarySha256'] or size != expected_target['binaryBytes']:
         raise RuntimeError('The static helper differs from the reviewed checksum')
     shutil.copyfile(binary, output / 'bwrap')
     (output / 'bwrap').chmod(0o755)

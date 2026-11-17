@@ -27,7 +27,8 @@ jobs:
           from pathlib import Path
           helper = Path('build/classes/bwrap').read_bytes()
           lock = json.loads(Path('crates/sandcrab-launch/bwrap/lock.json').read_text())
-          assert hashlib.sha256(helper).hexdigest() == lock['binarySha256'] and len(helper) == lock['binaryBytes']
+          target = lock.get('targets', {}).get('x86_64', lock)
+          assert hashlib.sha256(helper).hexdigest() == target['binarySha256'] and len(helper) == target['binaryBytes']
           PY
           docker build --target binary --tag "service-classes:$GITHUB_RUN_ID" .
           container=$(docker create "service-classes:$GITHUB_RUN_ID" true)

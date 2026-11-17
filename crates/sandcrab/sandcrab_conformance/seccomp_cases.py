@@ -1,15 +1,42 @@
-"""Run inside a real x86_64 sandbox; emit only independent seccomp observations."""
+"""Run inside a real Linux x86_64 or aarch64 sandbox; emit only independent seccomp observations."""
 import ctypes
 import errno
 import json
 import mmap
 import os
 from pathlib import Path
+import resource
 import signal
 import socket
-import resource
 
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+ARCH = os.uname().machine
+assert ARCH in ('x86_64', 'aarch64'), ARCH
+IS_X86_64 = ARCH == 'x86_64'
+SYS_SOCKET = 41 if IS_X86_64 else 198
+SYS_CLONE = 56 if IS_X86_64 else 220
+SYS_UNSHARE = 272 if IS_X86_64 else 97
+SYS_PERSONALITY = 135 if IS_X86_64 else 92
+SYS_GETPID = 39 if IS_X86_64 else 172
+ADMIN_SYSCALLS = (
+    (
+        ('ptrace', 101), ('pivot-root', 155), ('mount', 165), ('umount2', 166),
+        ('create-module', 174), ('init-module', 175), ('delete-module', 176), ('finit-module', 313),
+        ('kexec-load', 246), ('kexec-file-load', 320), ('add-key', 248), ('request-key', 249), ('keyctl', 250),
+        ('perf-event-open', 298), ('setns', 308), ('bpf', 321), ('userfaultfd', 323),
+    )
+    if IS_X86_64
+    else (
+        ('ptrace', 117), ('pivot-root', 41), ('mount', 40), ('umount2', 39),
+        ('init-module', 105), ('delete-module', 106), ('finit-module', 273),
+        ('kexec-load', 104), ('kexec-file-load', 294), ('add-key', 217), ('request-key', 218), ('keyctl', 219),
+        ('perf-event-open', 241), ('setns', 268), ('bpf', 280), ('userfaultfd', 282),
+    )
+) + (
+    ('open-tree', 428), ('move-mount', 429), ('fsopen', 430), ('fsconfig', 431), ('fsmount', 432),
+    ('fspick', 433), ('mount-setattr', 442), ('statmount', 457), ('listmount', 458), ('open-tree-attr', 467),
+)
 
 libc = ctypes.CDLL(None, use_errno=True)
 libc.syscall.restype = ctypes.c_long
@@ -24,27 +51,20 @@ def syscall(number, *arguments):
 def denied(name, number, *arguments):
     result = syscall(number, *arguments)
     observed = ctypes.get_errno()
-    if number == 41 and result >= 0:
+    if number == SYS_SOCKET and result >= 0:
         os.close(result)
     assert result == -1 and observed == errno.EPERM, (name, result, observed)
     checks.append(name)
 
 
 for domain in (1, 0x100000001, 0xffffffff00000001):
-    denied('socket-af-unix-' + hex(domain), 41, domain, socket.SOCK_STREAM, 0)
+    denied('socket-af-unix-' + hex(domain), SYS_SOCKET, domain, socket.SOCK_STREAM, 0)
 for name, number in (('io-uring-setup', 425), ('io-uring-enter', 426), ('io-uring-register', 427)):
     denied(name, number, 0, 0, 0, 0, 0, 0)
 
 for domain in (40, 0x100000028):
-    denied('socket-af-vsock-' + hex(domain), 41, domain, socket.SOCK_STREAM, 0)
-for name, number in (
-    ('ptrace', 101), ('pivot-root', 155), ('mount', 165), ('umount2', 166),
-    ('create-module', 174), ('init-module', 175), ('delete-module', 176), ('finit-module', 313),
-    ('kexec-load', 246), ('kexec-file-load', 320), ('add-key', 248), ('request-key', 249), ('keyctl', 250),
-    ('perf-event-open', 298), ('setns', 308), ('bpf', 321), ('userfaultfd', 323),
-    ('open-tree', 428), ('move-mount', 429), ('fsopen', 430), ('fsconfig', 431), ('fsmount', 432),
-    ('fspick', 433), ('mount-setattr', 442), ('statmount', 457), ('listmount', 458), ('open-tree-attr', 467),
-):
+    denied('socket-af-vsock-' + hex(domain), SYS_SOCKET, domain, socket.SOCK_STREAM, 0)
+for name, number in ADMIN_SYSCALLS:
     # Invalid descriptors, requests and addresses cannot perform administrative work even if the filter regresses.
     denied(name, number, -1, 0, -1, 0, -1, 0)
 
@@ -52,15 +72,15 @@ namespace_bits = {'time': 0x80, 'mount': 0x20000, 'cgroup': 0x02000000, 'uts': 0
                   'ipc': 0x08000000, 'user': 0x10000000, 'pid': 0x20000000, 'net': 0x40000000}
 for name, bit in namespace_bits.items():
     # CLONE_SIGHAND without CLONE_VM is invalid even in the absence of seccomp.
-    denied('clone-new-' + name, 56, bit | 0x800, 0, 0, 0, 0)
-    denied('unshare-new-' + name, 272, bit)
-denied('clone-empty-mount', 56, (1 << 37) | 0x800, 0, 0, 0, 0)
-denied('unshare-empty-mount', 272, 0x00100000)
+    denied('clone-new-' + name, SYS_CLONE, bit | 0x800, 0, 0, 0, 0)
+    denied('unshare-new-' + name, SYS_UNSHARE, bit)
+denied('clone-empty-mount', SYS_CLONE, (1 << 37) | 0x800, 0, 0, 0, 0)
+denied('unshare-empty-mount', SYS_UNSHARE, 0x00100000)
 assert syscall(435, 0, 0) == -1 and ctypes.get_errno() == errno.ENOSYS
 checks.append('clone3-libc-fallback')
 for value in (8, 0x40000):
-    denied('personality-change-' + hex(value), 135, value)
-assert syscall(135, 0xffffffff) >= 0 and syscall(135, 0) >= 0
+    denied('personality-change-' + hex(value), SYS_PERSONALITY, value)
+assert syscall(SYS_PERSONALITY, 0xffffffff) >= 0 and syscall(SYS_PERSONALITY, 0) >= 0
 checks.append('personality-query-and-default-allowed')
 
 # socketpair supports Python/Node event loops. AF_INET is available inside the isolated network.
@@ -71,7 +91,7 @@ with left, right:
     left.sendall(b'allowed')
     assert right.recv(7) == b'allowed'
 checks.append('unix-socketpair-allowed')
-assert syscall(39) == os.getpid()
+assert syscall(SYS_GETPID) == os.getpid()
 assert syscall(-1) == -1 and ctypes.get_errno() == errno.ENOSYS
 checks.append('native-and-negative-one-syscalls-preserved')
 
@@ -86,15 +106,16 @@ def abi_guard(name, compat=False):
                 pointer = ctypes.addressof(ctypes.c_char.from_buffer(code))
                 ctypes.CFUNCTYPE(ctypes.c_long)(pointer)()
         else:
-            syscall(0x40000000 + 39)
+            syscall(0x40000000 + SYS_GETPID)
         os._exit(2)
     _, status = os.waitpid(child, 0)
     assert os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGSYS, (name, status)
     checks.append(name)
 
 
-abi_guard('x32-abi-killed')
-abi_guard('i386-abi-killed', compat=True)
+abi_guard('x32-abi-killed' if IS_X86_64 else 'high-bit-syscall-killed')
+if IS_X86_64:
+    abi_guard('i386-abi-killed', compat=True)
 visible = []
 for process in Path('/proc').iterdir():
     if not process.name.isdecimal():
