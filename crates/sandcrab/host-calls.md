@@ -22,7 +22,11 @@ The example generates an ephemeral key unless `--key-file FILE` supplies exactly
 bytes. It does not send the key to Sandcrab; keep a supplied key private to the caller
 and outside profile read mounts. Its reply ledger lasts only for that process;
 applications with durable outside effects need persistent idempotency and recovery.
-It cancels a failed command and retains its result for inspection.
+It cancels a failed command and retains its result for inspection. The
+[Python SDK](../../sdk/python/README.md#caller-owned-host-calls) and
+[TypeScript SDK](../../sdk/typescript/README.md#caller-owned-host-calls) package this
+observation, digest verification, ledger deduplication and failure-cancellation loop as
+`HostCallDispatcher`.
 
 ## CLI
 

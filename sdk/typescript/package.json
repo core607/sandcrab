@@ -1,0 +1,28 @@
+{
+  "name": "sandcrab",
+  "version": "0.2.0",
+  "description": "Zero-dependency TypeScript and Node.js client for the Sandcrab Linux sandbox daemon",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "pack:check": "npm pack --dry-run"
+  }
+}

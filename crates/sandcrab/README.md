@@ -1,6 +1,6 @@
 # Native service reference
 
-Sandcrab provides finite commands, persistent bash sessions, files, templates, network profiles and optional host calls through its native API. See the [quickstart](../../README.md#quickstart) and [threat model](../../THREAT-MODEL.md).
+Sandcrab provides finite commands, persistent bash sessions, files, templates, network profiles and optional host calls through its native API, alongside the [Python SDK and stdio MCP server](../../sdk/python/README.md) and [TypeScript SDK](../../sdk/typescript/README.md). See the [quickstart](../../README.md#quickstart) and [threat model](../../THREAT-MODEL.md).
 
 ## Custom installation
 

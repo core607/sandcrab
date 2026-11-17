@@ -2,10 +2,10 @@ name: Rust and benchmark checks
 
 on:
   pull_request:
-    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'sdk/**', 'examples/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
   push:
     branches: [main]
-    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
+    paths: [Cargo.toml, Cargo.lock, Dockerfile, rust-toolchain.toml, 'crates/**', 'sdk/**', 'examples/**', 'benchmarks/density/**', '.github/workflows/ci.yml']
   workflow_call:
 
 permissions:
@@ -18,6 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: docker build --target check .
+      - name: Check Python and TypeScript SDKs
+        run: |
+          cmp LICENSE sdk/python/LICENSE
+          cmp LICENSE sdk/typescript/LICENSE
+          python3 -m venv /tmp/sandcrab-sdk-venv
+          /tmp/sandcrab-sdk-venv/bin/python -m pip install --disable-pip-version-check -r evals/sdk/requirements.txt
+          /tmp/sandcrab-sdk-venv/bin/python -m pip install --disable-pip-version-check --no-deps ./sdk/python
+          /tmp/sandcrab-sdk-venv/bin/python -m unittest discover -s sdk/python/tests -v
+          /tmp/sandcrab-sdk-venv/bin/sandcrab-mcp --help >/dev/null
+          npm --prefix sdk/typescript test
+          npm --prefix sdk/typescript run pack:check
       - name: Test the benchmark protocol and collectors
         run: |
           command -v rg || { sudo apt-get update && sudo apt-get install -y ripgrep; }
