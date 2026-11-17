@@ -105,7 +105,8 @@ jobs:
           printf '+cpu +memory +pids' | sudo tee /sys/fs/cgroup/cgroup.subtree_control >/dev/null
           sudo python3 crates/sandcrab/conformance.py --suite native \
             --binary build/bin/sandcrab --tools /var/lib/sandcrab-arm64-tools \
-            --output "$RUNNER_TEMP/conformance-aarch64"
+            --output "$RUNNER_TEMP/conformance-aarch64" \
+            || { head -n 200 "$RUNNER_TEMP/conformance-aarch64"/*.diagnostic.txt >&2 || true; exit 1; }
           sudo rm -rf /var/lib/sandcrab-arm64-tools
           sudo env SANDCRAB_INSTALL_DISPOSABLE=1 python3 crates/sandcrab/install/probe.py \
             --bundle build/bin --report "$RUNNER_TEMP/readiness-native-aarch64.json"

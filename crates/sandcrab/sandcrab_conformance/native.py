@@ -89,6 +89,7 @@ class Probe:
         self.secret.chmod(0o644)
         user = pwd.getpwnam('nobody')
         self.uid = user.pw_uid
+        read_mounts = [p for p in ('/usr', '/bin', '/lib', '/lib64', '/etc/ld.so.cache') if Path(p).exists()]
         self.config.write_text(f'''[service]
 runtime_root = {json.dumps(str(self.socket.parent))}
 socket = {json.dumps(str(self.socket))}
@@ -103,7 +104,7 @@ max_output_bytes = 1048576
 [profiles.python]
 exec_user = "nobody"
 tools = {json.dumps(str(tools))}
-read_only = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]
+read_only = {json.dumps(read_mounts)}
 memory_bytes = 67108864
 temporary_bytes = 8388608
 temporary_inodes = 1024
