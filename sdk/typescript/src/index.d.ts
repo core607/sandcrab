@@ -166,7 +166,21 @@ export class SandcrabSession {
   [Symbol.asyncDispose](): Promise<void>;
 }
 
+export type WorkspaceToolName = "exec" | "read_file" | "write_file" | "edit_file" | "list_dir" | "search";
+export interface WorkspaceTools {
+  readonly schemas: ReadonlyArray<{ name: WorkspaceToolName; description: string; inputSchema: Record<string, unknown> }>;
+  readonly handlers: Record<WorkspaceToolName, (args: Record<string, unknown>) => Promise<WorkspaceToolResult>>;
+  call(name: WorkspaceToolName, args: Record<string, unknown>): Promise<WorkspaceToolResult>;
+  dispose(): Promise<void>;
+}
+export interface WorkspaceToolResult {
+  ok: boolean;
+  code?: string;
+  [field: string]: unknown;
+}
+
 export class SandcrabClient {
+  workspaceTools(key: string, options?: { profile?: string }): Promise<WorkspaceTools>;
   readonly defaultProfile: string | null;
   readonly timeoutMs: number;
   constructor(options?: SandcrabClientOptions);

@@ -11,6 +11,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("readme", type=Path)
     parser.add_argument("--package", type=Path, help="Install a candidate distribution in place of the registry package")
+    parser.add_argument("--workspace-tools", action="store_true", help="Exercise all bound tools using the installed package")
     args = parser.parse_args()
     text = args.readme.read_text(encoding="utf-8")
     section = text.split("## Run your first session\n", 1)[1].split("\n## ", 1)[0]
@@ -35,6 +36,12 @@ def main():
             subprocess.run(command, cwd=directory, check=True)
         if not installed:
             raise ValueError("The README did not install the SDK")
+        if args.workspace_tools:
+            from workspace_checks import check
+            check(Path(directory), language)
+            if language == "python":
+                check(Path(directory), language, mcp=True)
+            return
         (Path(directory) / filename).write_text(example[1], encoding="utf-8")
         output = subprocess.check_output(shlex.split(run[1]), cwd=directory, text=True)
         if output != "42\n":

@@ -692,6 +692,11 @@ export class SandcrabSession {
 }
 
 export class SandcrabClient {
+  async workspaceTools(key, options) {
+    const { bindWorkspaceTools } = await import("./workspace.js");
+    return bindWorkspaceTools(this, key, options);
+  }
+
   constructor(options = {}) {
     const env = options.env ?? process.env;
     this._conn = resolveConnection({ ...options, env });

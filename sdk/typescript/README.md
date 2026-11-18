@@ -55,6 +55,35 @@ node example.mts
 Projects that type-check with `tsc` also need `typescript` and `@types/node` as
 development dependencies.
 
+## Bind tools to an agent
+
+On a service advertising `workspaces`, authorize the user and choose their
+workspace key in the application. Use the same key to resume its files later.
+
+```ts
+import { SandcrabClient } from "sandcrab";
+
+const client = new SandcrabClient({
+  endpoint: "http://127.0.0.1:9011", tokenFile: "/etc/sandcrab-client/token",
+});
+try {
+  const tools = await client.workspaceTools("example-project");
+  await tools.handlers.write_file({ path: "hello.py", content: "print(42)\n" });
+  const result = await tools.handlers.exec({ command: "python3 hello.py" });
+  console.log(String(result.stdout).trim());
+} finally {
+  client.close();
+}
+```
+
+Register each entry in `tools.schemas` with its async callable in
+`tools.handlers`. The six tools cover commands, reading, writing, exact edits,
+listing and search. Replace the application's host file tools along with its
+shell tool. Pass the version from `read_file` to `edit_file`. On `EDIT_CONFLICT`,
+read again. After `OUTCOME_UNKNOWN`, inspect the affected files before another
+write. `freshShell` accompanies successful commands after reopening. Closing
+the client keeps the files. Call `await tools.dispose()` for permanent deletion.
+
 ## Connection and session lifecycle
 
 Connect over a root-owned Unix domain socket (`socketPath` or `SANDCRAB_SOCKET`) or a
