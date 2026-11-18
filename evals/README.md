@@ -6,6 +6,15 @@ transcript viewer. The application has no dependency on it. Install the pinned
 
 ## Current entrance
 
+Choose `workspace` and `mcp-pair` in **Agent evaluations** to compare the
+session-scoped MCP tools with the six workspace tools. Both use the installed
+MCP handler, fixed programming cases, a single model budget and the same
+independent artifact grader. Session-scoped clients receive their session and
+volume IDs. Both arms get the same export tool. Inspect uses each catalog's
+own descriptions and repeats a parameter name when a description is missing.
+The `comparison` in the CI summary reports paired outcomes, tool traffic, tokens
+and median elapsed time. Raw attempts and workspace artifacts stay with the run.
+
 The **Evaluation preflight** workflow runs ten native API cases and the same six programming
 tasks through both native and published OpenSandbox Python clients, three times each
 (66 attempts). It runs on changes to the runtime or evaluation inputs and can

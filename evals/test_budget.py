@@ -15,7 +15,7 @@ from inspect_ai.model import GenerateConfig, Model, ChatMessageUser
 from budget import BudgetStopped, Ledger, Prices
 from model import BoundedDeepSeek
 from report import summarize
-from sandcrab import sandcrab_native
+from sandcrab_tasks import sandcrab_native
 
 
 class BudgetTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class BudgetTests(unittest.TestCase):
             return httpx.Response(302, headers={'Location': 'https://unapproved.invalid/'}, content=b'fixture-secret')
         def native(endpoint, method, path, body=None):
             return 404, {'error': {'code': 'RUN_NOT_FOUND'}}
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fixture-secret'}), patch('sandcrab.request', side_effect=native):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fixture-secret'}), patch('sandcrab_tasks.request', side_effect=native):
             ledger = Ledger(Path(directory) / 'budget.jsonl', '1', Prices())
             task = sandcrab_native('fixture')
             model = Model(BoundedDeepSeek('deepseek-flash', ledger, httpx.MockTransport(redirect)), task.config)
@@ -132,7 +132,7 @@ class BudgetTests(unittest.TestCase):
             if path == '/v1/info':
                 return 200, {'serverId': 'fixture'}
             return 404, {'error': {'code': 'RUN_NOT_FOUND'}}
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fixture-secret'}), patch('sandcrab.request', side_effect=native):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fixture-secret'}), patch('sandcrab_tasks.request', side_effect=native):
             root = Path(directory)
             ledger = Ledger(root / 'budget.jsonl', '1', Prices())
             task = sandcrab_native('fixture')

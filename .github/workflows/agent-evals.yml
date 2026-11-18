@@ -11,7 +11,7 @@ on:
       workspace_client:
         description: Programming client (ignored for the native-only suite)
         type: choice
-        options: [sdk, native]
+        options: [sdk, native, mcp-pair]
         default: sdk
       model:
         description: Model for the independent Sandcrab tasks

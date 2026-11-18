@@ -38,7 +38,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
     parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
-    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both'], default='native')
+    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both', 'mcp-pair'], default='native')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
@@ -93,7 +93,10 @@ def main():
             # Native lifecycle preflight keeps its short TTL assertions. Model work
             # gets enough lifetime for generation, independent grading and cleanup.
             fixture.config.write_text(fixture.config.read_text().replace('session_ttl_millis = 60000', 'session_ttl_millis = 600000', 1))
-            if args.workspace_client != 'native':
+            if args.workspace_client == 'mcp-pair':
+                # Both arms retain up to one sample's tool receipts for independent cleanup.
+                fixture.config.write_text(fixture.config.read_text().replace('max_records = 8\n', 'max_records = 96\n', 1))
+            if args.workspace_client in ('sdk', 'both'):
                 sdk_args = ['--sdk-config', sdk_configuration(fixture, client)]
             module.call('systemctl', 'restart', fixture.unit)
             fixture.wait_ready()

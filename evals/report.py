@@ -2,6 +2,33 @@
 from collections import defaultdict
 import json
 from pathlib import Path
+from statistics import median
+
+
+def paired_mcp(cases):
+    attempts = {}
+    totals = {}
+    for interface in ('session-mcp', 'workspace-mcp'):
+        prefix = interface + '-'
+        rows = {(name[len(prefix):], row['epoch']): row for name, trials in cases.items()
+                if name.startswith(prefix) for row in trials}
+        attempts[interface] = rows
+        values = list(rows.values())
+        totals[interface] = {
+            'attempts': len(values), 'passed': sum(row['passed'] for row in values),
+            'cleanupFailures': sum(row['cleanup'] != 'PASS' for row in values),
+            'errors': sum(row['error'] is not None for row in values),
+            'medianSeconds': round(median(row['seconds'] for row in values), 3) if values else None,
+            **{field: sum(row[field] or 0 for row in values) for field in
+               ('toolCalls', 'mcpToolCalls', 'apiCalls', 'failedToolCalls', 'inputTokens', 'outputTokens')},
+        }
+    old, new = attempts.values()
+    matches = old.keys() & new.keys()
+    return {'interfaces': totals, 'pairedTrials': len(matches), 'unpairedTrials': len(old.keys() ^ new.keys()),
+            'bothPassed': sum(old[key]['passed'] and new[key]['passed'] for key in matches),
+            'onlySessionPassed': sum(old[key]['passed'] and not new[key]['passed'] for key in matches),
+            'onlyWorkspacePassed': sum(not old[key]['passed'] and new[key]['passed'] for key in matches),
+            'bothFailed': sum(not old[key]['passed'] and not new[key]['passed'] for key in matches)}
 
 
 def summarize(log) -> dict:
@@ -26,6 +53,7 @@ def summarize(log) -> dict:
             'limit': sample.limit.type if sample.limit else None,
             'kind': (sample.metadata or {}).get('kind', 'native'),
             'workspaceClient': workspace.get('workspaceClient', 'native') if workspace else None,
+            'mcpToolCalls': workspace.get('mcpCalls') if workspace else None,
             'apiCalls': len(agent_calls),
             'harnessApiCalls': harness_calls,
             'refusedCalls': sum(o['status'] is not None and o['status'] >= 400 for o in agent_calls),
@@ -52,6 +80,8 @@ def summarize(log) -> dict:
 def write(log, directory: Path, budget: dict | None = None) -> dict:
     result = summarize(log)
     result['budget'] = budget
+    if result['metadata'].get('workspaceInterface') == 'mcp-pair':
+        result['comparison'] = paired_mcp(result['cases'])
     (directory / 'summary.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
     lines = ['# Sandcrab evaluation', '', f"Evidence: **{result['metadata']['evidenceKind']}**. Revision: `{result['revision']}`.",
              f"Model: `{result['model']}`. Corpus: `{result['metadata']['corpusSha256']}`.", '',

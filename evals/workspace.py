@@ -140,7 +140,12 @@ async def prepare(state, endpoint: str, artifacts: str, sdk_config: str | None =
     data = {'observations': store().get('native_observations')}
     directory = Path(artifacts) / str(state.sample_id) / str(state.epoch)
     sdk = state.metadata.get('workspaceClient') == 'sdk'
-    if sdk:
+    interface = state.metadata.get('workspaceClient')
+    mcp = interface in ('session-mcp', 'workspace-mcp')
+    if mcp:
+        from workspace_mcp import McpWorkspace
+        client = McpWorkspace(endpoint, directory, data, interface)
+    elif sdk:
         from workspace_sdk import SdkWorkspace
         config = json.loads(Path(sdk_config).read_text())
         client = SdkWorkspace(endpoint, directory, data, config)
@@ -160,7 +165,13 @@ async def prepare(state, endpoint: str, artifacts: str, sdk_config: str | None =
         'Keep these supplied inputs and tests unchanged: ' + json.dumps(state.metadata['expected']['preserve'], ensure_ascii=False) + '. '
         'Export the finished workspace with workspace_export; a final-answer claim is not a submission. '
         'Re-export after any final source edits.'))
-    state.tools = [workspace_shell(sdk), workspace_write_file(sdk), workspace_restart(sdk), workspace_status(sdk), workspace_export(sdk)]
+    if mcp:
+        if not client.bound:
+            state.messages.append(ChatMessageUser(content=f'Your workspace session_id is {client.session}. '
+                f'Use profile python and volume_id {client.volume} to reopen the same files.'))
+        state.tools = [*client.available_tools(), workspace_export()]
+    else:
+        state.tools = [workspace_shell(sdk), workspace_write_file(sdk), workspace_restart(sdk), workspace_status(sdk), workspace_export(sdk)]
     return state
 
 
@@ -179,6 +190,21 @@ async def scripted(state):
         return value
 
     reference = state.metadata['reference']
+    if state.metadata.get('workspaceClient') in ('session-mcp', 'workspace-mcp'):
+        client = current()
+        common = {} if client.bound else {'session_id': client.session}
+        write = 'write_file' if client.bound else 'sandcrab_write_file'
+        execute = 'exec' if client.bound else 'sandcrab_session_exec'
+        for name, text in reference['files'].items():
+            await invoke(write, {**common, 'path': name, 'content': text, 'parents': True})
+        for command in reference['check']:
+            result = await invoke(execute, {**common, 'command': command})
+            if not (result.get('ok') if client.bound else result.get('state') == 'succeeded'):
+                raise RuntimeError('Scripted MCP workspace command failed')
+        if not (await invoke('workspace_export', {})).get('exported'):
+            raise RuntimeError('Scripted MCP artifact was not exported')
+        state.completed = True
+        return state
     parents = sorted({name.rsplit('/', 1)[0] for name in reference['files'] if '/' in name})
     if parents:
         await invoke('workspace_shell', {'command': 'mkdir -p -- ' + ' '.join(shlex.quote(p) for p in parents)})

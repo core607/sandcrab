@@ -11,7 +11,7 @@ from inspect_ai.model import Model, ModelCost
 from budget import Ledger, Prices
 from model import BoundedDeepSeek
 from report import write
-from sandcrab import sandcrab_native
+from sandcrab_tasks import sandcrab_native
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
     parser.add_argument('--revision', required=True)
     parser.add_argument('--mode', choices=['scripted', 'model'], default='scripted')
     parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
-    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both'], default='native')
+    parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both', 'mcp-pair'], default='native')
     parser.add_argument('--sdk-config')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
     parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
