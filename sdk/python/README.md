@@ -9,7 +9,7 @@ used alongside the published OpenSandbox SDK. It requires Python 3.11+ and `http
 ## Run your first session
 
 Run this example on the Linux host where Sandcrab is installed. Use the application
-account that owns the token from the [service setup](https://github.com/core607/sandcrab#cookbook).
+account that owns the token from the [service setup](https://github.com/core607/sandcrab#connect-an-application).
 In an empty directory, create a virtual environment. Use the PyPI command below
 for a published version. For a version awaiting publication, give pip the
 absolute path to `sdk/python` in the [matching checkout](https://github.com/core607/sandcrab/tree/v0.3.0)

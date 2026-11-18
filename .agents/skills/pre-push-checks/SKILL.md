@@ -13,7 +13,7 @@ Confirm the repository, branch and worktree state, fetch the live base when need
 
 [Rust and benchmark checks](../../../.github/workflows/ci.yml) own the pinned Docker Rust check and collector tests. Run the affected commands without replacing Linux verification with host-only compilation.
 
-- Isolation, lifecycle and native API changes require the real Linux [conformance runner](../../../crates/sandcrab/README.md#verification); unit tests alone do not establish containment.
+- Isolation, lifecycle and native API changes require the real Linux [conformance runner](../../../crates/sandcrab/docs/verification.md); unit tests alone do not establish containment.
 - Published SDK or adapter changes use [evaluation preflight](../../../.github/workflows/evals.yml) and the [SDK contract](../../../evals/sdk/README.md).
 - Installer, packaging or first-use changes use [readiness acceptance](../../../.github/workflows/sandcrab-readiness.yml); release materials and documented commands must be tested together.
 - Benchmark and eval changes verify collector/grader integrity and successful work, keeping scripted and paid-model evidence distinct; [benchmark documentation](../../../benchmarks/density/README.md) owns measurement operation.

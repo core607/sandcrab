@@ -17,7 +17,7 @@ restores those files and restarts a previously active service. The upgrade keeps
 Operators managing their own release directories can run
 `sudo sandcrab upgrade [--dry-run]` to apply the current binary's units and
 restart the service. Review release notes for any 0.x metadata steps under
-[custom installation](../README.md#custom-installation) before upgrading.
+[custom installation](../docs/installation.md) before upgrading.
 
 Source-built ZIPs also install the project's `LICENSE` and `THREAT-MODEL.md` beside
 the executables. Container builds retain the same documents under `/opt/sandcrab`.
@@ -39,7 +39,7 @@ no network. The [default configuration](default.toml) and [slice](sandcrab.slice
 own the limits. Edit `/etc/sandcrab/config.toml` and restart `sandcrab.service`
 to change profiles. Provision a private copy of the token for a non-root client
 account with `sudo sandcrab client-token --user USER --output FILE` (see
-[loopback TCP](../README.md#loopback-tcp)).
+[loopback TCP](../docs/http.md#loopback-tcp)).
 
 `sudo sandcrab doctor [--config FILE]` checks kernel namespaces, the verified
 helper, the delegated cgroup, storage and service discovery. It runs bash and

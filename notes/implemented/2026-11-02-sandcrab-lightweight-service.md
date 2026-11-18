@@ -72,7 +72,7 @@ adding application state or credentials to the daemon.
 Ordinary directories keep non-XFS hosts usable. Periodic accounting can overshoot
 between scans; optional XFS project quotas enforce a different storage contract
 and require ownership of the whole filesystem. These modes cannot substitute for
-each other's capacity evidence. [Storage accounting](../../crates/sandcrab/README.md#storage-accounting)
+each other's capacity evidence. [Storage accounting](../../crates/sandcrab/docs/volumes.md#storage-accounting)
 owns the operating limits.
 
 Templates share immutable file identities with private writable overlays. Including

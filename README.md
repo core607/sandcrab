@@ -1,12 +1,15 @@
 # Sandcrab
 
-Sandcrab is a same-host Linux sandbox service for AI agents, untrusted build/test
-steps and interactive tool sessions. Submit a finite command, or open a persistent
-bash session backed by bounded workspace file operations, volumes and immutable
-overlay templates. Releases ship static `x86_64` and `aarch64` binaries alongside a
-checksum-verified `bubblewrap` helper and compiled seccomp-BPF filters; the host
-needs Linux 5.11+, delegated cgroup v2 and unprivileged user namespaces, with no KVM
-or container daemon required.
+Sandcrab runs commands from AI agents, build and test steps and other
+semi-trusted programs in isolated sandboxes on the same Linux host as your
+application.
+
+Your application talks to a local service over a Unix socket or a loopback port.
+It can run a single command, or open a persistent bash session with bounded file
+operations, durable volumes and reusable templates. The host needs Linux 5.11+,
+delegated cgroup v2 and unprivileged user namespaces. Neither KVM nor a container
+daemon is required. Releases ship static `x86_64` and `aarch64` binaries alongside
+a checksum-verified `bubblewrap` helper and compiled seccomp-BPF filters.
 
 ```mermaid
 flowchart LR
@@ -18,7 +21,23 @@ flowchart LR
     Daemon -- "Verified Helper + DNS-Allowlisted Proxy" --> Sandbox
 ```
 
-## When to choose Sandcrab
+## When Sandcrab fits
+
+Sandcrab fits when one Linux server must run code that an application or agent
+chose, with bounded files, processes, network destinations and resources, and
+without KVM, Kubernetes or a container runtime.
+
+It does not fit when:
+
+- workloads come from mutually hostile tenants or must be protected from kernel
+  vulnerabilities, because sandboxes share the host kernel
+  ([threat model](THREAT-MODEL.md));
+- execution must spread across a cluster, because Sandcrab manages one host;
+- the service must run natively on macOS or Windows; see
+  [developer hosts](crates/sandcrab/docs/developer-hosts.md) for development
+  setups on those systems.
+
+The table compares designs; it does not report measurements.
 
 | Capability | Raw `bwrap` / subprocess | Docker Engine | MicroVM (Firecracker / Kata) | Sandcrab |
 |---|---|---|---|---|
@@ -29,8 +48,7 @@ flowchart LR
 | Egress & secret isolation | Host network or full netns | Bridge / iptables rules | Virtual NIC + tap | Exact-domain CONNECT/SOCKS5 allowlist + caller-owned [host calls](crates/sandcrab/host-calls.md) |
 
 See the [provider decision](notes/implemented/2026-11-02-sandcrab-lightweight-service.md)
-for runtime and measurement trade-offs, and the [threat model](THREAT-MODEL.md) for
-shared-kernel trust boundaries.
+for runtime and measurement trade-offs.
 
 ## Quickstart
 
@@ -53,9 +71,9 @@ local service, `/usr/local/bin/sandcrab` symlink (when `/usr/local/bin` is prote
 and private token. The [installation guide](crates/sandcrab/install/README.md) covers
 `doctor`, `upgrade`, `uninstall` and the [container quickstart](crates/sandcrab/install/README.md#standalone-container).
 
-## Cookbook
+<a id="cookbook"></a>
 
-### 1. Grant a non-root service account client access
+## Connect an application
 
 As an administrator, provision a private `0600` token for the application account.
 Replace `app` with the existing Linux account that will run the SDK.
@@ -75,8 +93,6 @@ export SANDCRAB_PROFILE=default
 sandcrab run --timeout 30s --memory 64Mi -- python3 -c 'print("hello")'
 ```
 
-### 2. Drive sessions from Python, TypeScript or an MCP agent
-
 From an empty project on the service host, follow the
 [Python quickstart](sdk/python/README.md#run-your-first-session) or
 [TypeScript quickstart](sdk/typescript/README.md#run-your-first-session).
@@ -84,6 +100,8 @@ Both examples install the SDK, execute a Python file in a session, print `42`
 and clean up. The service also supports published Python and Kotlin
 [OpenSandbox clients](crates/sandcrab/opensandbox.md) ([Python](examples/sandcrab-sdk.py),
 [Kotlin](examples/sandcrab-sdk.main.kts)).
+
+## Give an agent a sandbox
 
 To expose bounded sandbox execution and workspace file tools to an MCP host over
 stdio (`sandcrab-mcp` from the Python SDK, or
@@ -93,7 +111,11 @@ stdio (`sandcrab-mcp` from the Python SDK, or
 sandcrab-mcp --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile default
 ```
 
-### 3. Import a `.tar.gz` or container rootfs as an immutable template
+An application that already gives its model shell and file tools must move all of
+them into Sandcrab. A file tool that keeps reading or writing host paths bypasses
+the sandbox even when its shell tool runs inside one.
+
+## Templates
 
 Import a small workspace with the default profile. The CLI streams plain tar or
 decompresses `.tar.gz` and `.tgz` before sending the archive.
@@ -108,12 +130,12 @@ sandcrab template import --profile default ./workspace.tar.gz
 Pass the returned 64-hex `id` to `session open --template ID`. To use a container
 filesystem, import its exported tar under a profile whose `transfer_bytes` covers
 the unpacked archive, then open the template with `--rootfs`. The
-[rootfs requirements](crates/sandcrab/README.md#templates) describe its shell and mount layout.
+[rootfs requirements](crates/sandcrab/docs/templates.md) describe its shell and mount layout.
 The [Python template extension](sdk/python/README.md)
 also captures validated sessions into reusable checkpoints and composes multi-layer
 recipes.
 
-### 4. Allowlist package-index egress and keep secrets on the host
+## Network and secrets
 
 Permit exact DNS destinations in `/etc/sandcrab/config.toml` while keeping signing
 keys and API credentials in the caller process via [host calls](crates/sandcrab/host-calls.md):
@@ -137,16 +159,27 @@ host_calls = true
 
 Inside the sandbox, `sandcrab call -` sends opaque request bytes to your caller's
 `HostCallDispatcher` (see [examples/sandcrab-host-calls.py](examples/sandcrab-host-calls.py)),
-so private keys never enter read mounts, environment variables or checkpoints. See the
-[native reference](crates/sandcrab/README.md) and [OpenAPI](crates/sandcrab/openapi.json),
-plus [build-test](examples/sandcrab-build-test.sh) and [batch](examples/sandcrab-batch.py)
-CLI examples:
+so private keys never enter read mounts, environment variables or checkpoints.
+The [build-test](examples/sandcrab-build-test.sh) and [batch](examples/sandcrab-batch.py)
+examples drive the CLI:
 
 ```sh
 curl --fail --unix-socket /var/lib/sandcrab/runtime/control.sock http://localhost/v1/info
 bash examples/sandcrab-build-test.sh
 python3 examples/sandcrab-batch.py first.py second.py
 ```
+
+## Reference
+
+| Topic | Page |
+|---|---|
+| Native API, CLI and configuration | [Native service reference](crates/sandcrab/README.md) and its topic pages |
+| HTTP contract | [OpenAPI](crates/sandcrab/openapi.json) |
+| Installation, upgrades and containers | [Installation guide](crates/sandcrab/install/README.md) |
+| Development on macOS or Windows | [Developer hosts](crates/sandcrab/docs/developer-hosts.md) |
+| SDKs | [Python](sdk/python/README.md), [TypeScript](sdk/typescript/README.md) |
+| OpenSandbox clients | [OpenSandbox adapter](crates/sandcrab/opensandbox.md) |
+| Trust and isolation boundaries | [Threat model](THREAT-MODEL.md) |
 
 ## Build and test
 
@@ -161,7 +194,7 @@ python3 crates/sandcrab/conformance.py --list
 
 The release contains the executables, installer ZIP (`sandcrab-linux-x86_64.zip` or
 `sandcrab-linux-aarch64.zip`), SHA-256 manifest, project license, threat model and the
-helper's notices and source. The [conformance runner](crates/sandcrab/README.md#verification)
+helper's notices and source. The [conformance runner](crates/sandcrab/docs/verification.md)
 exercises real Linux sandboxes. [Inspect evals](evals/README.md) test agent use of the API.
 The [density benchmark](benchmarks/density/README.md) measures a reproducible workload.
 

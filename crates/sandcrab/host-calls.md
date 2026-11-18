@@ -48,9 +48,9 @@ sandcrab calls list --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
 `CALL_ID` is the daemon-generated `id` in a call event, distinct from the guest's
 `requestId`. Guest-selected IDs cannot select a reply handle in a later command.
 `reply` also accepts `-` for stdin. These commands support the documented
-[TCP endpoint and token options](README.md#loopback-tcp).
+[TCP endpoint and token options](docs/http.md#loopback-tcp).
 
-Use the CLI's [result-retention option](README.md#cli) when another observer or
+Use the CLI's [result-retention option](docs/cli.md) when another observer or
 caller still needs the result. Forget the run after both observations and caller
 reconciliation finish.
 
@@ -70,7 +70,7 @@ cursor identifies the command incarnation and position. Validate these against
 the retained run reference before handling requests; one call stream carries the
 identity needed for that check. `call` events carry request bytes in `base64`, and
 `result` confirms command completion and closure of its host-call mailbox; the
-[command lifecycle](README.md#command-events) determines whether background
+[command lifecycle](docs/commands.md#command-events) determines whether background
 processes remain alive. An `error`, heartbeat or EOF does not prove completion.
 Request IDs, payloads and digests do not authorize an outside action.
 
@@ -90,7 +90,7 @@ acknowledgement. Malformed guest frames or excess calls fail the command. Output
 and host-call streams share observer admission and observation deadlines. A host-call
 frame is at most 131072 bytes and can span multiple HTTP chunks; only the host-call
 reply route accepts a JSON body up to that bound. Other request limits remain in the
-[native HTTP contract](README.md#http).
+[native HTTP contract](docs/http.md#http).
 
 ## Outcomes and recovery
 

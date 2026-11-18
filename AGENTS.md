@@ -17,7 +17,7 @@ The [provider decision](notes/implemented/2026-11-02-sandcrab-lightweight-servic
 | Home | Authority |
 |---|---|
 | [README.md](README.md) | First use and navigation |
-| Crate, SDK, evaluation and benchmark READMEs | Current API, configuration, operating limits and commands |
+| Crate, SDK, evaluation and benchmark READMEs; [service topic pages](crates/sandcrab/docs/) | Current API, configuration, operating limits and commands; the [native service reference](crates/sandcrab/README.md) indexes the topic pages |
 | [THREAT-MODEL.md](THREAT-MODEL.md) | Trust, authority and isolation boundaries |
 | `notes/` | Lasting rationale, alternatives and consequences |
 | This file | Repository rules and skill inventory |
@@ -44,7 +44,7 @@ The [pre-push workflow](.agents/skills/pre-push-checks/SKILL.md) selects evidenc
 | `docker build --target check .` | Pinned Linux Rust formatting, Clippy and locked tests |
 | `python3 -m unittest discover -s benchmarks/density -p 'test_*.py' -v` | Benchmark protocol and collector tests |
 
-- Run affected checks; real isolation changes need [native conformance](crates/sandcrab/README.md#verification), and SDK or installation changes need their owning acceptance workflows.
+- Run affected checks; real isolation changes need [native conformance](crates/sandcrab/docs/verification.md), and SDK or installation changes need their owning acceptance workflows.
 - Never replace a required check with an invented equivalent; report unavailable evidence and stop only the delivery that depends on it.
 - Run complete density measurements only at the [L2, L7 and L9 checkpoints](benchmarks/density/README.md#native-measurement); use affected checks otherwise, commit aggregate summaries, retain raw and failed attempts in CI artifacts, and track missed targets without repeated tuning in one PR.
 - Work on short-lived branches with conventional commits, push through PRs, address blocking review findings and verify checks on the exact head before merging; never push directly to `main`.

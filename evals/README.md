@@ -232,7 +232,7 @@ python -m venv .gradle/eval-python
 Windows uses `.gradle/eval-python/Scripts/python.exe`. Offline checks exercise
 the real Inspect engine's failure retention and the scorer's rejection paths.
 They do not prove Linux containment. On a disposable Linux host meeting the
-[native requirements](../crates/sandcrab/README.md), build with
+[native requirements](../crates/sandcrab/docs/installation.md), build with
 `docker build --target release --output type=local,dest=build/bin .`, prepare the tools, then run:
 
 ```sh

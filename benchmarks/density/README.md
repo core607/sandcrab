@@ -135,7 +135,7 @@ provides separate serial consumer observations; this experiment measures an
 explicit concurrent workload before choosing controls for it.
 
 The [comparison summary](../../evidence/sandcrab-service-classes-2026-11-09/summary.json)
-selects optional [operator profile weights](../../crates/sandcrab/README.md).
+selects optional [operator profile weights](../../crates/sandcrab/docs/http.md#http).
 Weights alone meet every threshold in both repetitions. Separate startup bounds
 provide no demonstrated additional benefit; the execution-bound condition exceeds
 the caller-wait threshold. The default weight remains 100, with no new queue or
