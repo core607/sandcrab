@@ -139,11 +139,9 @@ impl Service {
                     return match store.forget(&id, Some(&expected.generation)) {
                         Ok(()) => {
                             shells.remove(key);
-                            self.registry
-                                .lock()
-                                .unwrap()
-                                .workspace_windows
-                                .remove(&expected.generation);
+                            let mut registry = self.registry.lock().unwrap();
+                            registry.workspace_windows.remove(&expected.generation);
+                            registry.forget_workspace_sessions(&expected.generation);
                             (200, json!({"forgotten":true}))
                         }
                         Err(e) => error(e.status, e.code),
