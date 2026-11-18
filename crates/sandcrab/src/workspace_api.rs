@@ -103,6 +103,7 @@ impl Service {
                 inode_limit: None,
                 workspace_key: Some(key.into()),
                 template_id: create.template_id,
+                temporary: false,
             };
             let (status, reply) = self.begin_volume(store, plan, true);
             return if status < 300 {

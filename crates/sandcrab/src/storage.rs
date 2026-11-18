@@ -52,6 +52,8 @@ pub struct Plan {
     pub workspace_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template_id: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) temporary: bool,
 }
 impl Plan {
     fn digest(&self) -> String {
@@ -60,10 +62,10 @@ impl Plan {
     fn valid(&self) -> bool {
         uuid(&self.id)
             && name(&self.profile)
-            && self
-                .template_id
-                .as_deref()
-                .is_none_or(|id| self.workspace_key.is_some() && crate::file_io::digest(id))
+            && self.template_id.as_deref().is_none_or(|id| {
+                (self.workspace_key.is_some() || self.temporary) && crate::file_io::digest(id)
+            })
+            && (!self.temporary || (self.workspace_key.is_none() && self.clone_from.is_none()))
             && self.workspace_key.as_ref().is_none_or(|key| {
                 self.clone_from.is_none()
                     && crate::workspace_api::storage_id(key).as_ref() == Some(&self.id)
@@ -91,7 +93,26 @@ pub struct Record {
     pub operation: String,
 }
 impl Record {
+    fn check_profile(&self, profile: &Profile) -> Result<()> {
+        if self.uid != profile.uid || self.gid != profile.gid {
+            return Err(fault(409, "VOLUME_PROFILE_MISMATCH"));
+        }
+        if profile.hard_workspace_quota
+            && (self.bytes > profile.temporary_bytes || self.inodes > profile.temporary_inodes)
+        {
+            return Err(fault(409, "VOLUME_LIMIT"));
+        }
+        Ok(())
+    }
+
     fn check_workspace(&self, generation: Option<&str>) -> Result<()> {
+        if self.plan.temporary {
+            return if generation == Some(self.operation.as_str()) {
+                Ok(())
+            } else {
+                Err(fault(404, "VOLUME_NOT_FOUND"))
+            };
+        }
         match (&self.plan.workspace_key, generation) {
             (None, None) => Ok(()),
             (Some(_), Some(id)) if self.operation == id => Ok(()),
@@ -512,15 +533,19 @@ impl Store {
         let record = state
             .records
             .get(id)
+            .filter(|record| !record.plan.temporary)
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
         Ok(state.value(record))
     }
     pub fn list(&self, after: &str) -> Value {
         let state = self.state.lock().unwrap();
-        let mut rows = state.records.range((
-            std::ops::Bound::Excluded(after.to_string()),
-            std::ops::Bound::Unbounded,
-        ));
+        let mut rows = state
+            .records
+            .range((
+                std::ops::Bound::Excluded(after.to_string()),
+                std::ops::Bound::Unbounded,
+            ))
+            .filter(|(_, record)| !record.plan.temporary);
         let page: Vec<_> = rows
             .by_ref()
             .take(100)
@@ -762,9 +787,7 @@ impl Store {
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
         }
-        if record.uid != profile.uid || record.gid != profile.gid {
-            return Err(fault(409, "VOLUME_PROFILE_MISMATCH"));
-        }
+        record.check_profile(profile)?;
         if record.bytes > self.config.max_volume_bytes
             || record.inodes > self.config.max_volume_inodes
         {
@@ -793,9 +816,7 @@ impl Store {
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
         }
-        if record.uid != profile.uid || record.gid != profile.gid {
-            return Err(fault(409, "VOLUME_PROFILE_MISMATCH"));
-        }
+        record.check_profile(profile)?;
         if record.bytes > self.config.max_volume_bytes
             || record.inodes > self.config.max_volume_inodes
         {
@@ -840,7 +861,11 @@ impl Store {
         if !self.quota_enforced {
             return Ok(());
         }
-        for path in [&path, &data_path] {
+        let mut project_dirs = vec![path.clone(), data_path];
+        if record.plan.template_id.is_some() {
+            project_dirs.extend([path.join("upper"), path.join("work")]);
+        }
+        for path in project_dirs {
             let attributes = call(&[
                 "/usr/sbin/xfs_io".into(),
                 "-r".into(),
@@ -1014,6 +1039,16 @@ impl Store {
             .cloned()
             .collect();
         for mut record in records {
+            if record.plan.temporary {
+                self.remove_data(&record.plan.id)?;
+                record.state = "deleted".into();
+                record.action = "delete".into();
+                self.publish(&mut self.state.lock().unwrap(), record.clone())
+                    .map_err(|_| invalid("Temporary project recovery could not commit"))?;
+                self.forget(&record.plan.id, Some(&record.operation))
+                    .map_err(|_| invalid("Temporary project retirement could not commit"))?;
+                continue;
+            }
             if ["creating", "deleting", "closing"].contains(&record.state.as_str()) {
                 self.remove_data(&record.plan.id)?;
                 record.state = if record.action == "delete" {
@@ -1199,6 +1234,7 @@ mod tests {
                     clone_from: None,
                     workspace_key: None,
                     template_id: None,
+                    temporary: false,
                     byte_limit: None,
                     inode_limit: None,
                 },

@@ -43,6 +43,7 @@ read_only = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]
 memory_bytes = 134217728
 temporary_bytes = 16777216
 temporary_inodes = 4096
+# hard_workspace_quota = true  # Requires the verified XFS pool in docs/volumes.md.
 tasks_max = 64
 cpu_quota_percent = 50
 timeout_millis = 30000

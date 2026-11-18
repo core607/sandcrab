@@ -53,6 +53,7 @@ mod template_client;
 mod template_io;
 mod template_layers;
 mod templates;
+mod temporary_volumes;
 mod transport;
 mod usage;
 mod volumes;
@@ -671,6 +672,7 @@ fn volume(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32
             clone_from: options.get("--clone-from").map(|s| s.to_string()),
             workspace_key: None,
             template_id: None,
+            temporary: false,
             byte_limit,
             inode_limit,
         };

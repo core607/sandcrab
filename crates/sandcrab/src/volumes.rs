@@ -55,7 +55,7 @@ impl Service {
             let Ok(plan) = serde_json::from_value::<Plan>(value) else {
                 return error(400, "INVALID_REQUEST");
             };
-            if plan.workspace_key.is_some() {
+            if plan.workspace_key.is_some() || plan.temporary {
                 return error(400, "INVALID_REQUEST");
             }
             return self.begin_volume(store, plan, server == self.id);
