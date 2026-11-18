@@ -1,0 +1,2 @@
+opensandbox-cli==1.2.1
+opensandbox==1.2.1

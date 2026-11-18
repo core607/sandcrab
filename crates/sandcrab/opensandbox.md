@@ -7,6 +7,13 @@ It targets the published OpenSandbox 1.1.0 Python and Kotlin SDKs. The
 [independent SDK clients](../../evals/sdk/README.md) exercise both against
 the native daemon, including named shell contexts.
 
+The [CLI check](../../evals/sdk/opensandbox_cli.py) exercises `osb` 1.2.1 with
+the published Python SDK 1.2.1. It covers `sandbox create`, filtered `list`,
+`get`, `health`, `kill`, `command run`, `file write` and `file cat`. Configure
+`OPEN_SANDBOX_DOMAIN=127.0.0.1:9011`, `OPEN_SANDBOX_PROTOCOL=http` and
+`OPEN_SANDBOX_API_KEY` with the client token. On a fresh installation, create
+with `osb sandbox create --image default --timeout 60s --resource cpu=0.25 --resource memory=32Mi -o json`.
+
 ## Connection and ownership
 
 Configure the SDK with `protocol="http"`, the literal loopback `host:port` and
