@@ -28,11 +28,15 @@ This is an unimplemented design. The default profile keeps `network = "none"`.
   `files.pythonhosted.org` and `registry.npmjs.org`. Applications select it
   explicitly per sandbox or workspace.
 - **Capacity defaults.** The installer derives sandbox, volume and storage-pool
-  limits from host memory and free disk, within ceilings it documents, instead of
+  limits from effective memory (including cgroup limits) and available space on
+  the chosen storage filesystem, within documented ceilings, instead of
   fixed counts of eight.
 - **Socket discovery.** When no flag or environment variable selects a transport,
   the CLI uses the installed socket path if it exists and passes the existing
-  root-owned socket and peer checks. Otherwise it keeps today's error.
+  root-owned socket and peer checks. Otherwise it keeps today's error. Commands
+  selecting a profile use the explicit flag, then `SANDCRAB_PROFILE`, then the
+  literal installed profile name `default`. A custom installation missing that
+  name reports the unknown profile and allows the caller to select another.
 - **Container layouts.** The installation guide documents and tests two layouts:
   an application container sharing the socket through a volume with a matching
   client UID, and an egress-enabled variant whose network lets the daemon's proxy
@@ -44,7 +48,7 @@ This is an unimplemented design. The default profile keeps `network = "none"`.
 Acceptance criteria:
 
 - On a fresh install, `sandcrab run -- python3 -c 'print(6 * 7)'` succeeds as
-  root without connection flags.
+  root without connection or profile flags or environment variables.
 - `pip install` succeeds under the package profile, and destinations outside the
   allowlist are refused.
 - Both container layouts pass in CI.

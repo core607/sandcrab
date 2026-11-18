@@ -27,12 +27,15 @@ mechanisms:
 
 - a fixed-size filesystem image per workspace, mounted through a loop device;
 - a size-limited tmpfs for ephemeral workspaces, charged to the sandbox's memory;
-- XFS project quotas extended to the runtime directory when it is already on XFS.
+- XFS project quotas on a dedicated, Sandcrab-owned filesystem with enforced
+  project accounting and non-colliding project IDs.
 
 Acceptance criteria:
 
 - Under hard backing, the issue 11 reproduction fails with a disk-full error at the
   limit.
+- Exhaustion of the inode allowance also prevents new files. Validation measures
+  bytes and inodes separately.
 - The default path behaves as it does today.
 - Fixed costs and setup latency of each backing are measured.
 

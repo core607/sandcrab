@@ -28,16 +28,20 @@ workspace:
 | Tool | Behavior |
 |---|---|
 | `exec` | Run a shell command with a bounded timeout |
-| `read_file` | Read a byte or line range |
+| `read_file` | Read all or part of a file and return the version of that snapshot |
 | `write_file` | Create or replace a file |
 | `edit_file` | Replace exact text, guarded by the file digest the model last read |
 | `list_dir` | List a bounded tree |
 | `search` | Search names or contents with bounded results |
 
 Each tool ships a JSON schema, an async handler and a bounded text result with an
-explicit truncation marker. Failures use structured codes for timeout, refusal,
-edit conflict and fresh shell. An edit whose expected digest no longer matches
-returns a conflict rather than overwriting concurrent changes.
+explicit truncation marker. Failures distinguish refusal before execution, timeout,
+unknown execution outcome and edit conflict. `freshShell` is execution metadata,
+including when a command succeeds. Reopening a workspace does not replay a command.
+The workspace read returns a digest of the complete frozen version, including
+for a range when the complete digest fits the read budget. A read without a
+version is ineligible for a conditional edit. The handler passes the expected
+digest to the daemon, which compares it and publishes the edit atomically.
 
 The application authorizes its user and binds the tool set to a workspace key
 before the model sees any tool. The model never sees or chooses keys, session IDs
@@ -52,7 +56,10 @@ Acceptance criteria:
 - An application replaces host command and file tools with a few dozen lines of
   SDK calls.
 - Python and TypeScript return identical result shapes and error codes.
-- Concurrent edits are detected rather than lost.
+- Two edits from the same version yield one success and one conflict. A change
+  made by a shell command after a partial read also produces a conflict.
+- A successful append after idle reopen returns success with `freshShell` and
+  appends once.
 
 Remaining design questions: result size limits and binary content handling; whether
 search runs a tool inside the sandbox or a daemon helper; and whether thin adapters
@@ -75,7 +82,8 @@ other.
 ## Consequences
 
 The SDK surface grows and the tool contract becomes something that must change
-consistently across languages. The daemon needs nothing beyond the workspace API.
+consistently across languages. File versioning and conditional writes belong to
+the native workspace API so independently connected clients share the guarantee.
 Applications still own user authorization, credentials and effects outside the
 sandbox.
 
