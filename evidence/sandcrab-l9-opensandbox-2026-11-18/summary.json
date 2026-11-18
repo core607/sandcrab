@@ -1,0 +1,812 @@
+{
+  "schema": 1,
+  "checkpoint": "L9",
+  "smoke": false,
+  "trials": [
+    {
+      "order": [
+        "sandcrab",
+        "opensandbox"
+      ],
+      "backends": {
+        "sandcrab": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 3033088,
+              "guestPssBytes": 26893312,
+              "chargedBytes": 40079360,
+              "commandMs": {
+                "count": 12,
+                "p50": 31.295,
+                "p95": 41.747
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1754112,
+              "guestPssBytes": 30876672,
+              "chargedBytes": 54325248,
+              "commandMs": {
+                "count": 48,
+                "p50": 31.146,
+                "p95": 33.269
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1534208,
+              "guestPssBytes": 36133888,
+              "chargedBytes": 73699328,
+              "commandMs": {
+                "count": 96,
+                "p50": 31.253,
+                "p95": 33.766
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1400832,
+              "guestPssBytes": 46273536,
+              "chargedBytes": 112521216,
+              "commandMs": {
+                "count": 192,
+                "p50": 34.51,
+                "p95": 60.592
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": false,
+              "idlePssPerSandboxBytes": 1357455,
+              "guestPssBytes": 57796608,
+              "chargedBytes": 157376512,
+              "commandMs": {
+                "count": 192,
+                "p50": 34.163,
+                "p95": 62.942
+              },
+              "errors": 9,
+              "oomKills": 0
+            }
+          ],
+          "largestPassingStage": 16,
+          "stop": "validated operation, latency or memory target missed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 480.243,
+          "idleGuestPssBytes": 23860224,
+          "baseGuestPssBytes": 19886080,
+          "idleRuntimePssBytes": 3974144,
+          "idleCgroupBytes": 34762752,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 25,
+            "p50": 510.46,
+            "p95": 511.002
+          },
+          "createAndFirstCommandMs": {
+            "count": 25,
+            "p50": 578.597,
+            "p95": 579.257
+          },
+          "commandRoundTripMs": {
+            "count": 540,
+            "p50": 32.334,
+            "p95": 58.699
+          }
+        },
+        "opensandbox": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 41077760,
+              "guestPssBytes": 355939328,
+              "chargedBytes": 970723328,
+              "commandMs": {
+                "count": 12,
+                "p50": 205.376,
+                "p95": 212.01
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 32441344,
+              "guestPssBytes": 444626944,
+              "chargedBytes": 1130663936,
+              "commandMs": {
+                "count": 48,
+                "p50": 206.631,
+                "p95": 211.987
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31368832,
+              "guestPssBytes": 565812224,
+              "chargedBytes": 1346068480,
+              "commandMs": {
+                "count": 96,
+                "p50": 206.806,
+                "p95": 217.621
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 30815680,
+              "guestPssBytes": 807912448,
+              "chargedBytes": 1778659328,
+              "commandMs": {
+                "count": 192,
+                "p50": 207.658,
+                "p95": 233.469
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31162613,
+              "guestPssBytes": 1093926912,
+              "chargedBytes": 2280599552,
+              "commandMs": {
+                "count": 300,
+                "p50": 207.495,
+                "p95": 245.308
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 50,
+              "ready": 50,
+              "passed": true,
+              "idlePssPerSandboxBytes": 30793175,
+              "guestPssBytes": 1854520320,
+              "chargedBytes": 3636027392,
+              "commandMs": {
+                "count": 600,
+                "p50": 207.392,
+                "p95": 324.193
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 100,
+              "ready": 100,
+              "passed": false,
+              "idlePssPerSandboxBytes": 28269178,
+              "guestPssBytes": 3141779456,
+              "chargedBytes": 3975036928,
+              "failure": "Cgroup reached the fixed measurement reserve"
+            }
+          ],
+          "largestPassingStage": 50,
+          "stop": "stage failed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 13539.456,
+          "idleGuestPssBytes": 314861568,
+          "baseGuestPssBytes": 19855360,
+          "idleRuntimePssBytes": 295006208,
+          "idleCgroupBytes": 919375872,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 100,
+            "p50": 416.475,
+            "p95": 896.457
+          },
+          "createAndFirstCommandMs": {
+            "count": 100,
+            "p50": 668.338,
+            "p95": 1124.668
+          },
+          "commandRoundTripMs": {
+            "count": 1248,
+            "p50": 207.369,
+            "p95": 259.547
+          }
+        }
+      }
+    },
+    {
+      "order": [
+        "opensandbox",
+        "sandcrab"
+      ],
+      "backends": {
+        "opensandbox": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 42882048,
+              "guestPssBytes": 356829184,
+              "chargedBytes": 964792320,
+              "commandMs": {
+                "count": 12,
+                "p50": 204.34,
+                "p95": 210.673
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 33068288,
+              "guestPssBytes": 446220288,
+              "chargedBytes": 1123995648,
+              "commandMs": {
+                "count": 48,
+                "p50": 205.9,
+                "p95": 211.811
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31818368,
+              "guestPssBytes": 568494080,
+              "chargedBytes": 1340256256,
+              "commandMs": {
+                "count": 96,
+                "p50": 207.397,
+                "p95": 217.048
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31087936,
+              "guestPssBytes": 811354112,
+              "chargedBytes": 1771413504,
+              "commandMs": {
+                "count": 192,
+                "p50": 206.823,
+                "p95": 233.36
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31154012,
+              "guestPssBytes": 1092797440,
+              "chargedBytes": 2262900736,
+              "commandMs": {
+                "count": 300,
+                "p50": 207.071,
+                "p95": 250.52
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 50,
+              "ready": 50,
+              "passed": true,
+              "idlePssPerSandboxBytes": 30834524,
+              "guestPssBytes": 1855673344,
+              "chargedBytes": 3609784320,
+              "commandMs": {
+                "count": 600,
+                "p50": 207.198,
+                "p95": 309.478
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 100,
+              "ready": 100,
+              "passed": false,
+              "idlePssPerSandboxBytes": 28359905,
+              "guestPssBytes": 3149937664,
+              "chargedBytes": 3973431296,
+              "failure": "Cgroup reached the fixed measurement reserve"
+            }
+          ],
+          "largestPassingStage": 50,
+          "stop": "stage failed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 13275.316,
+          "idleGuestPssBytes": 313947136,
+          "baseGuestPssBytes": 20539392,
+          "idleRuntimePssBytes": 293407744,
+          "idleCgroupBytes": 910831616,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 100,
+            "p50": 397.842,
+            "p95": 898.596
+          },
+          "createAndFirstCommandMs": {
+            "count": 100,
+            "p50": 635.617,
+            "p95": 1126.018
+          },
+          "commandRoundTripMs": {
+            "count": 1248,
+            "p50": 207.051,
+            "p95": 260.724
+          }
+        },
+        "sandcrab": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 2931712,
+              "guestPssBytes": 28142592,
+              "chargedBytes": 40886272,
+              "commandMs": {
+                "count": 12,
+                "p50": 31.16,
+                "p95": 32.099
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1743104,
+              "guestPssBytes": 32183296,
+              "chargedBytes": 55177216,
+              "commandMs": {
+                "count": 48,
+                "p50": 31.177,
+                "p95": 32.264
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1524992,
+              "guestPssBytes": 37410816,
+              "chargedBytes": 73838592,
+              "commandMs": {
+                "count": 96,
+                "p50": 31.169,
+                "p95": 33.395
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1396224,
+              "guestPssBytes": 47550464,
+              "chargedBytes": 111316992,
+              "commandMs": {
+                "count": 192,
+                "p50": 32.717,
+                "p95": 55.687
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": false,
+              "idlePssPerSandboxBytes": 1354014,
+              "guestPssBytes": 59061248,
+              "chargedBytes": 152899584,
+              "commandMs": {
+                "count": 192,
+                "p50": 33.545,
+                "p95": 57.399
+              },
+              "errors": 9,
+              "oomKills": 0
+            }
+          ],
+          "largestPassingStage": 16,
+          "stop": "validated operation, latency or memory target missed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 489.081,
+          "idleGuestPssBytes": 25210880,
+          "baseGuestPssBytes": 21240832,
+          "idleRuntimePssBytes": 3970048,
+          "idleCgroupBytes": 36302848,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 25,
+            "p50": 509.455,
+            "p95": 510.159
+          },
+          "createAndFirstCommandMs": {
+            "count": 25,
+            "p50": 577.052,
+            "p95": 577.948
+          },
+          "commandRoundTripMs": {
+            "count": 540,
+            "p50": 31.792,
+            "p95": 55.415
+          }
+        }
+      }
+    },
+    {
+      "order": [
+        "sandcrab",
+        "opensandbox"
+      ],
+      "backends": {
+        "sandcrab": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 2894848,
+              "guestPssBytes": 28163072,
+              "chargedBytes": 41304064,
+              "commandMs": {
+                "count": 12,
+                "p50": 31.22,
+                "p95": 31.743
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1734400,
+              "guestPssBytes": 32205824,
+              "chargedBytes": 55119872,
+              "commandMs": {
+                "count": 48,
+                "p50": 31.187,
+                "p95": 32.618
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1520128,
+              "guestPssBytes": 37429248,
+              "chargedBytes": 73977856,
+              "commandMs": {
+                "count": 96,
+                "p50": 31.207,
+                "p95": 34.907
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 1392128,
+              "guestPssBytes": 47542272,
+              "chargedBytes": 110772224,
+              "commandMs": {
+                "count": 192,
+                "p50": 33.577,
+                "p95": 53.95
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": false,
+              "idlePssPerSandboxBytes": 1351802,
+              "guestPssBytes": 59063296,
+              "chargedBytes": 152006656,
+              "commandMs": {
+                "count": 192,
+                "p50": 34.226,
+                "p95": 62.811
+              },
+              "errors": 9,
+              "oomKills": 0
+            }
+          ],
+          "largestPassingStage": 16,
+          "stop": "validated operation, latency or memory target missed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 484.866,
+          "idleGuestPssBytes": 25268224,
+          "baseGuestPssBytes": 21228544,
+          "idleRuntimePssBytes": 4039680,
+          "idleCgroupBytes": 36163584,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 25,
+            "p50": 509.755,
+            "p95": 511.002
+          },
+          "createAndFirstCommandMs": {
+            "count": 25,
+            "p50": 577.745,
+            "p95": 579.11
+          },
+          "commandRoundTripMs": {
+            "count": 540,
+            "p50": 32.056,
+            "p95": 55.714
+          }
+        },
+        "opensandbox": {
+          "environment": {
+            "kernel": "7.0.0-1014-aws",
+            "architecture": "x86_64",
+            "kvm": {
+              "open": true
+            },
+            "memoryMax": "3999997952",
+            "swapMax": "0",
+            "cpuMax": "200000 100000",
+            "pidsMax": "4096"
+          },
+          "stages": [
+            {
+              "requested": 1,
+              "ready": 1,
+              "passed": true,
+              "idlePssPerSandboxBytes": 42074112,
+              "guestPssBytes": 353201152,
+              "chargedBytes": 961409024,
+              "commandMs": {
+                "count": 12,
+                "p50": 204.371,
+                "p95": 210.44
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 4,
+              "ready": 4,
+              "passed": true,
+              "idlePssPerSandboxBytes": 32507392,
+              "guestPssBytes": 441156608,
+              "chargedBytes": 1118863360,
+              "commandMs": {
+                "count": 48,
+                "p50": 206.111,
+                "p95": 211.92
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 8,
+              "ready": 8,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31833472,
+              "guestPssBytes": 565794816,
+              "chargedBytes": 1337315328,
+              "commandMs": {
+                "count": 96,
+                "p50": 205.301,
+                "p95": 217.516
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 16,
+              "ready": 16,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31053952,
+              "guestPssBytes": 807990272,
+              "chargedBytes": 1765703680,
+              "commandMs": {
+                "count": 192,
+                "p50": 207.148,
+                "p95": 226.297
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 25,
+              "ready": 25,
+              "passed": true,
+              "idlePssPerSandboxBytes": 31261941,
+              "guestPssBytes": 1092675584,
+              "chargedBytes": 2261213184,
+              "commandMs": {
+                "count": 300,
+                "p50": 206.91,
+                "p95": 243.88
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 50,
+              "ready": 50,
+              "passed": true,
+              "idlePssPerSandboxBytes": 30929305,
+              "guestPssBytes": 1857592320,
+              "chargedBytes": 3611222016,
+              "commandMs": {
+                "count": 600,
+                "p50": 207.132,
+                "p95": 279.743
+              },
+              "errors": 0,
+              "oomKills": 0
+            },
+            {
+              "requested": 100,
+              "ready": 100,
+              "passed": false,
+              "idlePssPerSandboxBytes": 28427294,
+              "guestPssBytes": 3153856512,
+              "chargedBytes": 3975405568,
+              "failure": "Cgroup reached the fixed measurement reserve"
+            }
+          ],
+          "largestPassingStage": 50,
+          "stop": "stage failed",
+          "sdk": "1.2.1",
+          "installToFirstCommandMs": 13243.741,
+          "idleGuestPssBytes": 311127040,
+          "baseGuestPssBytes": 21286912,
+          "idleRuntimePssBytes": 289840128,
+          "idleCgroupBytes": 908218368,
+          "seedFiles": 256,
+          "commandsPerSandbox": 12,
+          "seedDigest": "dbd21dc3bf3ded222237c4244b23013b9240cf9c5165a7f2ee8a3022bb88389a",
+          "createMs": {
+            "count": 100,
+            "p50": 392.274,
+            "p95": 881.497
+          },
+          "createAndFirstCommandMs": {
+            "count": 100,
+            "p50": 632.332,
+            "p95": 1109.443
+          },
+          "commandRoundTripMs": {
+            "count": 1248,
+            "p50": 206.75,
+            "p95": 241.503
+          }
+        }
+      }
+    }
+  ],
+  "revision": "30cf37f6dea9bc80ec446e0575be60ac3e213b11",
+  "bundleSha256": "7d77842f40c0356fa2865f30f7313087d18614dfe8ed5433289dac0d88698648",
+  "imagesTarSha256": "e38d1ddd8a1d87a448a3c05d1cbc0b0126c9f946980a6bc5f32e2f2f09eeaa1e",
+  "sdkImage": "sha256:7d97fc2b46764266e1517ae56bbaf671a9a04b1bb512dd056c062f452748d5c3",
+  "machineImage": "sha256:2b7ef274b8fd735ed5c68b32e425991629aa1daebd32ac4a5ad27a73e991faa5",
+  "budgetBytes": 4000000000,
+  "cpuLimit": 2,
+  "upstreamServer": "1.2.1",
+  "passed": true,
+  "largestPassingStage": {
+    "sandcrab": 16,
+    "opensandbox": 50
+  }
+}

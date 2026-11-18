@@ -178,7 +178,7 @@ python3 examples/sandcrab-batch.py first.py second.py
 | Installation, upgrades and containers | [Installation guide](crates/sandcrab/install/README.md) |
 | Development on macOS or Windows | [Developer hosts](crates/sandcrab/docs/developer-hosts.md) |
 | SDKs | [Python](sdk/python/README.md), [TypeScript](sdk/typescript/README.md) |
-| OpenSandbox clients | [OpenSandbox adapter](crates/sandcrab/opensandbox.md) |
+| OpenSandbox clients | [OpenSandbox adapter](crates/sandcrab/opensandbox.md) and [same-host Docker comparison](benchmarks/density/opensandbox/README.md#l9-measurement) |
 | Trust and isolation boundaries | [Threat model](THREAT-MODEL.md) |
 
 ## Build and test
