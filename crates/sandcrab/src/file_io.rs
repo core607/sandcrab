@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, Write},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -49,6 +49,8 @@ pub struct Job {
     pub entry_limit: usize,
     pub multipart: Option<String>,
     pub selection: Option<crate::sdk_download::Selection>,
+    #[serde(default)]
+    pub version_selection: bool,
 }
 
 /// Names remain case-sensitive and are not Unicode-normalized. A tar root marker
@@ -119,7 +121,7 @@ pub(crate) fn new_file(parent: &File, name: &str) -> io::Result<File> {
         Mode::from_raw_mode(0o600),
     )?))
 }
-fn copy_hash(
+pub(crate) fn copy_hash(
     input: &mut impl Read,
     output: &mut impl Write,
     limit: u64,
@@ -637,6 +639,7 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
         hash: Sha256::new(),
     };
     let mut source_bytes = None;
+    let mut file_version = None;
     if job.action == "difference" {
         let upper = directory(&crate::diff::upper(&job.stage)?)?;
         let root = match child_dir(&upper, "data") {
@@ -652,6 +655,10 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
         let before = file.metadata()?;
         source_bytes = Some(before.len());
         if let Some(selection) = &job.selection {
+            if job.version_selection && before.len() <= job.byte_limit {
+                file_version = Some(copy_hash(&mut file, &mut io::sink(), job.byte_limit)?.1);
+                file.rewind()?;
+            }
             selection.copy(&mut file, &mut output, job.byte_limit)?;
         } else {
             copy_hash(&mut file, &mut output, job.byte_limit)?;
@@ -677,7 +684,7 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
         None
     };
     Ok(
-        serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize()),"sourceBytes":source_bytes,"templateId":template_id}),
+        serde_json::json!({"bytes":output.bytes,"sha256":format!("{:x}",output.hash.finalize()),"sourceBytes":source_bytes,"fileSha256":file_version,"templateId":template_id}),
     )
 }
 
@@ -836,6 +843,8 @@ pub fn error_code(error: &io::Error) -> &'static str {
         "FILE_ENTRY_LIMIT" => "FILE_ENTRY_LIMIT",
         "CONTENT_MISMATCH" => "CONTENT_MISMATCH",
         "FILE_CHANGED" => "FILE_CHANGED",
+        "EDIT_CONFLICT" => "EDIT_CONFLICT",
+        "EDIT_MATCH_COUNT" => "EDIT_MATCH_COUNT",
         "UNSUPPORTED_ARCHIVE_ENTRY" => "UNSUPPORTED_ARCHIVE_ENTRY",
         "UNSUPPORTED_FILE_TYPE" => "UNSUPPORTED_FILE_TYPE",
         "UNSUPPORTED_OVERLAY_METADATA" => "UNSUPPORTED_OVERLAY_METADATA",

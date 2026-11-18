@@ -85,6 +85,15 @@ pub fn document(capability: Option<&str>) -> Value {
                         && !path.contains("/calls")
                 }
         });
+    for item in document["paths"].as_object_mut().unwrap().values_mut() {
+        for operation in item.as_object_mut().unwrap().values_mut() {
+            if let Some(fields) = operation.as_object_mut()
+                && fields.contains_key("summary")
+            {
+                fields.remove("description");
+            }
+        }
+    }
     let source = document["components"].take();
     // Security requirements name schemes without a $ref; every view keeps them.
     document["components"] = json!({"securitySchemes": source["securitySchemes"]});

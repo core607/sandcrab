@@ -35,11 +35,13 @@ pub struct Move {
     pub dest: String,
 }
 #[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Replace {
     pub path: String,
     pub old: String,
     pub new: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_sha256: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -165,6 +167,7 @@ impl Request {
                         path,
                         old: value.old,
                         new: value.new,
+                        expected_sha256: None,
                     })
                     .collect();
                 Self::Replace {
@@ -237,6 +240,13 @@ impl Request {
                 if entries.iter().any(|e| e.old.is_empty()) {
                     return Err((400, "EMPTY_REPLACEMENT_PATTERN"));
                 }
+                if entries
+                    .iter()
+                    .filter_map(|e| e.expected_sha256.as_deref())
+                    .any(|s| !crate::file_io::digest(s))
+                {
+                    return Err((400, "INVALID_FILE_VERSION"));
+                }
                 distinct(
                     &entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>(),
                     false,
@@ -285,6 +295,8 @@ fn error(value: &io::Error, mutation_started: bool) -> (u16, &'static str) {
         "GLOB_LIMIT" => (400, "GLOB_LIMIT"),
         "UNSUPPORTED_GLOB_NEGATION" => (400, "UNSUPPORTED_GLOB_NEGATION"),
         "FILE_NOT_FOUND" => (404, "FILE_NOT_FOUND"),
+        "EDIT_CONFLICT" => (409, "EDIT_CONFLICT"),
+        "EDIT_MATCH_COUNT" => (409, "EDIT_MATCH_COUNT"),
         "FILE_ENTRY_LIMIT" | "FILE_METADATA_LIMIT" => (413, "FILE_METADATA_LIMIT"),
         "FILE_LIMIT" => (413, "FILE_LIMIT"),
         "INVALID_FILE_MODE" => (400, "INVALID_FILE_MODE"),

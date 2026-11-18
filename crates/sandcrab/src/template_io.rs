@@ -253,6 +253,7 @@ mod tests {
             entry_limit: 8,
             multipart: None,
             selection: None,
+            version_selection: false,
         };
         let mut archive = tar::Builder::new(File::create(root.join("content")).unwrap());
         for (name, bytes) in [("z", b"same"), ("a", b"same")] {

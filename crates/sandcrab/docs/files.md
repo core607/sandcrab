@@ -39,7 +39,7 @@ concurrent commands can change the destination. A lost reply or `PUBLICATION_UNK
 requires destination inspection before another write. This route retains no upload ID.
 
 `GET /v1/sessions/ID/files?path=PATH` (CLI `files read`, defaulting destination to
-`-` stdout) reads a workspace regular file from a private frozen snapshot, emitting
+`-` stdout) streams a private snapshot of a workspace regular file, emitting
 `X-Sandcrab-Server-Id` and a quoted SHA-256 `ETag` on full reads. Supplying `Range`
 (`bytes=START-END`, `bytes=START-` or `bytes=-SUFFIX`, CLI `--bytes RANGE`) returns
 HTTP 206 with `Content-Range` and `Accept-Ranges: bytes`; empty files, zero suffixes
@@ -50,6 +50,21 @@ multiple byte ranges and combined byte/line selections are refused. Partial read
 omit `ETag`, bound selected and scanned bytes by `transfer_bytes`, and do not form
 a multi-request transaction. Local file destinations on `files read` verify length
 (and full-file `ETag`) and require `--replace` for an existing regular file.
+
+For a subsequent edit, send `X-Sandcrab-Read-Version: sha256` with the GET.
+Sandcrab freezes guest writers while capturing the requested bytes and the
+whole-file digest. The response carries that digest in `X-Sandcrab-File-Sha256`,
+including on byte and line selections. A selection from a file larger than
+`transfer_bytes` returns its content without a digest.
+
+`POST /v1/sessions/ID/files/edit` accepts a relative `path`, the
+`expectedSha256` from the read, literal `old` text and its `new` replacement.
+The helper checks the version, replaces exactly one occurrence and preserves
+permissions while guest writers are frozen. A stale digest returns HTTP 409
+`EDIT_CONFLICT`. Zero or multiple matches return HTTP 409 `EDIT_MATCH_COUNT`.
+Both leave the file untouched. An overlapping file operation can return
+`SESSION_FILES_BUSY`; retry that refusal with the original digest. If the
+reply is lost, inspect the file before another edit.
 
 `POST /v1/sessions/ID/files/mkdir`, `GET /v1/sessions/ID/files/list` (`path`, default
 `.`; `depth` 0..64, default 1) and `GET /v1/sessions/ID/files/search` (`pattern` up
@@ -91,6 +106,7 @@ available during storage overage.
 | `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace`, `parents` and `mode` |
 | `DELETE /v1/sessions/ID/files?path=PATH` | Remove a file, or a directory tree with `recursive=true` |
 | `POST /v1/sessions/ID/files/mkdir` | Ensure `path` and missing relative parents with optional `mode` |
+| `POST /v1/sessions/ID/files/edit` | Replace one exact match guarded by the whole-file digest |
 | `GET /v1/sessions/ID/files/list` | List workspace entries under `path` (default `.`) up to `depth` (0..64, default 1) |
 | `GET /v1/sessions/ID/files/search` | Search non-directory basenames under `path` matching glob `pattern` |
 | `POST /v1/uploads` | Register `id`, `serverId`, `sessionId`, `path`, `format` (`raw` or `tar`), `bytes`, `sha256`, optional `replace`, `parents`, `mode`, `keepResult`; returns 201 |

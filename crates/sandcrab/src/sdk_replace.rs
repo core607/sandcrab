@@ -7,7 +7,7 @@ use crate::{
 };
 use rustix::fs::{AtFlags, unlinkat};
 use serde_json::{Value, json};
-use std::io::{self, BufWriter, Read, Write};
+use std::io::{self, BufWriter, Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 
 struct Bounded<W> {
@@ -92,6 +92,13 @@ pub fn stage(job: &Job, replacements: &[Replace]) -> io::Result<(Value, bool)> {
         let path = crate::sdk_file_io::path(&request.path, false)?;
         let (parent, name) = file_io::parent(&root, &path, false)?;
         let mut input = file_io::regular(&parent, &name)?;
+        if let Some(expected) = &request.expected_sha256 {
+            let (_, digest) = file_io::copy_hash(&mut input, &mut io::sink(), job.byte_limit)?;
+            if digest != *expected {
+                return Err(invalid("EDIT_CONFLICT"));
+            }
+            input.rewind()?;
+        }
         let mode = input.metadata()?.permissions().mode() & 0o7777;
         if mode > 0o777 {
             return Err(invalid("INVALID_FILE_MODE"));
@@ -110,6 +117,9 @@ pub fn stage(job: &Job, replacements: &[Replace]) -> io::Result<(Value, bool)> {
             request.new.as_bytes(),
             job.byte_limit - input_bytes,
         )?;
+        if request.expected_sha256.is_some() && count != 1 {
+            return Err(invalid("EDIT_MATCH_COUNT"));
+        }
         input_bytes += read;
         output_bytes += writer.written;
         drop(writer);

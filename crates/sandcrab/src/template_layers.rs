@@ -140,6 +140,7 @@ mod tests {
             entry_limit: 32,
             multipart: None,
             selection: None,
+            version_selection: false,
         };
         let mut archive = tar::Builder::new(File::create(stage.join("content")).unwrap());
         for (name, value) in [

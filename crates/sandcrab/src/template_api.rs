@@ -121,6 +121,7 @@ impl Service {
                 entry_limit: crate::templates::ENTRY_LIMIT,
                 multipart: None,
                 selection: None,
+                version_selection: false,
             };
             let (result, ended) = self.pipe_file(&job, profile, &cancelled, body, deadline);
             contained = ended;

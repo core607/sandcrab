@@ -629,6 +629,7 @@ mod tests {
             entry_limit: 8,
             multipart: None,
             selection: None,
+            version_selection: false,
         };
         let tree = crate::template_io::identify(&path, &job).unwrap();
         (stage, tree)

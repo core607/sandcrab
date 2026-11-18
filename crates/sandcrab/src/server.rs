@@ -379,7 +379,12 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
                     true,
                 );
             }
-            let snapshot = match service.read_file(id, query, head.header("range")) {
+            let snapshot = match service.read_file(
+                id,
+                query,
+                head.header("range"),
+                head.header("x-sandcrab-read-version"),
+            ) {
                 Ok(snapshot) => snapshot,
                 Err((status, code)) => {
                     return json_reply(stream, status, &error(status, code).1, true);
@@ -479,6 +484,7 @@ fn send_snapshot(
     rangeable: bool,
 ) -> io::Result<()> {
     let bytes = snapshot.bytes;
+    let file_version = snapshot.file_version.take();
     let etag = format!("\"{}\"", snapshot.sha256);
     let template_id = snapshot.template_id.clone();
     let profile = snapshot.lease.access.profile_name.clone();
@@ -506,6 +512,9 @@ fn send_snapshot(
     let mut headers = Vec::new();
     if !sdk {
         headers.push(("X-Sandcrab-Server-Id", service.id.as_str()));
+        if let Some(version) = &file_version {
+            headers.push(("X-Sandcrab-File-Sha256", version.as_str()));
+        }
         if let Some(id) = &template_id {
             headers.push(("X-Sandcrab-Template-Id", id.as_str()));
             headers.push(("X-Sandcrab-Profile", profile.as_str()));
