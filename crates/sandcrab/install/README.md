@@ -9,11 +9,14 @@ Replaying the same bundle reuses matching protected files, and the ZIP entrypoin
 verifies that the bundled ELF binaries match the host architecture (`x86_64` or
 `aarch64`) before modifying `/var/lib/sandcrab-release`. Pass `--upgrade` to the
 release archive (`sudo python3 -I sandcrab-linux-x86_64.zip --upgrade` or
-`sudo python3 -I sandcrab-linux-aarch64.zip --upgrade`) or run
-`sudo sandcrab upgrade [--dry-run]` from a staged release directory to stop the
-active service, atomically replace managed release and unit files, preserve
-`/etc/sandcrab/config.toml`, `/etc/sandcrab/token` and `/var/lib/sandcrab`, and
-restart `sandcrab.service`. Review release notes for any 0.x metadata steps under
+`sudo python3 -I sandcrab-linux-aarch64.zip --upgrade`). The archive checks the
+candidate before stopping the service and keeps the previous release and managed
+files until authenticated service discovery succeeds. If activation fails, it
+restores those files and restarts a previously active service. The upgrade keeps
+`/etc/sandcrab/config.toml`, `/etc/sandcrab/token` and `/var/lib/sandcrab`.
+Operators managing their own release directories can run
+`sudo sandcrab upgrade [--dry-run]` to apply the current binary's units and
+restart the service. Review release notes for any 0.x metadata steps under
 [custom installation](../README.md#custom-installation) before upgrading.
 
 Source-built ZIPs also install the project's `LICENSE` and `THREAT-MODEL.md` beside

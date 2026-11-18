@@ -410,14 +410,16 @@ sandcrab run --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/
 ```
 
 `client-token` validates `--config` (default `/etc/sandcrab/config.toml`), refuses
-root and configured sandbox execution accounts or groups, checks ancestor directory
-ownership and mount disjointness, and writes an atomic `0600` copy owned by `--user`
-(`--replace` rotates an existing regular file). `--token-file` may appear anywhere
-before `--`, and `SANDCRAB_TOKEN_FILE` supplies the client path when the flag is absent.
+root and configured sandbox execution accounts or groups, and writes an atomic
+`0600` copy owned by `--user` outside configured mounts. Provision the copy in a
+root-owned directory the client can traverse. Only root may write that directory or
+any of its ancestors. Use `--replace` to rotate an existing regular file.
+`--token-file` may appear anywhere before `--`. `SANDCRAB_TOKEN_FILE` supplies the
+client path when the flag is absent.
 `--endpoint` and `SANDCRAB_ENDPOINT` accept `http://LOOPBACK:PORT` or `LOOPBACK:PORT`.
-The client copy and every directory above it must belong to root or that client;
-the file has no group/other permissions and directories are not writable by other
-accounts. Symlinks, hard-linked files and parent traversal are refused. Credentials
+When reading an existing copy, the client accepts ownership by root or that client
+for the file and its ancestors. The file must have mode `0400` or `0600`,
+and other accounts must lack write access to the directories. Symlinks, hard-linked files and parent traversal are refused. Credentials
 are read once per command and sent only to a literal loopback TCP endpoint; there
 is no transport fallback or automatic request replay.
 

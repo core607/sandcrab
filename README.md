@@ -35,13 +35,13 @@ shared-kernel trust boundaries.
 ## Quickstart
 
 On Ubuntu 22.04, Ubuntu 24.04 or Debian 12, run these three commands from a root
-shell on the systemd host. They download [v0.2.0](https://github.com/core607/sandcrab/releases/tag/v0.2.0),
+shell on the systemd host. They download [v0.3.0](https://github.com/core607/sandcrab/releases/tag/v0.3.0),
 install the service and execute Python. A private mirror can supply an authorized
 asset URL through `SANDCRAB_BUNDLE_URL`.
 
 <!-- sandcrab-quickstart -->
 ```sh
-curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "${SANDCRAB_BUNDLE_URL:-https://github.com/core607/sandcrab/releases/download/v0.2.0/sandcrab-linux-x86_64.zip}"
+curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "${SANDCRAB_BUNDLE_URL:-https://github.com/core607/sandcrab/releases/download/v0.3.0/sandcrab-linux-x86_64.zip}"
 python3 -I sandcrab-linux-x86_64.zip
 /var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
 ```
@@ -57,14 +57,18 @@ and private token. The [installation guide](crates/sandcrab/install/README.md) c
 
 ### 1. Grant a non-root service account client access
 
-Provision a private `0400` token copy owned by your application user without sharing
-root access to `/etc/sandcrab/token`, then set connection defaults via environment
-variables:
+As an administrator, provision a private `0600` token for the application account.
 
 ```sh
-sudo sandcrab client-token --user app --output /etc/app/sandcrab.token
+sudo install -d -o root -g root -m 0711 /etc/sandcrab-client
+sudo sandcrab client-token --user app --output /etc/sandcrab-client/token
+```
+
+In the application's shell, set the connection defaults and run a command.
+
+```sh
 export SANDCRAB_ENDPOINT=http://127.0.0.1:9011
-export SANDCRAB_TOKEN_FILE=/etc/app/sandcrab.token
+export SANDCRAB_TOKEN_FILE=/etc/sandcrab-client/token
 export SANDCRAB_PROFILE=default
 
 sandcrab run --timeout 30s --memory 64Mi -- python3 -c 'print("hello")'
@@ -103,21 +107,26 @@ stdio (`sandcrab-mcp` after `pip install ./sdk/python`, or
 [examples/sandcrab-mcp.py](examples/sandcrab-mcp.py)):
 
 ```sh
-sandcrab-mcp --endpoint http://127.0.0.1:9011 --token-file /etc/app/sandcrab.token --profile default
+sandcrab-mcp --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile default
 ```
 
 ### 3. Import a `.tar.gz` or container rootfs as an immutable template
 
-Export a container filesystem or workspace directory and import it directly (`.tar`,
-`.tar.gz` or `.tgz` is decompressed client-side before streaming to the daemon):
+Import a small workspace with the default profile. The CLI streams plain tar or
+decompresses `.tar.gz` and `.tgz` before sending the archive.
 
+<!-- sandcrab-template-example -->
 ```sh
-docker export "$(docker create python:3.12-slim)" | gzip -1 > python-rootfs.tar.gz
-sandcrab template import --profile default --rootfs ./python-rootfs.tar.gz
+printf 'print(6 * 7)\n' > app.py
+tar -czf workspace.tar.gz app.py
+sandcrab template import --profile default ./workspace.tar.gz
 ```
 
-Pass the returned 64-hex `id` to `session open --template ID --rootfs` (or
-`DEFAULT@sha256:ID` in OpenSandbox). The [Python template extension](sdk/python/README.md)
+Pass the returned 64-hex `id` to `session open --template ID`. To use a container
+filesystem, import its exported tar under a profile whose `transfer_bytes` covers
+the unpacked archive, then open the template with `--rootfs`. The
+[rootfs requirements](crates/sandcrab/README.md#templates) describe its shell and mount layout.
+The [Python template extension](sdk/python/README.md)
 also captures validated sessions into reusable checkpoints and composes multi-layer
 recipes.
 

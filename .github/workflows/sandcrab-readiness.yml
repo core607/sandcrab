@@ -118,6 +118,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  upgrade:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c1c64a875d1fc6a0a # v8.0.1
+        with:
+          name: ${{ needs.build.outputs.release_archive }}
+          path: build/bin
+      - name: Upgrade the published v0.2.0 on a fresh systemd host
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.2.0 --repo core607/sandcrab -p sandcrab-linux-x86_64.zip -O "$RUNNER_TEMP/previous.zip"
+          echo "1ca7158973b7b16113a9ea056232cca5930cec6b3cd7bd8bfffee7cff6bfeb56  $RUNNER_TEMP/previous.zip" | sha256sum -c -
+          sudo env SANDCRAB_INSTALL_DISPOSABLE=1 python3 crates/sandcrab/install/probe_upgrade.py \
+            "$RUNNER_TEMP/previous.zip" build/bin/sandcrab-linux-x86_64.zip
+
   quickstart:
     name: quickstart (${{ matrix.os }})
     needs: build

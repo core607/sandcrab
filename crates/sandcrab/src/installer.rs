@@ -639,14 +639,9 @@ pub fn client_token(args: &[String]) -> io::Result<()> {
     let parent = output
         .parent()
         .ok_or_else(|| invalid("Token output needs a parent directory"))?;
-    for directory in parent.ancestors() {
-        let info = fs::symlink_metadata(directory)?;
-        if !info.is_dir() || ![0, uid].contains(&info.uid()) || info.mode() & 0o022 != 0 {
-            return Err(invalid(
-                "Token output ancestors must be nonsymlink directories owned by root or the client and not writable by other accounts",
-            ));
-        }
-    }
+    protected_directory(parent).map_err(|_| {
+        invalid("Token output needs root-owned ancestor directories writable only by root")
+    })?;
     let file_name = output
         .file_name()
         .ok_or_else(|| invalid("Token output needs a file name"))?;
