@@ -112,8 +112,8 @@ Native conformance covers idle reopen with a short idle window, restart, ordered
 concurrent submissions, queue overflow, volume exhaustion, retained reservations
 after failed cleanup, host calls, shared-key reopening, distinct keys, conflicting
 profiles and bases, and replay after a lost reply. Python and TypeScript SDKs exercise the same
-cases. The density benchmark confirms that an idle workspace keeps no resident
-processes and measures reopen latency against a plain session open. Poketto's
-adoption runs through the consumer-triggered downstream release check after the
-provider implementation. The consumer PR identifies the lifecycle code it deletes
-and verifies the normal template-backed execution path.
+cases. The native workspace fixture verifies that the expired session's workload
+cgroup is gone and times a keyed reopen and a raw session open through their
+first completed command. [The Poketto change](https://github.com/core607/poketto/pull/423)
+exercises the normal template-backed path against a candidate archive. Final
+acceptance requires the protected consumer verifier against its published release pin.
