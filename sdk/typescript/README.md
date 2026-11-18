@@ -20,7 +20,7 @@ checkout to `npm install`.
 
 ```sh
 npm init -y
-npm install --save-exact sandcrab@0.3.1
+npm install --save-exact sandcrab@0.4.0
 ```
 
 Save this as `example.mts`.
