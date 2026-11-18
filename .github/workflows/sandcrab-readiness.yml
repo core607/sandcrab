@@ -192,6 +192,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: maven
+          cache-dependency-path: examples/sandcrab-sdk.main.kts
       - name: Run the published Python and Kotlin SDK examples as an ordinary client
         if: matrix.os == 'ubuntu-24.04'
         run: |
