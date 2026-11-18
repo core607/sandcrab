@@ -10,7 +10,10 @@ built-in `node:*` modules.
 Use Node.js 24+ to run the TypeScript example directly. On the Linux host where
 Sandcrab is installed, use the application account that owns the token from the
 [service setup](https://github.com/core607/sandcrab#cookbook). In an empty
-directory, initialize a project and install the SDK from npm.
+directory, initialize a project. Use the npm command below for a published
+version. For a version awaiting publication, give npm the absolute path to
+`sdk/typescript` in the [matching checkout](https://github.com/core607/sandcrab/tree/v0.3.0)
+in place of `sandcrab@0.3.0`.
 
 ```sh
 npm init -y
