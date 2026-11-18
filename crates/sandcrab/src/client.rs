@@ -100,17 +100,41 @@ impl Client {
             .map(serde_json::to_vec)
             .transpose()?
             .unwrap_or_default();
+        let mut headers = Vec::new();
         write!(
-            stream,
+            headers,
             "{method} {path} HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n",
             body.len()
         )?;
-        self.socket.headers(&mut stream)?;
-        stream.write_all(b"\r\n")?;
-        stream.write_all(&body)?;
-        let (head, mut body) = sandcrab_core::http::response(&mut stream).map_err(|_| {
-            invalid("Invalid or incomplete HTTP response; inspect the existing ID before retrying")
-        })?;
+        self.socket.headers(&mut headers)?;
+        headers.extend_from_slice(b"\r\n");
+        let sent = stream
+            .write_all(&headers)
+            .and_then(|()| stream.write_all(&body));
+        // A Unix peer can return its rejection before reading the first request byte.
+        let write_error = match sent {
+            Ok(()) => None,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset
+                ) =>
+            {
+                Some(e)
+            }
+            Err(e) => return Err(e),
+        };
+        let response = sandcrab_core::http::response(&mut stream);
+        let (head, mut body) = match (response, write_error) {
+            (Ok(response), None) => response,
+            (Ok(response), Some(_)) if response.0.status == 403 => response,
+            (_, Some(e)) => return Err(e),
+            (Err(_), None) => {
+                return Err(invalid(
+                    "Invalid or incomplete HTTP response; inspect the existing ID before retrying",
+                ));
+            }
+        };
         if head.length > 8 * 1024 * 1024 {
             return Err(invalid("Response too large"));
         }
@@ -124,15 +148,15 @@ impl Client {
             )
         })?;
         let value: Value = serde_json::from_slice(&bytes)?;
-        if !head.close {
-            self.stream = Some(stream);
-        }
         if !(200..300).contains(&head.status) {
             return Err(invalid(format!(
                 "HTTP {}: {}",
                 head.status,
                 value["error"]["code"].as_str().unwrap_or("UNKNOWN_ERROR")
             )));
+        }
+        if !head.close {
+            self.stream = Some(stream);
         }
         Ok(value)
     }
@@ -430,5 +454,27 @@ pub fn wait_session(socket: &Endpoint, id: &str, opening: bool) -> io::Result<i3
             )));
         }
         thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_early_unix_peer_rejection_without_replaying() {
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        sandcrab_core::http::write(&mut peer, 403, br#"{"error":{"code":"PEER_REJECTED"}}"#)
+            .unwrap();
+        drop(peer);
+        let mut client = Client {
+            socket: Endpoint::Unix(PathBuf::new()),
+            stream: Some(Stream::Unix(socket)),
+        };
+        let error = client
+            .request("POST", "/v1/runs", Some(&json!({})))
+            .unwrap_err();
+        assert!(error.to_string().contains("PEER_REJECTED"));
+        assert!(client.stream.is_none());
     }
 }
