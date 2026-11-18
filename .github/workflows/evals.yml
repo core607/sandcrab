@@ -56,6 +56,7 @@ jobs:
           sudo install -d -m 755 -o "$(id -u)" -g "$(id -g)" /var/lib/sandcrab-evals/python
           python -m venv /var/lib/sandcrab-evals/python
           /var/lib/sandcrab-evals/python/bin/python -m pip install --disable-pip-version-check -r evals/requirements.txt
+          /var/lib/sandcrab-evals/python/bin/python -m pip install --disable-pip-version-check --no-deps ./sdk/python
       - name: Check independent grading and failure reports
         run: |
           /var/lib/sandcrab-evals/python/bin/python -m unittest discover -s evals -p 'test_*.py' -v

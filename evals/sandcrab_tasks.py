@@ -202,9 +202,9 @@ def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native'
                     workspace_client: str = 'native', sdk_config: str | None = None):
     if suite not in {'native', 'workspace', 'all'}:
         raise ValueError('Unknown Sandcrab evaluation suite')
-    if workspace_client not in {'native', 'sdk', 'both'}:
+    if workspace_client not in {'native', 'sdk', 'both', 'mcp-pair'}:
         raise ValueError('Unknown workspace client')
-    if workspace_client != 'native' and (suite == 'native' or sdk_config is None):
+    if (workspace_client != 'native' and suite == 'native') or (workspace_client in {'sdk', 'both'} and sdk_config is None):
         raise ValueError('SDK evaluations require programming tasks and a controller-owned SDK configuration')
     samples, digests = [], {}
     if suite in {'native', 'all'}:
@@ -215,9 +215,10 @@ def sandcrab_native(endpoint: str, baseline: bool = False, suite: str = 'native'
         if artifacts is None:
             raise ValueError('Workspace tasks require an artifact output directory')
         cases, digests['workspace'] = load_workspace(CASES.parent / 'workspace')
-        clients = ['native', 'sdk'] if workspace_client == 'both' else [workspace_client]
+        clients = {'both': ['native', 'sdk'], 'mcp-pair': ['session-mcp', 'workspace-mcp']}.get(workspace_client, [workspace_client])
         for client in clients:
-            samples.extend(Sample(id=('sdk-' if client == 'sdk' and workspace_client == 'both' else '') + c['id'],
+            prefix = client + '-' if workspace_client == 'mcp-pair' or (client == 'sdk' and workspace_client == 'both') else ''
+            samples.extend(Sample(id=prefix + c['id'],
                                   input=c['task'], metadata={'kind': 'workspace', 'workspaceClient': client, **c}) for c in cases)
     digest = next(iter(digests.values())) if len(digests) == 1 else hashlib.sha256(json.dumps(digests, sort_keys=True).encode()).hexdigest()
     programming = suite != 'native'

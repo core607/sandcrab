@@ -11,7 +11,7 @@ from inspect_ai import eval
 
 from cases import load
 from report import summarize
-from sandcrab import CASES, grade, native_api, sandcrab_native
+from sandcrab_tasks import CASES, grade, native_api, sandcrab_native
 from workspace import action
 
 
@@ -20,8 +20,8 @@ class ModelToolBounds(unittest.IsolatedAsyncioTestCase):
         body = {'schemas': [{'a': 1, 'b': 2, 'c': 3, 'd': 4} for _ in range(650)]}
         self.assertGreater(len(json.dumps(body)), 20000)
         observations = []
-        with patch('sandcrab.request', return_value=(200, body)), \
-                patch('sandcrab.store', return_value=SimpleNamespace(get=lambda key: observations)):
+        with patch('sandcrab_tasks.request', return_value=(200, body)), \
+                patch('sandcrab_tasks.store', return_value=SimpleNamespace(get=lambda key: observations)):
             encoded = await native_api('fixture', 'run-id')('GET', '/v1/openapi?capability=runs')
         self.assertLess(len(encoded), 20000)
         self.assertEqual(json.loads(encoded), {'status': 200, 'body': body})
@@ -98,7 +98,7 @@ class CasesAndGrades(unittest.TestCase):
                          'result': {'stdout': '17\n', 'exitCode': 0}}
 
         for cleanup_status in [503, 200]:
-            with self.subTest(status=cleanup_status), tempfile.TemporaryDirectory() as directory, patch('sandcrab.request', side_effect=exchange):
+            with self.subTest(status=cleanup_status), tempfile.TemporaryDirectory() as directory, patch('sandcrab_tasks.request', side_effect=exchange):
                 logs = eval(sandcrab_native('fixture', baseline=True), model='mockllm/model', sample_id='arithmetic',
                             epochs=1, max_samples=1, log_dir=directory, display='none', retry_on_error=0)
                 attempt = summarize(logs[0])['cases']['arithmetic'][0]

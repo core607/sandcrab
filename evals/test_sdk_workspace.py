@@ -15,7 +15,7 @@ import httpx
 from opensandbox.sync.adapters.command_adapter import CommandsAdapterSync
 from opensandbox.models.sandboxes import SandboxEndpoint
 
-from sandcrab import sandcrab_native
+from sandcrab_tasks import sandcrab_native
 from sdk_archive import SOURCE
 from sdk_transport import ResponseLimit, Transport
 from workspace_cases import MAX_ARTIFACT
@@ -196,6 +196,12 @@ class ConsumerFaults(unittest.TestCase):
         self.assertEqual([s.input for s in native.dataset], [s.input for s in sdk.dataset])
         self.assertEqual(22, len(both.dataset))
         self.assertEqual(22, len({s.id for s in both.dataset}))
+        pair = sandcrab_native('fixture', baseline=True, suite='workspace', artifacts='artifacts', workspace_client='mcp-pair')
+        session = [s for s in pair.dataset if s.metadata['workspaceClient'] == 'session-mcp']
+        scoped = [s for s in pair.dataset if s.metadata['workspaceClient'] == 'workspace-mcp']
+        self.assertEqual(len(session), 6)
+        self.assertEqual([s.input for s in session], [s.input for s in scoped])
+        self.assertEqual([s.metadata['expected'] for s in session], [s.metadata['expected'] for s in scoped])
         self.assertEqual({'native', 'sdk'}, {s.metadata['workspaceClient'] for s in both.dataset if s.metadata['kind'] == 'workspace'})
 
 

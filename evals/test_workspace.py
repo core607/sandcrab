@@ -19,7 +19,7 @@ import yaml
 
 import native_http
 from report import summarize
-from sandcrab import sandcrab_native
+from sandcrab_tasks import sandcrab_native
 from workspace_cases import MAX_ARTIFACT, content, load, same_json, strict_json, submitted
 from workspace_client import Rejected, Workspace
 
