@@ -53,15 +53,15 @@ for runtime and measurement trade-offs.
 ## Quickstart
 
 On Ubuntu 22.04, Ubuntu 24.04 or Debian 12, run these three commands from a root
-shell on the systemd host. They download [v0.3.0](https://github.com/core607/sandcrab/releases/tag/v0.3.0),
+shell on the systemd host. They download [v0.4.0](https://github.com/core607/sandcrab/releases/tag/v0.4.0),
 install the service and execute Python. A private mirror can supply an authorized
 asset URL through `SANDCRAB_BUNDLE_URL`.
 
 <!-- sandcrab-quickstart -->
 ```sh
-curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "${SANDCRAB_BUNDLE_URL:-https://github.com/core607/sandcrab/releases/download/v0.3.0/sandcrab-linux-x86_64.zip}"
+curl --fail --silent --show-error --location --output sandcrab-linux-x86_64.zip "${SANDCRAB_BUNDLE_URL:-https://github.com/core607/sandcrab/releases/download/v0.4.0/sandcrab-linux-x86_64.zip}"
 python3 -I sandcrab-linux-x86_64.zip
-/var/lib/sandcrab-release/sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
+/var/lib/sandcrab-release/sandcrab run -- python3 -c 'print(6 * 7)'
 ```
 
 The last command returns a JSON record with `state` equal to `succeeded` and

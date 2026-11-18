@@ -16,12 +16,12 @@ Run this example on the Linux host where Sandcrab is installed. Use the applicat
 account that owns the token from the [service setup](https://github.com/core607/sandcrab#connect-an-application).
 In an empty directory, create a virtual environment. Use the PyPI command below
 for a published version. For a version awaiting publication, give pip the
-absolute path to `sdk/python` in the [matching checkout](https://github.com/core607/sandcrab/tree/v0.3.0)
-in place of `sandcrab==0.3.0`.
+absolute path to `sdk/python` in the [matching checkout](https://github.com/core607/sandcrab/tree/v0.4.0)
+in place of `sandcrab==0.4.0`.
 
 ```sh
 python3 -m venv .venv
-.venv/bin/python -m pip install sandcrab==0.3.0
+.venv/bin/python -m pip install sandcrab==0.4.0
 ```
 
 Save this as `example.py`.
