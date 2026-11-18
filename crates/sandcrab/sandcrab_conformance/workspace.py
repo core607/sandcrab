@@ -1,12 +1,17 @@
 """Exercise durable caller keys through independent native client connections."""
 import hashlib
+import io
 import json
 from pathlib import Path
+import socket
+import tarfile
 import time
 import uuid
 
-from .file import FileProbe, binary_http
-from .native import Probe, http
+from .file import FileProbe, archive, binary_http
+from .host_calls import Calls
+from .native import Probe, call, connect, http
+from .streaming_file import header
 
 
 class WorkspaceProbe(Probe):
@@ -19,6 +24,7 @@ class WorkspaceProbe(Probe):
         (storage / 'data').mkdir(mode=0o711)
         config = self.config.read_text().replace('max_records = 8', 'max_records = 48')
         config = config.replace('session_ttl_millis = 60000', 'session_ttl_millis = 1000')
+        config = config.replace('network = "none"', 'network = "none"\nhost_calls = true')
         self.config.write_text(config + f'''
 [storage]
 root = {json.dumps(str(storage))}
@@ -40,17 +46,17 @@ max_records = 12
             time.sleep(.03)
         raise TimeoutError('workspace transition')
 
-    def ensure(self, route):
-        status, value = http(self.socket, 'POST', route, {'profile': 'python'})
+    def ensure(self, route, **options):
+        status, value = http(self.socket, 'POST', route, {'profile': 'python', **options})
         assert status in (200, 202), (status, value)
         self.until(lambda: http(self.socket, 'GET', route)[1]['state'] == 'ready')
         return value
 
-    def command(self, route, generation, source):
+    def command(self, route, generation, source, **options):
         status, workspace = http(self.socket, 'GET', route)
         assert status == 200, workspace
         request = {'id': str(uuid.uuid4()), 'serverId': self.info['serverId'],
-                   'generation': generation, 'submissionWindow': workspace['submissionWindow'], 'command': source}
+                   'generation': generation, 'submissionWindow': workspace['submissionWindow'], 'command': source, **options}
         status, run = http(self.socket, 'POST', route + '/commands', request)
         assert status == 202, (status, run)
         return request, run
@@ -118,3 +124,76 @@ max_records = 12
         assert status == 409 and old['error']['code'] == 'WORKSPACE_CHANGED', old
         assert http(self.socket, 'POST', route + '/delete', expected)[0] == 409
         self.done('delayed-mutations-cannot-alter-a-new-generation-of-the-same-key')
+        self.template_workspace()
+
+    def template_workspace(self):
+        tree = archive([('base', tarfile.REGTYPE, b'base', 0o644),
+                        ('removed', tarfile.REGTYPE, b'old', 0o644)])
+        status, _, metadata = binary_http(self.socket, 'POST', '/v1/templates?profile=python', tree)
+        assert status == 200, metadata
+        template_id = json.loads(metadata)['id']
+        route = '/v1/workspaces/scoped-copy'
+        workspace = self.ensure(route, templateId=template_id)
+        generation = workspace['generation']
+        headers = {'X-Sandcrab-Workspace-Generation': generation}
+        assert workspace['templateId'] == template_id
+        assert http(self.socket, 'POST', route, {'profile':'python'})[0] == 409
+        template = '/v1/templates/' + template_id
+        assert http(self.socket, 'DELETE', template)[0] == 409
+        _, original = self.command(route, generation, 'test "$(cat base)" = base && export PARENT_ONLY=one')
+        assert self.wait(original)['state'] == 'succeeded'
+        body, first = self.command(route, generation,
+            'test -z "${PARENT_ONLY:-}" && mkdir sub && cd sub && export CHILD_ONLY=two && printf edited > ../base && rm ../removed',
+            freshChild=True)
+        assert self.wait(first)['state'] == 'succeeded'
+        _, next_child = self.command(route, generation,
+            'printf "%s:%s:%s" "$PWD" "${CHILD_ONLY:-clean}" "$(cat base)"', freshChild=True)
+        result = self.wait(next_child)
+        assert result['freshShell'] and result['result']['stdout'] == '/workspace:clean:edited', result
+        assert http(self.socket, 'POST', route + '/commands', body)[1]['id'] == first['id']
+        assert http(self.socket, 'POST', route + '/commands', {**body, 'freshChild': False})[0] == 409
+        _, calling = self.command(route, generation, "printf request | sandcrab call -", freshChild=True)
+        calls = '/v1/runs/' + calling['id'] + '/calls'
+        with Calls(self.socket, calling) as events:
+            pending = events.until('call')
+            assert pending['base64'] == 'cmVxdWVzdA==', pending
+            reply = calls + '/' + pending['id'] + '/reply'
+            assert http(self.socket, 'POST', reply, {'base64':'YW5zd2Vy'})[0] == 200
+        called = self.wait(calling)
+        assert called['state'] == 'succeeded' and called['result']['stdout'] == 'answer', called
+        assert binary_http(self.socket, 'PUT', route + '/files?path=other', b'from client', headers)[0] == 200
+
+        def checkpoint():
+            status, response, diff = binary_http(self.socket, 'GET', route + '/diff', b'', headers)
+            assert status == 200 and response['ETag'].strip('"') == hashlib.sha256(diff).hexdigest(), (status, response, diff[:100])
+            with tarfile.open(fileobj=io.BytesIO(diff)) as changes:
+                assert changes.extractfile('base').read() == b'edited'
+                assert changes.extractfile('other').read() == b'from client'
+                assert '.wh.removed' in changes.getnames(), changes.getnames()
+            return diff
+
+        before = checkpoint()
+        self.session_wait({'id': first['sessionId']}, terminal=True)
+        assert http(self.socket, 'DELETE', template)[0] == 409
+        assert checkpoint() == before
+        upper = self.root / 'workspace-storage/data/volumes' / workspace['id'] / 'upper'
+        with socket.socket(socket.AF_UNIX) as partial:
+            partial.settimeout(10)
+            connect(partial, self.socket)
+            partial.sendall((f'PUT {route}/files?path=interrupted HTTP/1.1\r\nHost: sandcrab\r\n'
+                             f'X-Sandcrab-Workspace-Generation: {generation}\r\n'
+                             'Content-Length: 4096\r\nExpect: 100-continue\r\n\r\n').encode())
+            assert header(partial).startswith(b'HTTP/1.1 100 ')
+            partial.sendall(b'partial')
+            self.until(lambda: list(upper.glob('.transfer-*/owner.json')))
+            call('systemctl', 'kill', '--kill-whom=main', '--signal=KILL', self.unit)
+        self.restart()
+        assert not list(upper.glob('.transfer-*'))
+        assert self.ensure(route, templateId=template_id)['generation'] == generation
+        assert http(self.socket, 'DELETE', template)[0] == 409
+        assert checkpoint() == before
+        assert binary_http(self.socket, 'GET', route + '/diff', b'', {'X-Sandcrab-Workspace-Generation': str(uuid.uuid4())})[0] == 409
+        assert http(self.socket, 'POST', route + '/delete', {'generation':generation})[0] in (200, 202)
+        self.until(lambda: http(self.socket, 'GET', route)[1]['state'] == 'deleted')
+        assert http(self.socket, 'DELETE', template)[0] == 200
+        self.done('template-and-upper-survive-idle-and-restart-with-fresh-children-and-a-frozen-checkpoint')

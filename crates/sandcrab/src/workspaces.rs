@@ -281,14 +281,18 @@ impl Store {
         profile: &Profile,
         cancelled: &AtomicBool,
         template: crate::templates::Lease,
+        durable: Option<&Path>,
         helper: &crate::helper::Context<'_>,
     ) -> Result<Workspace, SetupError> {
         let mut workspace = self.create(id, profile, cancelled)?;
-        let mutable = self.overlays.join(id);
+        let local = self.overlays.join(id);
+        let mutable = durable.unwrap_or(&local);
         let result = (|| -> Result<(), SetupError> {
-            DirBuilder::new().mode(0o700).create(&mutable)?;
-            for name in ["upper", "work"] {
-                DirBuilder::new().mode(0o711).create(mutable.join(name))?;
+            if durable.is_none() {
+                DirBuilder::new().mode(0o700).create(mutable)?;
+                for name in ["upper", "work"] {
+                    DirBuilder::new().mode(0o711).create(mutable.join(name))?;
+                }
             }
             template.start();
             workspace.overlay = Some(crate::overlay::create(
@@ -303,7 +307,7 @@ impl Store {
                 &self.directory(id)?,
             )?);
             workspace.usage = Arc::new(Account::new(
-                mutable.clone(),
+                mutable.to_owned(),
                 Usage {
                     bytes: profile.temporary_bytes,
                     inodes: profile.temporary_inodes,

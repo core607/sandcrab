@@ -28,10 +28,10 @@ reference host in the [provider decision](../implemented/2026-11-02-sandcrab-lig
 
 ## Proposal
 
-The [native workspace API](../../crates/sandcrab/docs/workspaces.md) covers empty
-volume-backed workspaces. Template-backed workspaces, SDK adoption and downstream
-acceptance remain proposed. Sessions, volumes and templates remain supported
-interfaces.
+The [native workspace API](../../crates/sandcrab/docs/workspaces.md) and the
+Python and TypeScript SDKs support empty and template-backed workspaces. The
+final acceptance is a separate consumer change exercising the normal
+template-backed repository command path described below.
 
 - **Identity.** A workspace key belongs to one installation. Authenticated native
   clients using the same key reach the same workspace across connections, daemon

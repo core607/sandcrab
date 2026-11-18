@@ -1,18 +1,27 @@
 """Run the same six tools through the installed Python, Node and MCP interfaces."""
+import base64
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import uuid
 
 
-def cases(call):
+def cases(call, seed=None):
     executed = call('exec', {'command': 'printf 42'})
     assert executed['ok'] and executed['freshShell'] and executed['stdout'] == '42', executed
     failed = call('exec', {'command': 'false'})
-    assert not failed['ok'] and failed['exitCode'] == 1 and not failed['freshShell'], failed
+    assert not failed['ok'] and failed['exitCode'] == 1 and failed['freshShell'] == (seed is not None), failed
+    if seed is not None:
+        initial = call('read_file', {'path': 'seed'})
+        assert initial['ok'] and initial['content'] == seed, initial
+        assert call('exec', {'command': 'mkdir child && cd child && export CHILD_STATE=changed'})['ok']
+        fresh = call('exec', {'command': 'printf "%s:%s" "$PWD" "${CHILD_STATE:-reset}"'})
+        assert fresh['freshShell'] and fresh['stdout'] == '/workspace:reset', fresh
     original = 'one\r\nneedle\nthree\n'
     path = 'notes/work.txt'
     receipt = call('write_file', {'path': path, 'content': original})
@@ -46,6 +55,13 @@ def check(directory, language, *, mcp=False):
         script = directory / 'workspace_client.mjs'
         shutil.copyfile(root / script.name, script)
         command = ['node', script, key]
+    if not mcp:
+        archive = directory / 'seed.tar'
+        with tarfile.open(archive, 'w') as output:
+            entry = tarfile.TarInfo('seed')
+            entry.size = len(key)
+            output.addfile(entry, io.BytesIO(key.encode()))
+        command.append(str(archive))
     env = {'SANDCRAB_ENDPOINT': 'http://127.0.0.1:9011',
            'SANDCRAB_TOKEN_FILE': '/etc/sandcrab-client/token', **os.environ}
     process = subprocess.Popen(command, cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -76,8 +92,12 @@ def check(directory, language, *, mcp=False):
             def call(name, args):
                 return send({'name': name, 'arguments': args})
         assert {s['name'] for s in schemas} == {'exec','read_file','write_file','edit_file','list_dir','search'}
-        cases(call)
+        cases(call, None if mcp else key)
         if not mcp:
+            data = base64.b64decode(send({'name': 'checkpoint'}), validate=True)
+            with tarfile.open(fileobj=io.BytesIO(data)) as delta:
+                assert delta.extractfile('notes/work.txt').read() == b'one\r\nchanged\nthree\n'
+                assert 'seed' not in delta.getnames()
             assert send({'name': 'dispose'}) is True
     finally:
         process.stdin.close()

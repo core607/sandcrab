@@ -288,19 +288,14 @@ impl Runtime {
                 .runtime_root
                 .join("file-ops")
                 .join(format!("{operation}.json"));
-            let upper = (job.action == "difference")
-                .then(|| crate::diff::upper(&job.stage))
-                .transpose()?;
-            if let Some(upper) = &upper {
-                sandcrab_core::fs::protected_directory(upper)?;
+            if job.action == "difference" {
+                sandcrab_core::fs::protected_directory(&job.workspace)?;
             }
             create(&record, job, 0, 0o400)?;
             let mut readonly = vec![record.as_path()];
             let mut writable = vec![job.stage.as_path()];
-            if let Some(upper) = &upper {
-                readonly.push(upper);
-            }
-            if ["snapshot", "checkpoint", "sdk-query"].contains(&job.action.as_str()) {
+            if ["snapshot", "checkpoint", "sdk-query", "difference"].contains(&job.action.as_str())
+            {
                 readonly.push(&job.workspace);
             }
             // Renaming across two bind mounts fails with EXDEV even on the same
@@ -504,12 +499,48 @@ impl Runtime {
         cancelled: Arc<AtomicBool>,
         shared: Option<crate::file_access::ShellLease>,
     ) -> Result<Shell, OpenError> {
-        match self.prepare_shell(request, profile, cancelled, shared.as_ref()) {
+        let mut attachment = match request.volume_id.as_deref().filter(|_| shared.is_none()) {
+            Some(volume) => Some(
+                self.storage
+                    .as_ref()
+                    .ok_or(OpenError {
+                        code: "VOLUMES_DISABLED",
+                        contained: true,
+                    })?
+                    .bind(
+                        volume,
+                        &request.id,
+                        profile,
+                        request.workspace_generation.as_deref(),
+                    )
+                    .map_err(|e| OpenError {
+                        code: e.code,
+                        contained: true,
+                    })?,
+            ),
+            None => None,
+        };
+        match self.prepare_shell(
+            request,
+            profile,
+            cancelled,
+            shared.as_ref(),
+            attachment.as_ref(),
+        ) {
             Ok(mut shell) => {
+                if let Some(volume) = &mut attachment {
+                    volume.launched();
+                }
+                shell.attachment = attachment;
                 shell.shared = shared;
                 Ok(shell)
             }
             Err(error) => {
+                if !error.contained
+                    && let Some(volume) = &mut attachment
+                {
+                    volume.launched();
+                }
                 if let Some(shared) = shared {
                     shared.finish(error.contained);
                 }
@@ -524,6 +555,7 @@ impl Runtime {
         profile: &Profile,
         cancelled: Arc<AtomicBool>,
         shared: Option<&crate::file_access::ShellLease>,
+        attachment: Option<&Attachment>,
     ) -> Result<Shell, OpenError> {
         let id = request.id.as_str();
         let resources = shared
@@ -533,23 +565,6 @@ impl Runtime {
                 code: "SESSION_UNAVAILABLE",
                 contained: true,
             })?;
-        let volume = request.volume_id.as_deref().filter(|_| shared.is_none());
-        let mut attachment = match volume {
-            Some(volume) => Some(
-                self.storage
-                    .as_ref()
-                    .ok_or(OpenError {
-                        code: "VOLUMES_DISABLED",
-                        contained: true,
-                    })?
-                    .bind(volume, id, profile, request.workspace_generation.as_deref())
-                    .map_err(|e| OpenError {
-                        code: e.code,
-                        contained: true,
-                    })?,
-            ),
-            None => None,
-        };
         let root = self.config.service.runtime_root.join("jobs").join(id);
         if DirBuilder::new().mode(0o750).create(&root).is_err() {
             return Err(OpenError {
@@ -576,7 +591,7 @@ impl Runtime {
                 contained: cleanup_root().is_ok(),
             });
         }
-        let disk = if shared.is_none() && attachment.is_none() {
+        let disk = if shared.is_none() && (attachment.is_none() || request.template_id.is_some()) {
             let prepared = if let Some(template_id) = &request.template_id {
                 let template = match self.templates.acquire(template_id, profile) {
                     Ok(template) => template,
@@ -592,6 +607,7 @@ impl Runtime {
                     profile,
                     &cancelled,
                     template,
+                    attachment.map(Attachment::directory).as_deref(),
                     &crate::helper::Context {
                         runtime_root: &self.config.service.runtime_root,
                         executable: &self.executable,
@@ -637,7 +653,6 @@ impl Runtime {
         }
         let workspace = shared
             .map(|s| s.access.workspace.clone())
-            .or_else(|| attachment.as_ref().map(Attachment::path))
             .or_else(|| {
                 disk.as_ref().map(|disk| {
                     let path = disk.path();
@@ -648,6 +663,7 @@ impl Runtime {
                     }
                 })
             })
+            .or_else(|| attachment.map(Attachment::path))
             .expect("Parent session has a volume or disk workspace");
         let Prepared {
             mut launch,
@@ -685,10 +701,6 @@ impl Runtime {
                 });
             }
         };
-        // Once launched, a failed owner must retain volume ownership until restart cleanup.
-        if let Some(attachment) = &mut attachment {
-            attachment.launched();
-        }
         let channel = Channel::new(child).map_err(|_| OpenError {
             code: "CONTAINMENT_UNCONFIRMED",
             contained: false,
@@ -716,7 +728,7 @@ impl Runtime {
             launch,
             root,
             records,
-            attachment,
+            attachment: None,
             mailbox,
             network,
             resources,

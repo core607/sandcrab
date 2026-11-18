@@ -19,6 +19,8 @@ pub enum Selection {
     Lines {
         offset: u64,
         limit: Option<u64>,
+        #[serde(default)]
+        max_bytes: Option<u64>,
     },
 }
 pub struct Range {
@@ -31,7 +33,7 @@ fn number(value: &str) -> Option<u64> {
         .flatten()
 }
 pub fn request(query: &str, range: Option<&str>) -> Result<(String, Option<Selection>)> {
-    let (mut path, mut offset, mut limit) = (None, None, None);
+    let (mut path, mut offset, mut limit, mut max_bytes) = (None, None, None, None);
     for (key, value) in sdk_types::query(query)? {
         match key.as_str() {
             "path" if path.is_none() => path = Some(value),
@@ -49,12 +51,19 @@ pub fn request(query: &str, range: Option<&str>) -> Result<(String, Option<Selec
                         .ok_or((400, "INVALID_LIMIT"))?,
                 )
             }
+            "maxBytes" if max_bytes.is_none() => {
+                max_bytes = Some(
+                    number(&value)
+                        .filter(|n| (1..=1_073_741_824).contains(n))
+                        .ok_or((400, "INVALID_LIMIT"))?,
+                );
+            }
             _ => return Err((400, "INVALID_QUERY")),
         }
     }
     let path = crate::sdk_file_io::path(&path.ok_or((400, "INVALID_QUERY"))?, false)
         .map_err(|_| (400, "INVALID_PATH"))?;
-    if offset.is_some() || limit.is_some() {
+    if offset.is_some() || limit.is_some() || max_bytes.is_some() {
         if range.is_some() {
             return Err((400, "CONFLICTING_SELECTIONS"));
         }
@@ -63,6 +72,7 @@ pub fn request(query: &str, range: Option<&str>) -> Result<(String, Option<Selec
             Some(Selection::Lines {
                 offset: offset.unwrap_or(1),
                 limit,
+                max_bytes,
             }),
         ));
     }
@@ -133,7 +143,15 @@ impl Selection {
             Self::Lines {
                 offset,
                 limit: lines,
-            } => selected_lines(input, output, *offset, *lines, limit),
+                max_bytes,
+            } => selected_lines(
+                input,
+                output,
+                *offset,
+                *lines,
+                limit,
+                max_bytes.unwrap_or(u64::MAX),
+            ),
         }
     }
 }
@@ -152,8 +170,9 @@ fn selected_lines(
     offset: u64,
     limit: Option<u64>,
     scan_limit: u64,
+    mut remaining: u64,
 ) -> io::Result<()> {
-    if offset == 0 || limit == Some(0) {
+    if offset == 0 || limit == Some(0) || remaining == 0 {
         return Err(invalid("INVALID_SELECTION"));
     }
     let mut output = BufWriter::new(output);
@@ -179,6 +198,7 @@ fn selected_lines(
                 if chosen {
                     if written != 0 {
                         output.write_all(b"\n")?;
+                        remaining -= 1;
                     }
                     written += 1;
                 }
@@ -188,11 +208,19 @@ fn selected_lines(
                     b'\r' => pending += 1,
                     b'\n' => (),
                     byte => {
-                        carriage_returns(&mut output, pending)?;
+                        let prefix = pending.min(remaining);
+                        carriage_returns(&mut output, prefix)?;
+                        remaining -= prefix;
                         pending = 0;
-                        output.write_all(&[*byte])?;
+                        if remaining != 0 {
+                            output.write_all(&[*byte])?;
+                            remaining -= 1;
+                        }
                     }
                 }
+            }
+            if remaining == 0 {
+                return output.flush();
             }
             if *byte == b'\n' {
                 if chosen && limit.is_some_and(|limit| written >= limit) {
@@ -209,6 +237,24 @@ fn selected_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn byte_limit_trims_normalized_text_without_requiring_the_remaining_line() {
+        let mut output = Vec::new();
+        selected_lines(
+            &mut &b"skip\nx\r\r\rYtail\n"[..],
+            &mut output,
+            2,
+            None,
+            10,
+            3,
+        )
+        .unwrap();
+        assert_eq!(output, b"x\r\r");
+        let mut output = Vec::new();
+        selected_lines(&mut &b"a\r\nb"[..], &mut output, 1, None, 4, 2).unwrap();
+        assert_eq!(output, b"a\n");
+    }
     #[test]
     fn line_scan_prefetch_is_bounded_to_the_budget_and_one_eof_byte() {
         struct Counted<'a> {
@@ -226,7 +272,7 @@ mod tests {
             bytes: &[b'a'; 100],
             read: 0,
         };
-        assert!(selected_lines(&mut input, &mut Vec::new(), 2, Some(1), 10).is_err());
+        assert!(selected_lines(&mut input, &mut Vec::new(), 2, Some(1), 10, u64::MAX).is_err());
         assert_eq!(input.read, 11);
     }
     #[test]
@@ -270,14 +316,32 @@ mod tests {
             (b"\n\n", 1, None, b"\n"),
         ] {
             let mut output = Vec::new();
-            selected_lines(&mut input, &mut output, offset, count, 65536).unwrap();
+            selected_lines(&mut input, &mut output, offset, count, 65536, u64::MAX).unwrap();
             assert_eq!(output, expected);
         }
         let mut input = vec![b'x'; 131073];
         input.extend_from_slice(b"\r\nend\n");
         let mut output = Vec::new();
-        selected_lines(&mut input.as_slice(), &mut output, 2, Some(1), 262144).unwrap();
+        selected_lines(
+            &mut input.as_slice(),
+            &mut output,
+            2,
+            Some(1),
+            262144,
+            u64::MAX,
+        )
+        .unwrap();
         assert_eq!(output, b"end");
-        assert!(selected_lines(&mut input.as_slice(), &mut Vec::new(), 2, Some(1), 10).is_err());
+        assert!(
+            selected_lines(
+                &mut input.as_slice(),
+                &mut Vec::new(),
+                2,
+                Some(1),
+                10,
+                u64::MAX
+            )
+            .is_err()
+        );
     }
 }

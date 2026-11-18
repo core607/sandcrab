@@ -55,6 +55,8 @@ pub struct Command {
     pub command: String,
     pub timeout_millis: Option<u64>,
     pub output_limit_bytes: Option<usize>,
+    #[serde(skip)]
+    pub(crate) fresh_child: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_result: bool,
 }
@@ -82,6 +84,9 @@ impl Command {
     pub(crate) fn identity(&self, session: &str) -> Value {
         let mut value = serde_json::to_value(self).unwrap();
         value["sessionId"] = session.into();
+        if self.fresh_child {
+            value["freshChild"] = true.into();
+        }
         value
     }
 }
@@ -380,7 +385,7 @@ impl Service {
                 .template_id
                 .as_ref()
                 .is_some_and(|id| !crate::file_io::digest(id))
-            || request.template_id.is_some() && request.volume_id.is_some()
+            || !managed && request.template_id.is_some() && request.volume_id.is_some()
             || request.rootfs && request.template_id.is_none()
             || request
                 .volume_id
@@ -780,6 +785,13 @@ impl Service {
                 })
             };
             if let Some(work) = work {
+                if work.request.fresh_child {
+                    if !self.execute_workspace_child(&request, &shell, profile, &work) {
+                        reason = "failed";
+                        break;
+                    }
+                    continue;
+                }
                 let calls = self.registry.lock().unwrap().runs[&work.request.id]
                     .calls
                     .clone();
@@ -837,6 +849,83 @@ impl Service {
             );
         }
         self.end_session(id, reason, contained, None);
+    }
+
+    fn execute_workspace_child(
+        &self,
+        parent: &Open,
+        shell: &crate::runtime::Shell,
+        profile: &Profile,
+        work: &Work,
+    ) -> bool {
+        let run = &work.request.id;
+        let mut child_request = parent.clone();
+        child_request.id = run.clone();
+        let opened = shell
+            .files
+            .shell(run, work.cancelled.clone())
+            .map_err(|code| crate::runtime::OpenError {
+                code,
+                contained: true,
+            })
+            .and_then(|lease| {
+                self.runtime.open_shell(
+                    &child_request,
+                    profile,
+                    work.cancelled.clone(),
+                    Some(lease),
+                )
+            });
+        let (result, contained) = match opened {
+            Ok(mut child) => {
+                let result = if child.ready(&work.cancelled) {
+                    let calls = self.registry.lock().unwrap().runs[run].calls.clone();
+                    let (finished, _) = child.execute(
+                        run,
+                        &work.request.command,
+                        work.timeout,
+                        work.output,
+                        crate::runtime::Control {
+                            cancelled: &work.cancelled,
+                            calls,
+                        },
+                        |stream, bytes| self.output(run, stream, bytes),
+                    );
+                    Ok(finished)
+                } else {
+                    Err("SESSION_UNAVAILABLE")
+                };
+                (result, child.close().is_ok())
+            }
+            Err(error) => (Err(error.code), error.contained),
+        };
+        if !contained {
+            self.complete(
+                run,
+                Err(io::Error::other("Child cleanup failed")),
+                Err(io::Error::other("Child containment unconfirmed")),
+                false,
+            );
+            return false;
+        }
+        match result {
+            Ok(finished) => self.complete(run, Ok(finished), Ok(()), false),
+            Err(code) => {
+                let mut registry = self.registry.lock().unwrap();
+                registry.runs.get_mut(run).unwrap().unexecuted(
+                    code,
+                    work.cancelled.load(Ordering::SeqCst),
+                    Instant::now(),
+                );
+                let session = registry.sessions.get_mut(&parent.id).unwrap();
+                session.active_run = None;
+                if session.state == "busy" {
+                    session.state = "ready".into();
+                    session.touch_workspace();
+                }
+            }
+        }
+        true
     }
 
     fn end_session(&self, id: &str, fallback: &str, contained: bool, code: Option<&str>) {

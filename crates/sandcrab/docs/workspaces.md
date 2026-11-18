@@ -13,10 +13,11 @@ authorization and the mapping to keys.
 
 | Request | Result |
 |---|---|
-| `POST /v1/workspaces/KEY` with `{"profile":"default"}` | Create or return the same workspace. A different profile conflicts. |
+| `POST /v1/workspaces/KEY` with `{"profile":"default"}` | Create or reopen the workspace. Specify an imported `templateId` to start from an immutable base. The profile and base must match on reopen. |
 | `GET /v1/workspaces/KEY` | Read `state`, `generation`, `serverId` and `submissionWindow`. Wait for `ready` after creation. |
 | `POST /v1/workspaces/KEY/commands` | Submit a [session command](sessions.md) with its own UUID, plus the workspace's `generation` and `submissionWindow`. |
 | `GET /v1/runs/ID` | Read the command outcome and `freshShell`. A successful command after reopening has `freshShell: true`. |
+| `GET /v1/workspaces/KEY/diff` | Send `X-Sandcrab-Workspace-Generation` to export a consistent [upper-layer changeset](files.md) against the workspace's template. |
 | `POST /v1/workspaces/KEY/delete` with `{"generation":"…"}` | Record deletion, close the shell and remove storage after confirmed cleanup. Poll until `deleted`. |
 | `POST /v1/workspaces/KEY/forget` with the same generation | Remove a deleted or failed record. Reusing the key creates a different generation. |
 
@@ -31,7 +32,14 @@ view contains their request and response schemas.
 schemas used by both native SDKs and the stdio MCP server. The application
 binds a workspace before passing schemas and handlers to a model.
 
-Commands admitted to one workspace run in order. A full queue refuses a submission
+Template workspaces pin their base across idle close and service restart. Their
+owned volumes retain edits and deletions. Store the downloaded changeset before
+acknowledging application writes or deleting the workspace. The service keeps
+the upper layer after a download.
+
+Commands admitted to one workspace run in order. Set `freshChild: true` to
+start with the profile's initial shell state for that command. The daemon closes
+the child and its descendants before reporting completion. A full queue refuses a submission
 before execution. The idle window extends on admission and after a command
 finishes. Guest commands keep their own execution timeout. Empty workspaces
 reserve the smaller of the profile's temporary storage limits and the

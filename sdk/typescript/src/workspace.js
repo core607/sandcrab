@@ -28,10 +28,13 @@ function validate(schema, args) {
   }
 }
 
-export async function bindWorkspaceTools(client, key, { profile } = {}) {
+export async function bindWorkspaceTools(client, key, { profile, templateId, freshChild = false } = {}) {
   if (typeof key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(key)) throw new TypeError("Invalid workspace key");
   const route = "/v1/workspaces/" + key;
-  let record = await client._requestJson("POST", route, { jsonBody: { profile: checkProfile(profile ?? client.defaultProfile ?? "default") } });
+  if (typeof freshChild !== "boolean") throw new TypeError("freshChild must be a boolean");
+  const plan = { profile: checkProfile(profile ?? client.defaultProfile ?? "default") };
+  if (templateId !== undefined) plan.templateId = checkDigest(templateId);
+  let record = await client._requestJson("POST", route, { jsonBody: plan });
   const generation = checkUuid(record.generation, "generation");
   const until = Date.now() + 35000;
   while (record.state === "creating" && Date.now() < until) {
@@ -40,11 +43,12 @@ export async function bindWorkspaceTools(client, key, { profile } = {}) {
   }
   if (record.state !== "ready" || record.generation !== generation) throw new SandcrabError(409, "WORKSPACE_NOT_READY");
   const catalog = await client._requestJson("GET", "/v1/workspace-tools");
-  return new WorkspaceTools(client, route, generation, catalog.tools);
+  return new WorkspaceTools(client, route, generation, catalog.tools, freshChild);
 }
 
 class WorkspaceTools {
-  constructor(client, route, generation, schemas) {
+  constructor(client, route, generation, schemas, freshChild = false) {
+    this.freshChild = freshChild;
     this.client = client;
     this.route = route;
     this.generation = generation;
@@ -88,6 +92,7 @@ class WorkspaceTools {
     if (current.generation !== this.generation) throw new SandcrabError(409, "WORKSPACE_CHANGED");
     const id = randomUUID();
     const jsonBody = { ...args, id, serverId: current.serverId, generation: this.generation, submissionWindow: current.submissionWindow };
+    if (this.freshChild) jsonBody.freshChild = true;
     await this.client._requestJson("POST", this.route + "/commands", { jsonBody, recoveryId: id, uncertainOp: "workspace command" });
     let run;
     try {
@@ -96,9 +101,10 @@ class WorkspaceTools {
       throw new TransportUncertainError("workspace command", id, error);
     }
     const result = run.result ?? {};
+    if (result.executed === false) return { ok: false, code: "REFUSED" };
     const [stdout, outCut] = clip(result.stdout ?? "");
     const [stderr, errCut] = clip(result.stderr ?? "");
-    const out = { ok: run.state === "succeeded", stdout, stderr, exitCode: result.exitCode ?? null, freshShell: run.freshShell, truncated: outCut || errCut };
+    const out = { ok: run.state === "succeeded", stdout, stderr, exitCode: result.exitCode ?? null, freshShell: run.freshShell, truncated: result.truncated === true || outCut || errCut };
     if (!out.ok) out.code = ["timeout", "timed_out"].includes(run.state) ? "TIMEOUT" : "COMMAND_FAILED";
     return out;
   }
@@ -139,6 +145,12 @@ class WorkspaceTools {
     return { ok: true, entries, truncated: entries.length !== reply.entries.length };
   }
 
+  async checkpoint() {
+    return this.client._requestBytes("GET", this.route + "/diff", {
+      headers: { "X-Sandcrab-Workspace-Generation": this.generation }, expectEtag: true,
+    });
+  }
+
   async dispose() {
     const jsonBody = { generation: this.generation };
     await this.client._requestJson("POST", this.route + "/delete", { jsonBody });
@@ -169,15 +181,16 @@ class WorkspaceTools {
     } else {
       query.set("offset", String(args.offset ?? 1));
       query.set("limit", String(args.limit ?? 201));
+      query.set("maxBytes", String(TEXT_BYTES + 1));
     }
     const response = await this.client._openRawRequest("GET", route + "?" + query, { headers });
     const chunks = [];
     let size = 0;
     for await (const chunk of response) {
+      if (size >= TEXT_BYTES + 1) continue;
       const selected = chunk.subarray(0, TEXT_BYTES + 1 - size);
       chunks.push(selected);
       size += selected.length;
-      if (size > TEXT_BYTES) break;
     }
     const buf = Buffer.concat(chunks);
     if (response.statusCode >= 400) {

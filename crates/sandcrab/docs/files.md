@@ -105,7 +105,7 @@ available during storage overage.
 
 | Request | Result |
 |---|---|
-| `GET /v1/sessions/ID/files?path=PATH` | Read a raw file, a single `Range` byte slice (206) or `offset`/`limit` UTF-8 lines |
+| `GET /v1/sessions/ID/files?path=PATH` | Read a raw file, a single `Range` byte slice (206) or `offset`/`limit` UTF-8 lines. `maxBytes` caps the normalized line response. |
 | `PUT /v1/sessions/ID/files?path=PATH` | Stream one raw file; optional `replace`, `parents` and `mode` |
 | `DELETE /v1/sessions/ID/files?path=PATH` | Remove a file, or a directory tree with `recursive=true` |
 | `POST /v1/sessions/ID/files/mkdir` | Ensure `path` and missing relative parents with optional `mode` |

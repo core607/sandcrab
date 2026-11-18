@@ -418,6 +418,7 @@ impl Store {
             id: id.clone(),
             session_id: id.clone(),
             volume_id: None,
+            overlay_volume: None,
             rootfs: false,
             profile: profile_name.into(),
             uid: profile.uid,

@@ -32,9 +32,10 @@ pub(crate) fn storage_id(key: &str) -> Option<String> {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Create {
     profile: String,
+    template_id: Option<String>,
 }
 
 pub(crate) struct Shell {
@@ -59,7 +60,7 @@ impl Service {
             .copied()
             .unwrap_or(0);
         json!({"id":value["id"], "key":value["workspaceKey"], "generation":value["workspaceGeneration"], "submissionWindow":window, "serverId":self.id,
-        "profile":value["profile"], "state":value["state"], "code":value["code"],
+        "profile":value["profile"], "templateId":value["templateId"], "state":value["state"], "code":value["code"],
         "byteLimit":value["byteLimit"], "inodeLimit":value["inodeLimit"]})
     }
     pub(crate) fn workspace_route(
@@ -80,6 +81,19 @@ impl Service {
             let Ok(create) = crate::sdk_types::parse::<Create>(body) else {
                 return error(400, "INVALID_REQUEST");
             };
+            // Serialize base selection with template deletion until the durable plan exists.
+            let _admission = self.workspace_shells.lock().unwrap();
+            if let Some(base) = &create.template_id {
+                if !crate::file_io::digest(base) {
+                    return error(400, "INVALID_TEMPLATE_ID");
+                }
+                let Some(profile) = self.runtime.config.profiles.get(&create.profile) else {
+                    return error(400, "PROFILE_NOT_FOUND");
+                };
+                if let Err((status, code)) = self.runtime.templates.acquire(base, profile) {
+                    return error(status, code);
+                }
+            }
             let plan = Plan {
                 id,
                 profile: create.profile,
@@ -87,6 +101,7 @@ impl Service {
                 byte_limit: None,
                 inode_limit: None,
                 workspace_key: Some(key.into()),
+                template_id: create.template_id,
             };
             let (status, reply) = self.begin_volume(store, plan, true);
             return if status < 300 {
@@ -179,9 +194,15 @@ impl Service {
         else {
             return error(400, "INVALID_REQUEST");
         };
-        let Ok(request) = serde_json::from_value::<Command>(body) else {
+        let fresh_child = match body.as_object_mut().and_then(|v| v.remove("freshChild")) {
+            None => false,
+            Some(Value::Bool(value)) => value,
+            _ => return error(400, "INVALID_REQUEST"),
+        };
+        let Ok(mut request) = serde_json::from_value::<Command>(body) else {
             return error(400, "INVALID_REQUEST");
         };
+        request.fresh_child = fresh_child;
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
         }
@@ -232,12 +253,12 @@ impl Service {
         let metadata = Execution {
             key: key.into(),
             generation: generation.as_str().unwrap().into(),
-            fresh_shell: !owned.used,
+            fresh_shell: fresh_child || !owned.used,
             window,
         };
         let result =
             self.session_command(&owned.id, request, Some(&owned.incarnation), Some(metadata));
-        if result.0 == 202 {
+        if result.0 == 202 && !fresh_child {
             owned.used = true;
         }
         result
@@ -284,7 +305,7 @@ impl Service {
                 ttl_millis: None,
                 volume_id: Some(volume.into()),
                 workspace_generation: Some(generation.as_str().unwrap().into()),
-                template_id: None,
+                template_id: record["templateId"].as_str().map(str::to_owned),
                 rootfs: false,
                 resources: None,
                 keep_result: false,

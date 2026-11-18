@@ -117,6 +117,8 @@ pub struct Stage {
     pub id: String,
     pub session_id: String,
     pub volume_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay_volume: Option<String>,
     pub rootfs: bool,
     pub profile: String,
     pub uid: u32,
@@ -127,6 +129,10 @@ impl Stage {
         uuid(&self.id)
             && uuid(&self.session_id)
             && self.volume_id.as_ref().is_none_or(|v| uuid(v))
+            && self
+                .overlay_volume
+                .as_ref()
+                .is_none_or(|id| uuid(id) && self.volume_id.is_none() && !self.rootfs)
             && (!self.rootfs || self.volume_id.is_none())
             && name(&self.profile)
             && self.uid != 0
@@ -140,6 +146,16 @@ impl Stage {
         })
     }
     fn base(&self, config: &Config) -> io::Result<PathBuf> {
+        let view = config
+            .service
+            .runtime_root
+            .join("workspaces")
+            .join(&self.session_id);
+        if self.overlay_volume.is_some() && !sandcrab_core::fs::mounted(&view)? {
+            // Startup has already contained old processes and removed disposable views.
+            // Unpublished transfers still live at the same relative path in the upper.
+            return self.upper(config);
+        }
         match &self.volume_id {
             Some(id) => Ok(config
                 .storage
@@ -148,12 +164,18 @@ impl Stage {
                 .root
                 .join("data/volumes")
                 .join(id)),
-            None => Ok(config
-                .service
-                .runtime_root
-                .join("workspaces")
-                .join(&self.session_id)),
+            None => Ok(view),
         }
+    }
+    pub(crate) fn upper(&self, config: &Config) -> io::Result<PathBuf> {
+        if let Some(volume) = &self.overlay_volume {
+            let storage = config
+                .storage
+                .as_ref()
+                .ok_or_else(|| invalid("Missing workspace storage"))?;
+            return Ok(storage.root.join("data/volumes").join(volume).join("upper"));
+        }
+        crate::diff::upper(&self.path(config)?)
     }
     pub fn path(&self, config: &Config) -> io::Result<PathBuf> {
         Ok(self.base(config)?.join(format!(".transfer-{}", self.id)))
@@ -434,6 +456,17 @@ impl Store {
         }
     }
     pub fn begin_stage(&self, stage: &Stage, config: &Config) -> io::Result<PathBuf> {
+        if stage.overlay_volume.is_some()
+            && !sandcrab_core::fs::mounted(
+                &config
+                    .service
+                    .runtime_root
+                    .join("workspaces")
+                    .join(&stage.session_id),
+            )?
+        {
+            return Err(invalid("Workspace overlay is not mounted"));
+        }
         let mut state = self.state.lock().unwrap();
         if state.fenced || state.stages.contains_key(&stage.id) {
             return Err(invalid("File stage unavailable"));
@@ -592,6 +625,7 @@ mod retention_tests {
                         id: id.clone(),
                         session_id: id.clone(),
                         volume_id: None,
+                        overlay_volume: None,
                         rootfs: false,
                         profile: "python".into(),
                         uid: 1000,

@@ -171,6 +171,7 @@ export interface WorkspaceTools {
   readonly schemas: ReadonlyArray<{ name: WorkspaceToolName; description: string; inputSchema: Record<string, unknown> }>;
   readonly handlers: Record<WorkspaceToolName, (args: Record<string, unknown>) => Promise<WorkspaceToolResult>>;
   call(name: WorkspaceToolName, args: Record<string, unknown>): Promise<WorkspaceToolResult>;
+  checkpoint(): Promise<Buffer>;
   dispose(): Promise<void>;
 }
 export interface WorkspaceToolResult {
@@ -180,7 +181,7 @@ export interface WorkspaceToolResult {
 }
 
 export class SandcrabClient {
-  workspaceTools(key: string, options?: { profile?: string }): Promise<WorkspaceTools>;
+  workspaceTools(key: string, options?: { profile?: string; templateId?: string; freshChild?: boolean }): Promise<WorkspaceTools>;
   readonly defaultProfile: string | null;
   readonly timeoutMs: number;
   constructor(options?: SandcrabClientOptions);

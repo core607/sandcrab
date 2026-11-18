@@ -1171,9 +1171,10 @@ class AsyncSession:
 class AsyncSandcrabClient:
     """Asynchronous client for Sandcrab's native Unix-socket and loopback-HTTP control API."""
 
-    async def workspace_tools(self, key: str, *, profile: str | None = None):
+    async def workspace_tools(self, key: str, *, profile: str | None = None,
+                              template_id: str | None = None, fresh_child: bool = False):
         from .workspace import WorkspaceTools
-        return await WorkspaceTools.bind(self, key, profile)
+        return await WorkspaceTools.bind(self, key, profile, template_id=template_id, fresh_child=fresh_child)
 
     def __init__(
         self,

@@ -50,6 +50,8 @@ pub struct Plan {
     pub inode_limit: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
 }
 impl Plan {
     fn digest(&self) -> String {
@@ -58,6 +60,10 @@ impl Plan {
     fn valid(&self) -> bool {
         uuid(&self.id)
             && name(&self.profile)
+            && self
+                .template_id
+                .as_deref()
+                .is_none_or(|id| self.workspace_key.is_some() && crate::file_io::digest(id))
             && self.workspace_key.as_ref().is_none_or(|key| {
                 self.clone_from.is_none()
                     && crate::workspace_api::storage_id(key).as_ref() == Some(&self.id)
@@ -124,6 +130,7 @@ impl Record {
         if let Some(key) = &self.plan.workspace_key {
             value["workspaceKey"] = json!(key);
             value["workspaceGeneration"] = json!(self.operation);
+            value["templateId"] = json!(self.plan.template_id);
         }
         value
     }
@@ -428,6 +435,14 @@ impl Store {
 
     pub fn usage(&self, id: &str) -> Option<Arc<crate::usage::Account>> {
         self.state.lock().unwrap().usage.get(id).cloned()
+    }
+
+    pub(crate) fn holds_template(&self, template: &str) -> bool {
+        let state = self.state.lock().unwrap();
+        state.fenced
+            || state.records.values().any(|record| {
+                record.occupies_volume() && record.plan.template_id.as_deref() == Some(template)
+            })
     }
 
     pub fn background_usage(&self) -> Vec<Arc<crate::usage::Account>> {
@@ -810,6 +825,11 @@ impl Store {
         no_mounts_below(&path, false)?;
         let data_path = self.data(&record.plan.id);
         let data = fs::symlink_metadata(&data_path)?;
+        if record.plan.template_id.is_some() {
+            for name in ["upper", "work"] {
+                protected_directory(&path.join(name))?;
+            }
+        }
         if !data.is_dir()
             || data.uid() != record.uid
             || data.gid() != record.gid
@@ -934,6 +954,13 @@ impl Store {
             Some(Gid::from_raw(record.gid)),
         )?;
         fs::set_permissions(&data, fs::Permissions::from_mode(0o750))?;
+        if record.plan.template_id.is_some() {
+            for name in ["upper", "work"] {
+                let layer = path.join(name);
+                DirBuilder::new().mode(0o711).create(&layer)?;
+                sync(&layer)?;
+            }
+        }
         sync(&data)?;
         sync(&path)?;
         sync(&self.config.root.join("data/volumes"))?;
@@ -1108,6 +1135,10 @@ pub struct Attachment {
     release_on_drop: bool,
 }
 impl Attachment {
+    pub(crate) fn directory(&self) -> PathBuf {
+        self.store.directory(&self.id)
+    }
+
     pub fn path(&self) -> PathBuf {
         self.store.data(&self.id)
     }
@@ -1167,6 +1198,7 @@ mod tests {
                     profile: "python".into(),
                     clone_from: None,
                     workspace_key: None,
+                    template_id: None,
                     byte_limit: None,
                     inode_limit: None,
                 },

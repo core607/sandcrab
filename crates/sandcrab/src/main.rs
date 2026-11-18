@@ -670,6 +670,7 @@ fn volume(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32
             profile: cli::resolve_profile(options.get("--profile").copied(), env),
             clone_from: options.get("--clone-from").map(|s| s.to_string()),
             workspace_key: None,
+            template_id: None,
             byte_limit,
             inode_limit,
         };
