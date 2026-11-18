@@ -431,7 +431,8 @@
               }
             }
           }
-        }
+        },
+        "summary": "Queue bash source and use its run ID to inspect completion."
       }
     },
     "/v1/sessions/{id}/renew": {
@@ -1496,7 +1497,8 @@
               }
             }
           }
-        }
+        },
+        "summary": "Open an independent shell sharing the parent workspace, budget and deadline."
       },
       "parameters": [
         {
