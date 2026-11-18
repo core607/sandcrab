@@ -20,8 +20,9 @@ or handlers and write their own.
 ## Proposal
 
 The SDKs and stdio MCP server implement the bound tool set on
-[persistent workspaces](2026-11-18-persistent-workspaces.md). Model comparisons
-with session-scoped tools remain pending.
+[persistent workspaces](2026-11-18-persistent-workspaces.md). The [scripted paired results](../../evidence/sandcrab-workspace-tools-scripted-2026-11-18/summary.json)
+cover both catalogs on the same six independently graded tasks. The metered model
+comparison with session-scoped tools remains pending.
 
 The Python and TypeScript SDKs provide a framework-neutral tool set bound to one
 workspace:

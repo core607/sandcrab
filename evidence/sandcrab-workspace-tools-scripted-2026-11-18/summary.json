@@ -1,0 +1,44 @@
+{
+  "revision": "483b5258d5c7ef8a97f98f4cdae2085824a1fc11",
+  "run": "https://github.com/core607/sandcrab/actions/runs/44373681194",
+  "mode": "scripted",
+  "model": "mockllm/model",
+  "status": "success",
+  "scope": "One scripted reference per task, same six tasks for both MCP catalogs. Independent sandbox grading and cleanup per attempt. No model requests.",
+  "comparison": {
+    "interfaces": {
+      "session-mcp": {
+        "attempts": 6,
+        "passed": 6,
+        "cleanupFailures": 0,
+        "errors": 0,
+        "medianSeconds": 1.581,
+        "toolCalls": 21,
+        "mcpToolCalls": 15,
+        "apiCalls": 61,
+        "failedToolCalls": 0,
+        "inputTokens": 0,
+        "outputTokens": 0
+      },
+      "workspace-mcp": {
+        "attempts": 6,
+        "passed": 6,
+        "cleanupFailures": 0,
+        "errors": 0,
+        "medianSeconds": 1.714,
+        "toolCalls": 21,
+        "mcpToolCalls": 15,
+        "apiCalls": 60,
+        "failedToolCalls": 0,
+        "inputTokens": 0,
+        "outputTokens": 0
+      }
+    },
+    "pairedTrials": 6,
+    "unpairedTrials": 0,
+    "bothPassed": 6,
+    "onlySessionPassed": 0,
+    "onlyWorkspacePassed": 0,
+    "bothFailed": 0
+  }
+}
