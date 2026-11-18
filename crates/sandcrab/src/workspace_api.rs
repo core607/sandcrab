@@ -48,6 +48,7 @@ pub(crate) struct Execution {
     pub key: String,
     pub generation: String,
     pub fresh_shell: bool,
+    pub init_failed: bool,
     pub window: u64,
 }
 
@@ -200,10 +201,23 @@ impl Service {
             Some(Value::Bool(value)) => value,
             _ => return error(400, "INVALID_REQUEST"),
         };
+        let init = match body.as_object_mut().and_then(|v| v.remove("shellInit")) {
+            None => None,
+            Some(Value::String(source))
+                if fresh_child
+                    && !source.is_empty()
+                    && source.len() <= 16384
+                    && !source.contains('\0') =>
+            {
+                Some(source)
+            }
+            _ => return error(400, "INVALID_REQUEST"),
+        };
         let Ok(mut request) = serde_json::from_value::<Command>(body) else {
             return error(400, "INVALID_REQUEST");
         };
         request.fresh_child = fresh_child;
+        request.shell_init = init;
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
         }
@@ -255,6 +269,7 @@ impl Service {
             key: key.into(),
             generation: generation.as_str().unwrap().into(),
             fresh_shell: fresh_child || !owned.used,
+            init_failed: false,
             window,
         };
         let result =

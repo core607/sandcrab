@@ -57,6 +57,8 @@ pub struct Command {
     pub output_limit_bytes: Option<usize>,
     #[serde(skip)]
     pub(crate) fresh_child: bool,
+    #[serde(skip)]
+    pub(crate) shell_init: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub keep_result: bool,
 }
@@ -86,6 +88,9 @@ impl Command {
         value["sessionId"] = session.into();
         if self.fresh_child {
             value["freshChild"] = true.into();
+        }
+        if let Some(init) = &self.shell_init {
+            value["shellInit"] = json!(init);
         }
         value
     }
@@ -879,19 +884,7 @@ impl Service {
         let (result, contained) = match opened {
             Ok(mut child) => {
                 let result = if child.ready(&work.cancelled) {
-                    let calls = self.registry.lock().unwrap().runs[run].calls.clone();
-                    let (finished, _) = child.execute(
-                        run,
-                        &work.request.command,
-                        work.timeout,
-                        work.output,
-                        crate::runtime::Control {
-                            cancelled: &work.cancelled,
-                            calls,
-                        },
-                        |stream, bytes| self.output(run, stream, bytes),
-                    );
-                    Ok(finished)
+                    Ok(self.run_child_source(&mut child, work))
                 } else {
                     Err("SESSION_UNAVAILABLE")
                 };
@@ -926,6 +919,59 @@ impl Service {
             }
         }
         true
+    }
+
+    fn run_child_source(&self, child: &mut crate::runtime::Shell, work: &Work) -> job::Finished {
+        let run = &work.request.id;
+        let start = Instant::now();
+        if let Some(init) = &work.request.shell_init {
+            // Setup and source use separate shell frames so their size, syntax and quoting remain independent.
+            let (mut result, reusable) = child.frame(
+                run,
+                init,
+                work.timeout,
+                work.output,
+                &work.cancelled,
+                |_, _| {},
+            );
+            if !reusable
+                || result.exit_code != 0
+                || start.elapsed() >= Duration::from_millis(work.timeout)
+            {
+                self.registry
+                    .lock()
+                    .unwrap()
+                    .runs
+                    .get_mut(run)
+                    .unwrap()
+                    .workspace
+                    .as_mut()
+                    .unwrap()
+                    .init_failed = true;
+                if result.exit_code == 0 && result.end == job::End::Normal {
+                    result.exit_code = 1;
+                }
+                return result;
+            }
+        }
+        let remaining = work
+            .timeout
+            .saturating_sub(start.elapsed().as_millis() as u64)
+            .max(1);
+        let calls = self.registry.lock().unwrap().runs[run].calls.clone();
+        child
+            .execute(
+                run,
+                &work.request.command,
+                remaining,
+                work.output,
+                crate::runtime::Control {
+                    cancelled: &work.cancelled,
+                    calls,
+                },
+                |stream, bytes| self.output(run, stream, bytes),
+            )
+            .0
     }
 
     fn end_session(&self, id: &str, fallback: &str, contained: bool, code: Option<&str>) {

@@ -5196,6 +5196,11 @@
             "type": "boolean",
             "default": false,
             "description": "Run in a new shell and contain it before reporting the result."
+          },
+          "shellInit": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional initialization for freshChild before the command. At most 16384 UTF-8 bytes."
           }
         }
       },

@@ -1264,6 +1264,35 @@ impl Shell {
                 );
             }
         };
+        let (finished, mut reusable) =
+            self.frame(id, command, timeout, limit, cancelled, on_output);
+        if let Some(guard) = &mut guard {
+            let ended = if reusable {
+                sandcrab_core::unit::frozen(self.launch.group().path(), cancelled, || {
+                    guard.finish()
+                })
+            } else {
+                guard.finish()
+            };
+            if ended.is_err() {
+                if let Some(calls) = &calls {
+                    calls.fail("HOST_CALL_CLEANUP_FAILED");
+                }
+                reusable = false;
+            }
+        }
+        (finished, reusable)
+    }
+
+    pub(crate) fn frame(
+        &mut self,
+        id: &str,
+        command: &str,
+        timeout: u64,
+        limit: usize,
+        cancelled: &AtomicBool,
+        on_output: impl FnMut(usize, &[u8]),
+    ) -> (job::Finished, bool) {
         let result = self.channel.execute(
             CommandRequest {
                 execution: id,
@@ -1284,22 +1313,7 @@ impl Shell {
             _ if oom.is_ok_and(|count| count > 0) => job::End::ResourceLimit,
             _ => job::End::Normal,
         };
-        let mut reusable = !observation_failed && !result.shell_exited && end == job::End::Normal;
-        if let Some(guard) = &mut guard {
-            let ended = if reusable {
-                sandcrab_core::unit::frozen(self.launch.group().path(), cancelled, || {
-                    guard.finish()
-                })
-            } else {
-                guard.finish()
-            };
-            if ended.is_err() {
-                if let Some(calls) = &calls {
-                    calls.fail("HOST_CALL_CLEANUP_FAILED");
-                }
-                reusable = false;
-            }
-        }
+        let reusable = !observation_failed && !result.shell_exited && end == job::End::Normal;
         (
             job::Finished {
                 exit_code: i32::from(result.exit_code),
