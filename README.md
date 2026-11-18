@@ -202,8 +202,11 @@ For a stable release above 0.3.1, set the service and both SDKs to the same
 version before tagging the commit. The [release workflow](.github/workflows/publish-sdks.yml)
 tests both packaged README examples against that commit's service archive. It
 publishes the service, then PyPI and npm, verifying the uploaded bytes at each
-destination. Rerun failed jobs to finish a partial release. A manual run with
-`candidate_tag` checks the proposed version and runs acceptance without publishing.
+destination. Rerun failed jobs to finish a partial release. If the tagged workflow
+itself needs a fix after service publication, run the workflow from `main` with
+`resume_run` set to the original tag run ID. It verifies the original SDK
+artifacts against the published release and submits only the missing packages.
+Use `candidate_tag` for a rehearsal.
 
 Maintainers can test a released ZIP against a reviewed commit on a public consumer's own
 branch. Add the repository to the JSON array in the `SANDCRAB_DOWNSTREAM_REPOSITORIES`
