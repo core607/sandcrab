@@ -60,7 +60,7 @@ jobs:
           build_packages "$PWD" "$PWD/dist"
           python -m twine check --strict dist/pypi/*
           replay=$(mktemp -d)
-          git archive HEAD sdk/python sdk/typescript | tar -x -C "$replay"
+          git archive HEAD | tar -x -C "$replay"
           build_packages "$replay" "$replay/dist"
           diff -qr dist "$replay/dist"
       - name: Download the accepted service archive
