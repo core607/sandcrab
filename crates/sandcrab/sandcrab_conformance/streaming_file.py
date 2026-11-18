@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ordinary streaming uploads through the real authenticated native API and CLI."""
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from http.client import HTTPResponse
 import json
 import os
@@ -170,11 +170,17 @@ class StreamingProbe(Probe):
         def edit(new, expected=version, old='needle'):
             return http(self.socket, 'POST', prefix + '/edit',
                         {'path': 'edit.txt', 'expectedSha256': expected, 'old': old, 'new': new})
-        status, refused = edit('x', old='absent')
-        assert status == 409 and refused['error']['code'] == 'EDIT_MATCH_COUNT', (status, refused)
+        for pattern in ('absent', 'e'):
+            status, refused = edit('x', old=pattern)
+            assert status == 409 and refused['error']['code'] == 'EDIT_MATCH_COUNT', (status, refused)
+            assert (workspace / 'edit.txt').read_bytes() == original
         assert edit('x', expected='bad')[0] == 400
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            attempts = list(pool.map(edit, ('left', 'right')))
+        # Each client connects as the configured Unix peer UID.
+        with ProcessPoolExecutor(max_workers=2) as pool:
+            clients = [pool.submit(http, self.socket, 'POST', prefix + '/edit',
+                                   {'path': 'edit.txt', 'expectedSha256': version, 'old': 'needle', 'new': text})
+                       for text in ('left', 'right')]
+            attempts = [client.result() for client in clients]
         for i, (status, reply) in enumerate(attempts):
             if status == 409 and reply['error']['code'] == 'SESSION_FILES_BUSY':
                 attempts[i] = edit(('left', 'right')[i])
