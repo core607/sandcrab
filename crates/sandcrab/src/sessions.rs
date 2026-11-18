@@ -109,6 +109,7 @@ pub(crate) struct Session {
     pub state: String,
     deadline: Instant,
     managed_idle: Option<u64>,
+    workspace_forgotten: bool,
     pub(crate) workspace_file_users: usize,
     pub expires_at: u64,
     cancelled: Arc<AtomicBool>,
@@ -152,9 +153,10 @@ impl Session {
         self.terminal()
             && self.workspace_file_users == 0
             && !self.request.keep_result
-            && self
-                .completed_at
-                .is_some_and(|at| now.saturating_duration_since(at) >= ttl)
+            && (self.workspace_forgotten
+                || self
+                    .completed_at
+                    .is_some_and(|at| now.saturating_duration_since(at) >= ttl))
     }
     pub fn terminal(&self) -> bool {
         ["closed", "expired", "failed"].contains(&self.state.as_str())
@@ -169,6 +171,16 @@ impl Session {
     }
 }
 impl Registry {
+    pub(crate) fn forget_workspace_sessions(&mut self, generation: &str) {
+        self.sessions.retain(|_, session| {
+            if session.request.workspace_generation.as_deref() != Some(generation) {
+                return true;
+            }
+            session.workspace_forgotten = true;
+            !session.terminal() || session.workspace_file_users != 0
+        });
+    }
+
     pub(crate) fn remove_waiting_command(&mut self, session: &str, id: &str, incarnation: &str) {
         if let Some(session) = self.sessions.get_mut(session) {
             session
@@ -456,6 +468,7 @@ impl Service {
             state: "starting".into(),
             deadline: Instant::now() + Duration::from_millis(lifetime),
             managed_idle: managed.then_some(lifetime),
+            workspace_forgotten: false,
             workspace_file_users: 0,
             expires_at: expires_at(lifetime),
             cancelled: cancelled.clone(),
@@ -557,6 +570,7 @@ impl Service {
             state: "starting".into(),
             deadline: parent.deadline,
             managed_idle: None,
+            workspace_forgotten: false,
             workspace_file_users: 0,
             expires_at: parent.expires_at,
             cancelled: cancelled.clone(),

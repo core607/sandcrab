@@ -112,12 +112,19 @@ max_records = 12
         assert result['freshShell'] and result['result']['stdout'] == 'ab', result
         self.done('daemon-restart-preserves-files-and-rejects-submissions-from-the-previous-epoch')
 
+        raw = self.session_open()
         volume = '/v1/volumes/' + first['id']
         assert http(self.socket, 'POST', volume + '/delete', {})[1]['error']['code'] == 'WORKSPACE_MANAGED'
         expected = {'generation': generation}
         self.until(lambda: http(self.socket, 'POST', route + '/delete', expected)[0] in (200, 202))
         self.until(lambda: http(self.socket, 'GET', route)[1]['state'] == 'deleted')
         assert http(self.socket, 'POST', route + '/forget', expected)[0] == 200
+        self.until(lambda: http(self.socket, 'GET', '/v1/sessions/' + after['sessionId'])[0] == 404)
+        assert http(self.socket, 'GET', '/v1/runs/' + after['id'])[0] == 200
+        assert http(self.socket, 'GET', '/v1/sessions/' + raw['id'])[0] == 200
+        self.session_close(raw)
+        self.session_forget(raw)
+        self.done('forgetting-a-workspace-releases-owned-shell-receipts-and-preserves-independent-records')
         new = self.ensure(route)
         assert new['generation'] != generation
         status, old = http(self.socket, 'POST', route + '/commands', {**request, 'serverId': self.info['serverId']})
