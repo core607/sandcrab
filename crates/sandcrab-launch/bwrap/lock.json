@@ -20,7 +20,8 @@
     },
     {
       "name": "libcap-2.78.tar.xz",
-      "url": "https://kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz",
+      "url": "https://distfiles.alpinelinux.org/distfiles/v3.24/libcap-2.78.tar.xz",
+      "upstream": "https://kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-2.78.tar.xz",
       "algorithm": "sha512",
       "digest": "a156a8708dd59f13400f701f4e1ddc81f915fe4e7b32f93a328f7d6f030b7a004fb985fa9ac60812dfffeb8ad860d2e1f59895485497350250efd9378682626b",
       "license": "libcap-2.78/License"
