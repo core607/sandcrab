@@ -1,13 +1,16 @@
 """Caller-owned Host Call dispatchers and idempotency ledgers."""
 from __future__ import annotations
 
+import asyncio
 import base64
+from concurrent.futures import Future
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import inspect
 import json
 import threading
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable, Iterator, Protocol
 
 from .errors import ProtocolError
 
@@ -25,12 +28,42 @@ class ReplyLedger(Protocol):
     def put(self, run_id: str, call_id: str, request_sha256: str, reply: bytes) -> None: ...
 
 
+class _PendingCalls:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pending: dict[tuple[str, str], tuple[str, Future[bytes]]] = {}
+
+    @contextmanager
+    def claim(self, context: CallContext) -> Iterator[tuple[Future[bytes], bool]]:
+        key = (context.run_id, context.call_id)
+        with self._lock:
+            entry = self._pending.get(key)
+            if entry is None:
+                reply: Future[bytes] = Future()
+                self._pending[key] = context.request_sha256, reply
+            else:
+                digest, reply = entry
+                if digest != context.request_sha256:
+                    raise ProtocolError(f"Call {context.call_id} changed its request bytes")
+        try:
+            yield reply, entry is None
+        except BaseException as error:
+            if entry is None:
+                reply.set_exception(error)
+            raise
+        finally:
+            if entry is None:
+                with self._lock:
+                    del self._pending[key]
+
+
 class InMemoryReplyLedger:
     """Thread-safe in-process reply ledger for one caller lifetime."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._entries: dict[tuple[str, str], tuple[str, bytes]] = {}
+        self._pending = _PendingCalls()
 
     def get(self, run_id: str, call_id: str) -> tuple[str, bytes] | None:
         with self._lock:
@@ -116,6 +149,7 @@ class HostCallDispatcher:
         operation_field: str = "operation",
     ) -> None:
         self.ledger: ReplyLedger = ledger if ledger is not None else InMemoryReplyLedger()
+        self._pending = self.ledger._pending if isinstance(self.ledger, InMemoryReplyLedger) else _PendingCalls()
         self._operation_field = operation_field
         self._raw_handler: Callable[[bytes, CallContext], Any] | None = None
         self._json_handlers: dict[str, Callable[[dict[str, Any], CallContext], Any]] = {}
@@ -140,6 +174,12 @@ class HostCallDispatcher:
         return decorator
 
     def handle_payload(self, payload: bytes, context: CallContext) -> bytes:
+        with self._pending.claim(context) as (reply, owner):
+            if owner:
+                reply.set_result(self._dispatch(payload, context))
+            return reply.result()
+
+    def _dispatch(self, payload: bytes, context: CallContext) -> bytes:
         cached = self.ledger.get(context.run_id, context.call_id)
         if cached is not None:
             prior_sha, prior_reply = cached
@@ -220,6 +260,7 @@ class AsyncHostCallDispatcher:
         operation_field: str = "operation",
     ) -> None:
         self.ledger: ReplyLedger = ledger if ledger is not None else InMemoryReplyLedger()
+        self._pending = self.ledger._pending if isinstance(self.ledger, InMemoryReplyLedger) else _PendingCalls()
         self._operation_field = operation_field
         self._raw_handler: Callable[[bytes, CallContext], Any] | None = None
         self._json_handlers: dict[str, Callable[[dict[str, Any], CallContext], Any]] = {}
@@ -241,6 +282,14 @@ class AsyncHostCallDispatcher:
         return decorator
 
     async def handle_payload(self, payload: bytes, context: CallContext) -> bytes:
+        with self._pending.claim(context) as (reply, owner):
+            if owner:
+                value = await self._dispatch(payload, context)
+                reply.set_result(value)
+                return value
+            return await asyncio.shield(asyncio.wrap_future(reply))
+
+    async def _dispatch(self, payload: bytes, context: CallContext) -> bytes:
         cached = self.ledger.get(context.run_id, context.call_id)
         if cached is not None:
             prior_sha, prior_reply = cached

@@ -459,9 +459,13 @@ function encodeReply(result) {
   return buf;
 }
 
+const pendingCallsByLedger = new WeakMap();
+
 export class HostCallDispatcher {
   constructor({ ledger = new InMemoryReplyLedger(), operationField = "operation" } = {}) {
     this.ledger = ledger;
+    if (!pendingCallsByLedger.has(ledger)) pendingCallsByLedger.set(ledger, new Map());
+    this._pending = pendingCallsByLedger.get(ledger);
     this.operationField = operationField;
     this._rawHandler = null;
     this._jsonHandlers = new Map();
@@ -478,6 +482,25 @@ export class HostCallDispatcher {
   }
 
   async handlePayload(payload, context) {
+    const { runId, callId, requestSha256 } = context;
+    const key = `${runId}:${callId}`;
+    const pending = this._pending.get(key);
+    if (pending) {
+      if (pending.requestSha256 !== requestSha256) {
+        throw new ProtocolError(`Call ${callId} changed its request bytes`);
+      }
+      return pending.reply;
+    }
+    const reply = Promise.resolve().then(() => this._dispatch(payload, context));
+    this._pending.set(key, { requestSha256, reply });
+    try {
+      return await reply;
+    } finally {
+      this._pending.delete(key);
+    }
+  }
+
+  async _dispatch(payload, context) {
     const cached = await this.ledger.get(context.runId, context.callId);
     if (cached) {
       if (cached.requestSha256 !== context.requestSha256) {

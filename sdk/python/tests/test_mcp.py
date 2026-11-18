@@ -16,6 +16,24 @@ RUN_ID = "00000000-0000-0000-0000-000000000022"
 
 
 class McpServerTests(unittest.TestCase):
+    def test_transport_error_is_a_tool_result_and_stdio_keeps_serving(self) -> None:
+        def offline(request):
+            raise httpx.ConnectTimeout("offline", request=request)
+
+        client = SandcrabClient(default_profile="default", transport=httpx.MockTransport(offline))
+        messages = [
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+             "params": {"name": "sandcrab_run", "arguments": {"command": ["true"]}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "ping"},
+        ]
+        stdin = io.BytesIO(b"".join(json.dumps(m).encode() + b"\n" for m in messages))
+        stdout = io.BytesIO()
+        SandcrabMcpServer(client).serve_stdio(stdin, stdout)
+        failed, ping = map(json.loads, stdout.getvalue().splitlines())
+        self.assertTrue(failed["result"]["isError"])
+        self.assertEqual(json.loads(failed["result"]["content"][0]["text"])["code"], "TRANSPORT_ERROR")
+        self.assertEqual(ping, {"jsonrpc": "2.0", "id": 2, "result": {}})
+
     def _mock_client(self, log: list[tuple[str, str]], opened_ids: list[str] | None = None) -> SandcrabClient:
         sessions: dict[str, str] = {}
         runs: set[str] = set()

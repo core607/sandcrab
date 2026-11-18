@@ -83,9 +83,11 @@ with SandcrabClient(socket_path="/run/sandcrab/sandcrab.sock", default_profile="
 ```
 
 Each event's `requestSha256` and serving epoch are checked before invoking a handler.
-`InMemoryReplyLedger` deduplicates `(run_id, call_id)` within one caller process and
-rejects mutated duplicate payloads; supply a persistent `ReplyLedger` when handlers
-perform durable external effects. Any unhandled handler exception cancels the sandbox
+Dispatchers sharing an `InMemoryReplyLedger` share the result of overlapping
+observations of the same `(run_id, call_id)` and reject changed payloads. With a
+custom ledger, share one dispatcher to coordinate concurrent calls. For durable
+external effects, record the reply in the transaction that commits the effect.
+Any unhandled handler exception cancels the sandbox
 command and leaves its record retained for inspection.
 
 ## Stdio MCP server

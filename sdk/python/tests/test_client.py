@@ -1,13 +1,17 @@
 """Unit tests for SandcrabClient, AsyncSandcrabClient, Session and HostCallDispatcher."""
 from __future__ import annotations
 
+import asyncio
 import base64
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import gzip
 import hashlib
 import hmac
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 
 import httpx
@@ -15,6 +19,7 @@ import httpx
 from sandcrab import (
     AsyncHostCallDispatcher,
     AsyncSandcrabClient,
+    CallContext,
     CommandFailedError,
     HostCallDispatcher,
     InMemoryReplyLedger,
@@ -38,6 +43,64 @@ TOKEN = "c" * 64
 
 def sse_frame(cursor: str, event: str, data: dict) -> str:
     return f"id: {cursor}\nevent: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+class ConcurrentCallsTests(unittest.IsolatedAsyncioTestCase):
+    context = CallContext(RUN_ID, EPOCH, CALL_ID, GUEST_REQ_ID, 1, hashlib.sha256(b"ping").hexdigest(), None)
+
+    def test_threads_sharing_a_ledger_invoke_one_handler(self) -> None:
+        ledger = InMemoryReplyLedger()
+        first = HostCallDispatcher(ledger=ledger)
+        second = HostCallDispatcher(ledger=ledger)
+        started, finish = threading.Event(), threading.Event()
+        effects = []
+
+        @first.on_call
+        def handler(payload, _):
+            effects.append(payload)
+            started.set()
+            self.assertTrue(finish.wait(5))
+            return b"reply"
+
+        with ThreadPoolExecutor(2) as pool:
+            owner = pool.submit(first.handle_payload, b"ping", self.context)
+            try:
+                self.assertTrue(started.wait(5))
+                follower = pool.submit(second.handle_payload, b"ping", self.context)
+                with self.assertRaisesRegex(ProtocolError, "changed"):
+                    second.handle_payload(b"other", replace(self.context, request_sha256="different"))
+            finally:
+                finish.set()
+            self.assertEqual([owner.result(), follower.result()], [b"reply", b"reply"])
+        self.assertEqual(effects, [b"ping"])
+
+    async def test_async_observers_share_replies_and_waiter_cancellation(self) -> None:
+        dispatcher = AsyncHostCallDispatcher()
+        started, finish = asyncio.Event(), asyncio.Event()
+        effects = []
+
+        @dispatcher.on_call
+        async def handler(payload, _):
+            effects.append(payload)
+            started.set()
+            await finish.wait()
+            return b"reply"
+
+        owner = asyncio.create_task(dispatcher.handle_payload(b"ping", self.context))
+        await started.wait()
+        follower = asyncio.create_task(dispatcher.handle_payload(b"ping", self.context))
+        cancelled = asyncio.create_task(dispatcher.handle_payload(b"ping", self.context))
+        await asyncio.sleep(0)
+        cancelled.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await cancelled
+        try:
+            with self.assertRaisesRegex(ProtocolError, "changed"):
+                await asyncio.wait_for(dispatcher.handle_payload(b"other", replace(self.context, request_sha256="other")), 1)
+        finally:
+            finish.set()
+        self.assertEqual(await asyncio.gather(owner, follower), [b"reply", b"reply"])
+        self.assertEqual(effects, [b"ping"])
 
 
 class ConnectionAndValidationTests(unittest.TestCase):
