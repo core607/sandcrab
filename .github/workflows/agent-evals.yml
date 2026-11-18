@@ -3,6 +3,11 @@ name: Agent evaluations
 on:
   workflow_dispatch:
     inputs:
+      evidence_mode:
+        description: Scripted harness evidence or a metered model trial
+        type: choice
+        options: [scripted, model]
+        default: scripted
       suite:
         description: Native API cases, programming/file tasks, or both
         type: choice
@@ -40,17 +45,18 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate the paid run before starting its evaluator
+        if: inputs.evidence_mode == 'model'
         run: python3 evals/check_run.py
   native:
     needs: validate
-    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    if: github.ref == 'refs/heads/main' && (inputs.evidence_mode == 'scripted' || github.run_attempt == 1)
     uses: ./.github/workflows/evals.yml
     with:
-      evidence_mode: model
+      evidence_mode: ${{ inputs.evidence_mode }}
       suite: ${{ inputs.suite }}
       workspace_client: ${{ inputs.suite == 'native' && 'native' || inputs.workspace_client }}
       model: ${{ inputs.model }}
       repeats: ${{ fromJSON(inputs.repeats) }}
       budget_usd: ${{ inputs.budget_usd }}
     secrets:
-      model_key: ${{ secrets.DEEPSEEK_EVAL_API_KEY }}
+      model_key: ${{ inputs.evidence_mode == 'model' && secrets.DEEPSEEK_EVAL_API_KEY || '' }}

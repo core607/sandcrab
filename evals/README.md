@@ -12,6 +12,11 @@ MCP handler, fixed programming cases, a single model budget and the same
 independent artifact grader. Session-scoped clients receive their session and
 volume IDs. Both arms get the same export tool. Inspect uses each catalog's
 own descriptions and repeats a parameter name when a description is missing.
+To collect paired scripted receipts in Actions, dispatch **Agent evaluations** on
+`main` with `evidence_mode=scripted`, `suite=workspace`, `workspace_client=mcp-pair`
+and one repeat. Both catalogs exercise the same tasks and independent grader.
+Choosing `evidence_mode=model` enables the metered model and its dedicated secret.
+
 The `comparison` in the CI summary reports paired outcomes, tool traffic, tokens
 and median elapsed time. Raw attempts and workspace artifacts stay with the run.
 
