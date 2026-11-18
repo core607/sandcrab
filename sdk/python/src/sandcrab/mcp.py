@@ -11,11 +11,11 @@ from typing import Any, BinaryIO
 import httpx
 
 from .client import SandcrabClient
+from ._version import __version__
 from .errors import CommandFailedError, ProtocolError, SandcrabError, TransportUncertainError
 
 SUPPORTED_PROTOCOLS = ("2025-03-26", "2024-11-05")
 DEFAULT_PROTOCOL = "2024-11-05"
-SERVER_VERSION = "0.3.0"
 MCP_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 MCP_FILE_BOUND_BYTES = 1024 * 1024
 
@@ -357,7 +357,7 @@ class SandcrabMcpServer:
                 "result": {
                     "protocolVersion": negotiated,
                     "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": "sandcrab", "version": SERVER_VERSION},
+                    "serverInfo": {"name": "sandcrab", "version": __version__},
                 },
             }
 

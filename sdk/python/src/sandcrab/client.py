@@ -12,10 +12,12 @@ import time
 from typing import Any, AsyncIterator, Callable, Iterator, Mapping, Sequence
 from urllib.parse import urlencode
 import uuid
+import warnings
 
 import httpx
 
 from sandcrab_templates.client import PublicationUncertain, recipe_id
+from ._version import __version__
 
 from ._wire import (
     JSON_BOUND,
@@ -33,6 +35,15 @@ from ._wire import (
 )
 from .calls import AsyncHostCallDispatcher, HostCallDispatcher
 from .errors import CommandFailedError, ProtocolError, SandcrabError, TransportUncertainError
+
+
+def _report_release(info: dict[str, Any], previous: str | None) -> str | None:
+    advertised = info.get("releaseVersion")
+    if isinstance(advertised, str) and advertised != __version__ and advertised != previous:
+        warnings.warn(f"Sandcrab SDK {__version__} connected to service {advertised}",
+                      RuntimeWarning, stacklevel=3)
+        return advertised
+    return previous
 
 
 def _resources(memory_bytes: int | None, cpu_quota_percent: int | None) -> dict[str, int] | None:
@@ -253,8 +264,11 @@ class SandcrabClient:
             follow_redirects=False,
             trust_env=False,
             transport=chosen_transport,
+            event_hooks={"request": [self._discover_before_request]},
         )
         self._server_id: str | None = None
+        self._warned_release: str | None = None
+        self._discovery_lock = threading.Lock()
 
     def __enter__(self) -> SandcrabClient:
         return self
@@ -271,10 +285,17 @@ class SandcrabClient:
             raise ValueError("Pass profile or set default_profile / SANDCRAB_PROFILE")
         return check_profile(chosen)
 
+    def _discover_before_request(self, request: httpx.Request) -> None:
+        if self._server_id is None and request.url.path != "/v1/info":
+            self._ensure_server_id()
+
     def _ensure_server_id(self) -> str:
         if self._server_id is None:
-            self.info()
-        assert self._server_id is not None
+            with self._discovery_lock:
+                if self._server_id is None:
+                    self.info()
+        if self._server_id is None:
+            raise ProtocolError("Discovery returned no serverId")
         return self._server_id
 
     def _request_json(
@@ -288,6 +309,8 @@ class SandcrabClient:
         recovery_id: str | None = None,
         uncertain_op: str | None = None,
     ) -> dict[str, Any]:
+        if uncertain_op and self._server_id is None:
+            self._ensure_server_id()
         kwargs: dict[str, Any] = {}
         if headers:
             kwargs["headers"] = dict(headers)
@@ -351,6 +374,7 @@ class SandcrabClient:
         server_id = data.get("serverId")
         if isinstance(server_id, str):
             self._server_id = check_uuid(server_id, "serverId")
+        self._warned_release = _report_release(data, self._warned_release)
         return data
 
     def openapi(self, capability: str | None = None) -> dict[str, Any]:
@@ -1183,8 +1207,11 @@ class AsyncSandcrabClient:
             follow_redirects=False,
             trust_env=False,
             transport=chosen_transport,
+            event_hooks={"request": [self._discover_before_request]},
         )
         self._server_id: str | None = None
+        self._warned_release: str | None = None
+        self._discovery_lock = asyncio.Lock()
 
     async def __aenter__(self) -> AsyncSandcrabClient:
         return self
@@ -1201,10 +1228,17 @@ class AsyncSandcrabClient:
             raise ValueError("Pass profile or set default_profile / SANDCRAB_PROFILE")
         return check_profile(chosen)
 
+    async def _discover_before_request(self, request: httpx.Request) -> None:
+        if self._server_id is None and request.url.path != "/v1/info":
+            await self._ensure_server_id()
+
     async def _ensure_server_id(self) -> str:
         if self._server_id is None:
-            await self.info()
-        assert self._server_id is not None
+            async with self._discovery_lock:
+                if self._server_id is None:
+                    await self.info()
+        if self._server_id is None:
+            raise ProtocolError("Discovery returned no serverId")
         return self._server_id
 
     async def _request_json(
@@ -1218,6 +1252,8 @@ class AsyncSandcrabClient:
         recovery_id: str | None = None,
         uncertain_op: str | None = None,
     ) -> dict[str, Any]:
+        if uncertain_op and self._server_id is None:
+            await self._ensure_server_id()
         kwargs: dict[str, Any] = {}
         if headers:
             kwargs["headers"] = dict(headers)
@@ -1281,6 +1317,7 @@ class AsyncSandcrabClient:
         server_id = data.get("serverId")
         if isinstance(server_id, str):
             self._server_id = check_uuid(server_id, "serverId")
+        self._warned_release = _report_release(data, self._warned_release)
         return data
 
     async def openapi(self, capability: str | None = None) -> dict[str, Any]:

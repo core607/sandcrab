@@ -5,6 +5,10 @@ The `sandcrab` package provides a zero-dependency client (`SandcrabClient`,
 native Unix-socket and loopback-HTTP control API. It requires Node.js 20+ and uses only
 built-in `node:*` modules.
 
+Install the SDK version matching the service release. The client discovers
+`/v1/info` before its first operation and emits `SANDCRAB_VERSION_MISMATCH` if
+the service advertises a different release version. Older services may omit this field.
+
 ## Run your first session
 
 Use Node.js 24+ to run the TypeScript example directly. On the Linux host where

@@ -4,28 +4,31 @@ Date: 2026-11-18
 
 ## Problem
 
-The service ships as GitHub release archives through the release workflow. The
-Python and TypeScript SDKs are published separately by a manually started
-[workflow](../../.github/workflows/publish-sdks.yml), one registry per run. For the
+The service shipped as GitHub release archives. The Python and TypeScript SDKs
+initially used separate manual runs of the package publisher. For the
 v0.3.0 service release, PyPI carries `sandcrab` 0.3.0 while npm carries 0.3.0 and
 0.3.1. The 0.3.1 npm package activated trusted publishing and corrected its README.
 npm also lists a leftover `0.0.0-stage` version.
 
 Before 1.0, releases identify commits without promising compatibility
 ([AGENTS.md](../../AGENTS.md)). A caller therefore needs to know exactly which SDK
-matches which service, yet neither SDK README states it, and the version numbers
-have already diverged.
+matches which service. Independent releases allowed those numbers to diverge.
 
 ## Proposal
 
-This is an unimplemented design.
+The tag workflow, package readback and SDK version warnings are implemented.
+The first unified tag and retirement of the historical npm staging version are
+still pending.
 
 - Starting with the first common version above 0.3.1, the service archives and
   both SDK packages build from the same tag and carry that version. Existing
   registry versions remain historical.
 - Run both SDK quickstarts against that tag's candidate service archive and SDK
-  distributions before publishing. The release workflow calls the trusted SDK
-  publishing workflow. On retry it verifies any published asset and package
+  distributions before publishing. Publishing jobs run directly in the registered
+  [tag entry point](../../.github/workflows/publish-sdks.yml). Both
+  [npm](https://docs.npmjs.com/trusted-publishers/) and
+  [PyPI](https://docs.pypi.org/trusted-publishers/troubleshooting/) bind publishing
+  authority to the top-level workflow. On retry it verifies any published asset and package
   against the accepted artifact digest, resumes only missing targets and fails
   on a mismatch. Completion requires readback from all three destinations.
 - `/v1/info` reports the release version beside its existing API version. Each SDK
@@ -43,7 +46,8 @@ Acceptance criteria:
   When one registry succeeds and the other fails, a retry completes the same
   release without uploading the successful package again.
 
-Remaining design question: whether a mismatch warns or refuses before 1.0.
+SDKs warn once per differing advertised service version during discovery.
+This preserves access to diagnostic and recovery operations on mixed versions.
 
 ## Alternatives
 

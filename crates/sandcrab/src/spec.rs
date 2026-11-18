@@ -38,6 +38,7 @@ pub fn document(capability: Option<&str>) -> Value {
     };
     let fields = [
         "apiVersion",
+        "releaseVersion",
         "serverId",
         "capabilities",
         "profiles",
@@ -46,9 +47,7 @@ pub fn document(capability: Option<&str>) -> Value {
     ];
     let info = &mut document["components"]["schemas"]["Info"];
     info["additionalProperties"] = json!(true);
-    info["description"] = json!(
-        "Common discovery and selected capability metadata. The response includes further fields; /v1/openapi describes them all."
-    );
+    info["description"] = json!("See /v1/openapi for all discovery fields.");
     info["properties"]
         .as_object_mut()
         .unwrap()

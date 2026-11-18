@@ -26,6 +26,28 @@ const STREAM_ID = "00000000-0000-0000-0000-000000000105";
 const VOL_ID = "00000000-0000-0000-0000-000000000106";
 const TOKEN = "d".repeat(64);
 
+test("first requests share discovery and warn once for a release mismatch", async (t) => {
+  const requests = [];
+  const warning = t.mock.method(process, "emitWarning", () => {});
+  const server = http.createServer((req, res) => {
+    requests.push(req.url);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ serverId: EPOCH, releaseVersion: "9.8.7" }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const client = new SandcrabClient({ endpoint: "http://127.0.0.1:" + server.address().port, token: TOKEN });
+  try {
+    await Promise.all([client.listRuns(), client.listRuns()]);
+    await client.info();
+    assert.deepEqual(requests, ["/v1/info", "/v1/runs", "/v1/runs", "/v1/info"]);
+    assert.equal(warning.mock.callCount(), 1);
+    assert.match(warning.mock.calls[0].arguments[0], /9\.8\.7/);
+  } finally {
+    client.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 function sseFrame(id, event, data) {
   return `id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }

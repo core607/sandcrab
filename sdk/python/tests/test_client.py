@@ -13,6 +13,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import warnings
 
 import httpx
 
@@ -153,6 +154,19 @@ class ConnectionAndValidationTests(unittest.TestCase):
 
 
 class SyncClientTests(unittest.TestCase):
+    def test_first_request_discovers_version_and_warns_once_for_a_mismatch(self):
+        calls = []
+        def handle(req):
+            calls.append(req.url.path)
+            return httpx.Response(200, json={"serverId": EPOCH, "releaseVersion": "9.8.7"})
+        with SandcrabClient(transport=httpx.MockTransport(handle)) as client, warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            client.list_runs()
+            client.info()
+        self.assertEqual(calls, ["/v1/info", "/v1/runs", "/v1/info"])
+        self.assertEqual(len(seen), 1)
+        self.assertIn("9.8.7", str(seen[0].message))
+
     def test_run_streams_output_forgets_by_default_and_checks_exit(self) -> None:
         calls: list[tuple[str, str, bytes]] = []
         chunks: list[tuple[str, bytes]] = []
@@ -418,6 +432,16 @@ class SyncClientTests(unittest.TestCase):
 
 
 class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_concurrent_first_requests_share_discovery(self):
+        calls = []
+        async def handle(req):
+            calls.append(req.url.path)
+            await asyncio.sleep(0)
+            return httpx.Response(200, json={"serverId": EPOCH})
+        async with AsyncSandcrabClient(transport=httpx.MockTransport(handle)) as client:
+            await asyncio.gather(client.list_runs(), client.list_runs())
+        self.assertEqual(calls, ["/v1/info", "/v1/runs", "/v1/runs"])
+
     async def test_async_session_host_calls_and_command_failed(self) -> None:
         dispatcher = AsyncHostCallDispatcher()
 
