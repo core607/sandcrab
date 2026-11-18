@@ -75,6 +75,9 @@ Listing and search return workspace-relative paths, `type` (`file`, `directory`,
 `symlink`, `other`), `size`, decimal permission bits (`mode`), `modifiedAt` and
 `createdAt` within a 60,000-byte JSON response bound; search walks at most 10,000
 entries and 64 levels matching non-directory basenames.
+Add `contains` to select regular files containing up to 1,024 bytes of literal
+UTF-8 search text. The profile's `transfer_bytes` bounds the total bytes
+scanned across matching filenames. Exhaustion returns `FILE_LIMIT`.
 
 Paths are relative to `/workspace`, preserving case and Unicode. Unless
 `parents=true` or `--parents` is set, upload parents must already exist. Raw uploads

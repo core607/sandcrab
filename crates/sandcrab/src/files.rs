@@ -313,11 +313,12 @@ impl Service {
     }
 
     pub(crate) fn search_files(&self, id: &str, query: &str) -> Result<Value> {
-        let (mut path, mut pattern) = (None, None);
+        let (mut path, mut pattern, mut contains) = (None, None, None);
         for (key, value) in crate::sdk_types::query(query)? {
             match key.as_str() {
                 "path" if path.is_none() => path = Some(value),
                 "pattern" if pattern.is_none() => pattern = Some(value),
+                "contains" if contains.is_none() => contains = Some(value),
                 _ => return Err((400, "INVALID_QUERY")),
             }
         }
@@ -326,7 +327,11 @@ impl Service {
             return Err((400, "INVALID_PATH"));
         }
         let pattern = pattern.ok_or((400, "INVALID_QUERY"))?;
-        let op = crate::sdk_fs::Request::Search { path, pattern };
+        let op = crate::sdk_fs::Request::Search {
+            path,
+            pattern,
+            contains,
+        };
         op.validate()?;
         native_entries(self.filesystem(self.file_lease(id, None)?, &op)?)
     }
