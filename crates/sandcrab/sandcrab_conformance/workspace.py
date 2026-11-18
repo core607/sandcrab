@@ -152,6 +152,16 @@ max_records = 12
         assert result['freshShell'] and result['result']['stdout'] == '/workspace:clean:edited', result
         assert http(self.socket, 'POST', route + '/commands', body)[1]['id'] == first['id']
         assert http(self.socket, 'POST', route + '/commands', {**body, 'freshChild': False})[0] == 409
+        setup, initialized = self.command(route, generation, 'printf "%s:%s" "$PWD" "$INIT_VALUE"',
+            freshChild=True, shellInit='cd sub && export INIT_VALUE=ok')
+        initialized = self.wait(initialized)
+        assert initialized['state'] == 'succeeded' and initialized['result']['stdout'] == '/workspace/sub:ok', initialized
+        assert http(self.socket, 'POST', route + '/commands', {**setup, 'shellInit': ':'})[0] == 409
+        _, invalid = self.command(route, generation, 'touch should-not-exist', freshChild=True, shellInit='exit 0')
+        failure = self.wait(invalid)
+        assert failure['state'] == 'failed' and failure['result']['code'] == 'SHELL_INIT_FAILED', failure
+        _, confirmed = self.command(route, generation, 'test ! -e should-not-exist', freshChild=True)
+        assert self.wait(confirmed)['state'] == 'succeeded'
         _, calling = self.command(route, generation, "printf request | sandcrab call -", freshChild=True)
         calls = '/v1/runs/' + calling['id'] + '/calls'
         with Calls(self.socket, calling) as events:

@@ -38,8 +38,15 @@ acknowledging application writes or deleting the workspace. The service keeps
 the upper layer after a download.
 
 Commands admitted to one workspace run in order. Set `freshChild: true` to
-start with the profile's initial shell state for that command. The daemon closes
-the child and its descendants before reporting completion. A full queue refuses a submission
+start with the profile's initial shell state for that command. Optionally pass `shellInit` to set its
+working directory or environment first. Initialization and command have
+separate 16 KiB source limits and share the command deadline. The service
+enables host calls for the command after initialization succeeds. A
+`SHELL_INIT_FAILED` result can include effects from setup; the command body
+has not started.
+
+Sandcrab contains the child and its descendants before reporting completion.
+A full queue refuses a submission
 before execution. The idle window extends on admission and after a command
 finishes. Guest commands keep their own execution timeout. Empty workspaces
 reserve the smaller of the profile's temporary storage limits and the

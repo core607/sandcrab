@@ -131,6 +131,9 @@ impl Run {
         if let Some(workspace) = &self.workspace {
             value["freshShell"] = json!(workspace.fresh_shell);
             value["workspaceGeneration"] = json!(workspace.generation);
+            if workspace.init_failed && self.terminal() {
+                value["result"]["code"] = json!("SHELL_INIT_FAILED");
+            }
         }
         value
     }
