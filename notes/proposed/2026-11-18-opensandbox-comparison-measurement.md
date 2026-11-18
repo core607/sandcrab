@@ -9,12 +9,11 @@ microVMs and, through its adapter, OpenSandbox. Claims about low fixed cost, fas
 starts and small idle footprint come from the design and from Sandcrab-only
 [density measurements](../../benchmarks/density/README.md). No same-host comparison
 with OpenSandbox exists. The [OpenSandbox adapter](../../crates/sandcrab/opensandbox.md)
-is verified with the published Python and Kotlin SDKs, not with OpenSandbox's
-`osb` CLI.
+documents the verified Python, Kotlin and `osb` interfaces.
 
 ## Proposal
 
-This is an unimplemented design.
+The CLI check runs during installer acceptance. The same-host comparison remains open.
 
 A comparison stage in the density benchmark measures Sandcrab and OpenSandbox's
 local Docker runtime on the no-KVM reference host:
