@@ -21,7 +21,7 @@ on:
       model:
         description: Model for the independent Sandcrab tasks
         type: choice
-        options: [deepseek-flash]
+        options: [deepseek-flash, gpt-6-luna]
         default: deepseek-flash
       repeats:
         description: Trials per case
@@ -59,4 +59,5 @@ jobs:
       repeats: ${{ fromJSON(inputs.repeats) }}
       budget_usd: ${{ inputs.budget_usd }}
     secrets:
-      model_key: ${{ inputs.evidence_mode == 'model' && secrets.DEEPSEEK_EVAL_API_KEY || '' }}
+      model_key: ${{ inputs.evidence_mode == 'model' && inputs.model == 'deepseek-flash' && secrets.DEEPSEEK_EVAL_API_KEY || '' }}
+      openai_model_key: ${{ inputs.evidence_mode == 'model' && inputs.model == 'gpt-6-luna' && secrets.OPENAI_EVAL_API_KEY || '' }}

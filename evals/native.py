@@ -12,6 +12,8 @@ import socket
 import subprocess
 import sys
 
+from providers import PROVIDERS, take_model_key
+
 
 def sdk_configuration(fixture, client):
     token = secrets.token_hex(32)
@@ -40,16 +42,16 @@ def main():
     parser.add_argument('--suite', choices=['native', 'workspace', 'all'], default='all')
     parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both', 'mcp-pair'], default='native')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
-    parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
+    parser.add_argument('--model', choices=PROVIDERS, default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
     if args.workspace_client != 'native' and args.suite == 'native':
         parser.error('SDK clients require workspace or all tasks')
     if os.geteuid() != 0:
         parser.error('native preflight requires root to create its isolated fixture')
-    key = os.environ.pop('DEEPSEEK_API_KEY', '')
+    key = take_model_key(args.model, os.environ)
     if args.mode == 'model' and not key:
-        parser.error('DEEPSEEK_API_KEY is required for model mode')
+        parser.error(PROVIDERS[args.model].key_env + ' is required for model mode')
     def interrupted(signum, frame):
         raise KeyboardInterrupt('Native preflight interrupted')
     signal.signal(signal.SIGTERM, interrupted)
@@ -124,7 +126,7 @@ def main():
         child_env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'HOME': str(client_home), 'PYTHONUTF8': '1',
                      'LD_LIBRARY_PATH': str(args.python.resolve().parent.parent / 'lib')}
         if args.mode == 'model':
-            child_env['DEEPSEEK_API_KEY'] = key
+            child_env[PROVIDERS[args.model].key_env] = key
         # Preserve the venv path: resolving its python symlink selects the base interpreter.
         child = subprocess.Popen([str(args.python.absolute()), str(staged / 'run.py'),
                                   '--endpoint', str(fixture.socket), '--output', str(output), '--revision', revision,

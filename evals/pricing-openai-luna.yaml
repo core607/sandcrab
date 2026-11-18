@@ -1,0 +1,10 @@
+model: gpt-6-luna
+advertised_release: gpt-6-luna
+verified_on: '2026-11-18'
+source: https://developers.openai.com/api/docs/models/gpt-6-luna
+context_tokens: 1050000
+max_output_tokens: 2048
+# Standard global tier. Reserve the long-context output rate and cover cache writes on every input token.
+usd_per_million:
+  input: '0.50'
+  output: '0.75'

@@ -9,7 +9,8 @@ from inspect_ai import eval
 from inspect_ai.model import Model, ModelCost
 
 from budget import Ledger, Prices
-from model import BoundedDeepSeek
+from model import BoundedDeepSeek, BoundedOpenAI
+from providers import PROVIDERS
 from report import write
 from sandcrab_tasks import sandcrab_native
 
@@ -24,7 +25,7 @@ def main():
     parser.add_argument('--workspace-client', choices=['native', 'sdk', 'both', 'mcp-pair'], default='native')
     parser.add_argument('--sdk-config')
     parser.add_argument('--epochs', type=int, choices=range(1, 6), default=3)
-    parser.add_argument('--model', choices=['deepseek-flash'], default='deepseek-flash')
+    parser.add_argument('--model', choices=PROVIDERS, default='deepseek-flash')
     parser.add_argument('--budget-usd', default='1.00')
     args = parser.parse_args()
     baseline = args.mode == 'scripted'
@@ -37,10 +38,11 @@ def main():
     costs = None
     selected = 'mockllm/model'
     if not baseline:
-        prices = Prices()
+        prices = Prices(model=args.model)
         prices.require_current()
         ledger = Ledger(args.output / 'budget.jsonl', args.budget_usd, prices)
-        selected = Model(BoundedDeepSeek(args.model, ledger), task.config)
+        api = BoundedOpenAI if args.model == 'gpt-6-luna' else BoundedDeepSeek
+        selected = Model(api(args.model, ledger), task.config)
         costs = {str(selected): ModelCost(input=float(prices.input_rate), output=float(prices.output_rate),
                                          input_cache_read=float(prices.input_rate), input_cache_write=float(prices.input_rate))}
         task.metadata['pricing'] = prices.data

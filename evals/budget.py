@@ -9,21 +9,25 @@ import uuid
 
 import yaml
 
+from providers import PROVIDERS
+
 
 class BudgetStopped(RuntimeError):
     pass
 
 
 class Prices:
-    def __init__(self, path: Path = Path(__file__).with_name('pricing.yaml')):
+    def __init__(self, path: Path | None = None, *, model: str = 'deepseek-flash'):
+        provider = PROVIDERS[model]
+        path = path or Path(__file__).with_name(provider.pricing_file)
         self.data = yaml.safe_load(path.read_text(encoding='utf-8'))
         if set(self.data) != {'model', 'advertised_release', 'verified_on', 'source', 'context_tokens', 'max_output_tokens', 'usd_per_million'}:
             raise ValueError('Invalid pricing catalog')
-        if self.data['model'] != 'deepseek-flash' or self.data['source'] != 'https://api-docs.deepseek.com/quick_start/pricing/':
-            raise ValueError('Only the verified DeepSeek Flash catalog is supported')
+        if self.data['model'] != model or self.data['source'] != provider.pricing_source:
+            raise ValueError('The pricing catalog must match the selected provider and model')
         self.input_limit = self.data['context_tokens']
         self.output_limit = self.data['max_output_tokens']
-        if type(self.input_limit) is not int or self.input_limit != 1100000 or type(self.output_limit) is not int or not 1 <= self.output_limit <= 2048:
+        if type(self.input_limit) is not int or self.input_limit != provider.context_tokens or type(self.output_limit) is not int or not 1 <= self.output_limit <= 2048:
             raise ValueError('Invalid model token ceiling')
         rates = self.data['usd_per_million']
         if set(rates) != {'input', 'output'}:
@@ -67,7 +71,7 @@ class Ledger:
         # Existing ledgers are never reopened for paid work, including after a crash.
         with path.open('x', encoding='utf-8') as file:
             file.write(json.dumps({'event': 'budget', 'limitMicros': self.limit, 'prices': prices.data,
-                                   'costBasis': 'peak-rate upper estimate, all input treated as uncached'}) + '\n')
+                                   'costBasis': 'upper estimate, all input charged at the catalog ceiling'}) + '\n')
             file.flush()
             os.fsync(file.fileno())
 
