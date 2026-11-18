@@ -1558,6 +1558,16 @@
                 "sha256"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "maxBytes",
+            "description": "Maximum normalized text bytes in a line selection.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1073741824
+            }
           }
         ],
         "responses": {
@@ -2432,7 +2442,7 @@
       },
       "post": {
         "operationId": "ensureWorkspace",
-        "description": "Create or recover the installation-scoped workspace with an immutable profile.",
+        "description": "Create or return a workspace with the same profile and optional immutable template. Its writable layer survives idle close and restart.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2446,6 +2456,10 @@
                 "properties": {
                   "profile": {
                     "type": "string"
+                  },
+                  "templateId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                   }
                 }
               }
@@ -2911,6 +2925,59 @@
           },
           "default": {
             "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/diff": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "get": {
+        "operationId": "checkpointWorkspaceChanges",
+        "summary": "Download the changes since the immutable base.",
+        "description": "Freeze workspace writers and export the upper layer as a tar archive with whiteouts. Keep the workspace until the application durably commits its checkpoint.",
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/200"
+          },
+          "400": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/400"
+          },
+          "403": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/403"
+          },
+          "404": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/404"
+          },
+          "409": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/409"
+          },
+          "413": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/413"
+          },
+          "417": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/417"
+          },
+          "422": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/422"
+          },
+          "429": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/429"
+          },
+          "503": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/503"
+          },
+          "507": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/507"
+          },
+          "401": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1diff/get/responses/401"
           }
         }
       }
@@ -5012,7 +5079,8 @@
           "state",
           "code",
           "byteLimit",
-          "inodeLimit"
+          "inodeLimit",
+          "templateId"
         ],
         "properties": {
           "id": {
@@ -5059,6 +5127,13 @@
           },
           "inodeLimit": {
             "type": "integer"
+          },
+          "templateId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
           }
         }
       },
@@ -5112,6 +5187,11 @@
           "submissionWindow": {
             "type": "integer",
             "minimum": 0
+          },
+          "freshChild": {
+            "type": "boolean",
+            "default": false,
+            "description": "Run in a new shell and contain it before reporting the result."
           }
         }
       },

@@ -106,7 +106,8 @@ pub(crate) fn stage(id: &str, access: &Access) -> Stage {
     Stage {
         id: id.into(),
         session_id: access.session.clone(),
-        volume_id: access.volume.clone(),
+        volume_id: access.volume.clone().filter(|_| access.template.is_none()),
+        overlay_volume: access.volume.clone().filter(|_| access.template.is_some()),
         rootfs: access.rootfs,
         profile: access.profile_name.clone(),
         uid: access.profile.uid,
@@ -758,7 +759,7 @@ impl Service {
         self.capture_file(lease, request, selection, frozen, false)
     }
 
-    pub fn difference(&self, session: &str) -> Result<Snapshot> {
+    pub fn difference(&self, session: &str, frozen: bool) -> Result<Snapshot> {
         let lease = self.file_lease(session, None)?;
         if lease.access.template.is_none() {
             lease.finish(true);
@@ -774,7 +775,7 @@ impl Service {
                 versioned: false,
             },
             None,
-            false,
+            frozen,
             true,
         )
     }
@@ -814,6 +815,9 @@ impl Service {
                 &lease.access,
                 &path,
             );
+            if difference {
+                job.workspace = stage.upper(&self.runtime.config)?;
+            }
             if request.scope == CaptureScope::Filesystem {
                 job.entry_limit = crate::templates::ENTRY_LIMIT;
                 if lease.access.rootfs {

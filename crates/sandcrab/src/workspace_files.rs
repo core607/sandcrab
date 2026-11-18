@@ -15,6 +15,7 @@ pub(crate) fn target<'a>(method: &str, path: &'a str) -> Option<(&'a str, &'a st
         ("GET" | "PUT" | "DELETE", "files")
             | ("POST", "files/edit" | "files/mkdir")
             | ("GET", "files/list" | "files/search")
+            | ("GET", "diff")
     )
     .then_some((key, tail))
 }

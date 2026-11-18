@@ -192,7 +192,7 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             drop(body);
             return json_reply(stream, 401, &error(401, "AUTH_REQUIRED").1, true);
         }
-        let _workspace_file =
+        let workspace_file =
             if let Some((key, tail)) = crate::workspace_files::target(&head.method, &head.path) {
                 let pin = match service.workspace_file(
                     key,
@@ -377,7 +377,7 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             if !bytes.is_empty() {
                 return json_reply(stream, 400, &error(400, "INVALID_REQUEST").1, true);
             }
-            let snapshot = match service.difference(id) {
+            let snapshot = match service.difference(id, workspace_file.is_some()) {
                 Ok(snapshot) => snapshot,
                 Err((status, code)) => {
                     return json_reply(stream, status, &error(status, code).1, true);

@@ -188,7 +188,19 @@ impl Service {
         let result = match method {
             "GET" => store.object(id),
             "DELETE" if self.stopped.load(Ordering::SeqCst) => Err((503, "STOPPING")),
-            "DELETE" => store.delete(id).map(|()| json!({"deleted":true})),
+            "DELETE" => {
+                let _admission = self.workspace_shells.lock().unwrap();
+                if self
+                    .runtime
+                    .storage
+                    .as_ref()
+                    .is_some_and(|s| s.holds_template(id))
+                {
+                    Err((409, "TEMPLATE_BUSY"))
+                } else {
+                    store.delete(id).map(|()| json!({"deleted":true}))
+                }
+            }
             _ => Err((404, "NOT_FOUND")),
         };
         match result {

@@ -641,7 +641,7 @@ fn snapshot(job: &Job) -> io::Result<serde_json::Value> {
     let mut source_bytes = None;
     let mut file_version = None;
     if job.action == "difference" {
-        let upper = directory(&crate::diff::upper(&job.stage)?)?;
+        let upper = directory(&job.workspace)?;
         let root = match child_dir(&upper, "data") {
             Ok(root) => Some(root),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,
@@ -758,7 +758,19 @@ pub fn execute(path: &Path, layer_helper: bool) -> io::Result<serde_json::Value>
         .stage
         .parent()
         .ok_or_else(|| invalid("Missing stage parent"))?;
-    let layout = if owner.rootfs {
+    let layout = if job.action == "difference" {
+        owner.volume_id.is_none()
+            && parent.file_name().and_then(|s| s.to_str()) == Some(owner.session_id.as_str())
+            && match &owner.overlay_volume {
+                Some(id) => {
+                    sandcrab_core::uuid(id)
+                        && job
+                            .workspace
+                            .ends_with(Path::new("data/volumes").join(id).join("upper"))
+                }
+                None => job.workspace == crate::diff::upper(&job.stage)?,
+            }
+    } else if owner.rootfs {
         owner.volume_id.is_none()
             && job.workspace
                 == parent.join(if job.action == "checkpoint" {
@@ -777,14 +789,8 @@ pub fn execute(path: &Path, layer_helper: bool) -> io::Result<serde_json::Value>
         return Err(invalid("File stage ownership changed"));
     }
     if job.action == "difference" {
-        if owner.volume_id.is_some()
-            || parent.file_name().and_then(|s| s.to_str()) != Some(owner.session_id.as_str())
-        {
-            return Err(invalid("Invalid diff ownership"));
-        }
-        let upper = crate::diff::upper(&job.stage)?;
-        sandcrab_core::fs::protected_directory(&upper)?;
-        crate::storage::no_mounts_below(&upper, true)?;
+        sandcrab_core::fs::protected_directory(&job.workspace)?;
+        crate::storage::no_mounts_below(&job.workspace, true)?;
     }
     if ["snapshot", "difference", "checkpoint"].contains(&job.action.as_str()) {
         return snapshot(&job);

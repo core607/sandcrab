@@ -57,14 +57,17 @@ pub fn document(capability: Option<&str>) -> Value {
         .unwrap()
         .retain(|name| fields.contains(&name.as_str().unwrap()));
     let prefix = format!("/v1/{capability}");
-    let file_contracts = (capability == "workspace-files").then(|| document["paths"].clone());
+    let file_contracts =
+        matches!(capability, "workspace-files" | "workspaces").then(|| document["paths"].clone());
     document["paths"]
         .as_object_mut()
         .unwrap()
         .retain(|path, _| {
             path == "/v1/info"
                 || path == "/v1/openapi"
-                || (capability == "workspaces" && path == "/v1/workspace-tools")
+                || (capability == "workspaces"
+                    && ["/v1/workspace-tools", "/v1/workspaces/{key}/diff"]
+                        .contains(&path.as_str()))
                 || if capability == "events" {
                     path == "/v1/runs/{id}/events"
                 } else if capability == "calls" {
