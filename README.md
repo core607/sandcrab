@@ -58,6 +58,7 @@ and private token. The [installation guide](crates/sandcrab/install/README.md) c
 ### 1. Grant a non-root service account client access
 
 As an administrator, provision a private `0600` token for the application account.
+Replace `app` with the existing Linux account that will run the SDK.
 
 ```sh
 sudo install -d -o root -g root -m 0711 /etc/sandcrab-client
@@ -76,34 +77,16 @@ sandcrab run --timeout 30s --memory 64Mi -- python3 -c 'print("hello")'
 
 ### 2. Drive sessions from Python, TypeScript or an MCP agent
 
-The native [Python SDK](sdk/python/README.md) and zero-dependency
-[TypeScript SDK](sdk/typescript/README.md) close and forget sessions automatically
-when leaving scope; the installed service also supports published Python and Kotlin
+From an empty project on the service host, follow the
+[Python quickstart](sdk/python/README.md#run-your-first-session) or
+[TypeScript quickstart](sdk/typescript/README.md#run-your-first-session).
+Both examples install the SDK, execute a Python file in a session, print `42`
+and clean up. The service also supports published Python and Kotlin
 [OpenSandbox clients](crates/sandcrab/opensandbox.md) ([Python](examples/sandcrab-sdk.py),
 [Kotlin](examples/sandcrab-sdk.main.kts)).
 
-```python
-from sandcrab import SandcrabClient
-
-with SandcrabClient() as client:  # reads SANDCRAB_ENDPOINT / SANDCRAB_TOKEN_FILE / SANDCRAB_PROFILE
-    with client.open_session() as session:
-        session.write_file("src/app.py", "print(6 * 7)\n", parents=True)
-        result = session.exec("python3 src/app.py", check=True)
-```
-
-```ts
-import { SandcrabClient } from "sandcrab";
-
-const client = new SandcrabClient();
-await client.withSession(async (session) => {
-  await session.writeFile("src/app.py", "print(6 * 7)\n", { parents: true });
-  await session.exec("python3 src/app.py", { check: true });
-});
-client.close();
-```
-
 To expose bounded sandbox execution and workspace file tools to an MCP host over
-stdio (`sandcrab-mcp` after `pip install ./sdk/python`, or
+stdio (`sandcrab-mcp` from the Python SDK, or
 [examples/sandcrab-mcp.py](examples/sandcrab-mcp.py)):
 
 ```sh

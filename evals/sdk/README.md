@@ -1,5 +1,11 @@
 # Published SDK conformance
 
+[Native SDK quickstarts](native_quickstart.py) replay the Python and TypeScript
+READMEs in empty projects against the installed service. Pass an SDK README to
+exercise its registry install, or add `--package FILE` for a candidate wheel or
+npm tarball. The [package workflow](../../.github/workflows/publish-sdks.yml)
+checks both candidates before publication.
+
 These independent consumers call OpenSandbox 1.1.0 through Sandcrab's
 [optional adapter](../../crates/sandcrab/opensandbox.md).
 [python_client.py](python_client.py) uses the published Python SDK;
