@@ -35,6 +35,8 @@ pub struct Capture {
     pub frozen: bool,
     #[serde(default)]
     pub scope: CaptureScope,
+    #[serde(skip)]
+    versioned: bool,
 }
 #[derive(Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +56,7 @@ pub struct Snapshot {
     pub file: File,
     pub bytes: u64,
     pub sha256: String,
+    pub file_version: Option<String>,
     pub format: Format,
     pub lease: Lease,
     pub range: Option<crate::sdk_download::Range>,
@@ -65,6 +68,7 @@ struct Captured {
     file: File,
     bytes: u64,
     sha256: String,
+    file_version: Option<String>,
     range: Option<crate::sdk_download::Range>,
     template_id: Option<String>,
 }
@@ -133,6 +137,7 @@ pub(crate) fn job(
         entry_limit: 10000,
         multipart: None,
         selection: None,
+        version_selection: false,
     }
 }
 
@@ -203,6 +208,8 @@ impl Service {
                 return None;
             }
             self.remove_file(id, tail.strip_prefix("files?").unwrap_or(""))
+        } else if tail == "files/edit" && method == "POST" {
+            self.edit_file(id, body)
         } else if tail == "files/mkdir" {
             if method != "POST" {
                 return Some(error(404, "NOT_FOUND"));
@@ -225,6 +232,34 @@ impl Service {
             Ok(value) => (200, value),
             Err((status, code)) => error(status, code),
         })
+    }
+
+    fn edit_file(&self, id: &str, body: &[u8]) -> Result<Value> {
+        let edit: crate::sdk_fs::Replace = crate::sdk_types::parse(body)?;
+        if !valid_path(&edit.path, false) {
+            return Err((400, "INVALID_PATH"));
+        }
+        if edit.expected_sha256.is_none() {
+            return Err((400, "INVALID_FILE_VERSION"));
+        }
+        let path = edit.path.clone();
+        let op = crate::sdk_fs::Request::Replace {
+            entries: vec![edit],
+            verbose: false,
+        };
+        op.validate()?;
+        if serde_json::to_vec(&op)
+            .map_err(|_| (400, "INVALID_REQUEST"))?
+            .len()
+            > 65536
+        {
+            return Err((413, "FILE_METADATA_LIMIT"));
+        }
+        match self.filesystem(self.file_lease(id, None)?, &op) {
+            Err((404, "FILE_NOT_FOUND")) => return Err((409, "EDIT_CONFLICT")),
+            result => result?,
+        };
+        Ok(json!({"path":path, "replacedCount":1}))
     }
 
     pub(crate) fn mkdir_file(&self, id: &str, body: &[u8]) -> Result<Value> {
@@ -296,7 +331,18 @@ impl Service {
         native_entries(self.filesystem(self.file_lease(id, None)?, &op)?)
     }
 
-    pub(crate) fn read_file(&self, id: &str, query: &str, range: Option<&str>) -> Result<Snapshot> {
+    pub(crate) fn read_file(
+        &self,
+        id: &str,
+        query: &str,
+        range: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Snapshot> {
+        let versioned = match version {
+            None => false,
+            Some("sha256") => true,
+            Some(_) => return Err((400, "INVALID_FILE_VERSION")),
+        };
         let mut raw_path = None;
         for (key, value) in crate::sdk_types::query(query)? {
             if key == "path" && raw_path.is_none() {
@@ -308,11 +354,18 @@ impl Service {
             return Err((400, "INVALID_PATH"));
         }
         let (path, selection) = crate::sdk_download::request(query, range)?;
-        self.capture(
-            id,
-            &serde_json::to_vec(&json!({"path": path, "format": "raw"})).unwrap(),
-            None,
+        let request = Capture {
+            path,
+            format: Format::Raw,
+            scope: CaptureScope::Workspace,
+            frozen: versioned,
+            versioned,
+        };
+        self.capture_file(
+            self.file_lease(id, None)?,
+            request,
             selection.as_ref(),
+            versioned,
             false,
         )
     }
@@ -713,6 +766,7 @@ impl Service {
                 format: Format::Tar,
                 frozen: false,
                 scope: CaptureScope::Workspace,
+                versioned: false,
             },
             None,
             false,
@@ -766,6 +820,7 @@ impl Service {
                 }
             }
             job.selection = selection.cloned();
+            job.version_selection = request.versioned && selection.is_some();
             let value = lease.access.frozen(frozen, || {
                 if lease.cancelled.load(Ordering::SeqCst) {
                     return Err(invalid("FILE_CANCELLED"));
@@ -791,6 +846,24 @@ impl Service {
                 .filter(|s| digest(s))
                 .ok_or_else(|| invalid("FILE_HELPER_FAILED"))?
                 .to_owned();
+            let file_version = if !request.versioned {
+                None
+            } else if selection.is_none() {
+                Some(sha.clone())
+            } else if value["sourceBytes"]
+                .as_u64()
+                .is_some_and(|size| size <= lease.access.profile.transfer_bytes)
+            {
+                Some(
+                    value["fileSha256"]
+                        .as_str()
+                        .filter(|s| digest(s))
+                        .ok_or_else(|| invalid("FILE_HELPER_FAILED"))?
+                        .to_owned(),
+                )
+            } else {
+                None
+            };
             let template_id = if request.scope == CaptureScope::Filesystem {
                 Some(
                     value["templateId"]
@@ -826,6 +899,7 @@ impl Service {
                 file,
                 bytes,
                 sha256: sha,
+                file_version,
                 range,
                 template_id,
             })
@@ -835,12 +909,14 @@ impl Service {
                 file,
                 bytes,
                 sha256,
+                file_version,
                 range,
                 template_id,
             }) => Ok(Snapshot {
                 file,
                 bytes,
                 sha256,
+                file_version,
                 format: request.format,
                 lease,
                 stage,

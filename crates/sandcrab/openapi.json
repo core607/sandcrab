@@ -1181,7 +1181,8 @@
           "401": {
             "$ref": "#/components/responses/Error401"
           }
-        }
+        },
+        "summary": "Capture a bounded workspace file or tar, optionally freezing guest writers."
       }
     },
     "/v1/runs/{id}/events": {
@@ -1542,6 +1543,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-Sandcrab-Read-Version",
+            "in": "header",
+            "description": "Request a SHA-256 digest of the frozen whole file. A selected range can be read without a digest if the file exceeds the transfer limit.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sha256"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1559,6 +1571,13 @@
                 "schema": {
                   "type": "string",
                   "pattern": "^\"[0-9a-f]{64}\"$"
+                }
+              },
+              "X-Sandcrab-File-Sha256": {
+                "description": "Whole-file version when requested and within the transfer limit.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
                 }
               }
             },
@@ -1590,6 +1609,13 @@
                 "required": true,
                 "schema": {
                   "type": "string"
+                }
+              },
+              "X-Sandcrab-File-Sha256": {
+                "description": "Whole-file version when requested and within the transfer limit.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
                 }
               }
             },
@@ -1741,6 +1767,86 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/sessions/{id}/files/edit": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "operationId": "editSessionFile",
+        "description": "Replace one exact occurrence only if the frozen file matches expectedSha256. A version conflict or non-unique match leaves the file untouched.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "expectedSha256",
+                  "old",
+                  "new"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "expectedSha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "old": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "new": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One exact occurrence replaced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "replacedCount"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "replacedCount": {
+                      "const": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
           },
           "401": {
             "$ref": "#/components/responses/Error401"
@@ -2223,7 +2329,8 @@
           "401": {
             "$ref": "#/components/responses/Error401"
           }
-        }
+        },
+        "summary": "Export a template overlay changeset, including whiteouts. Coordinate writers before capture."
       }
     },
     "/v1/templates/compose": {

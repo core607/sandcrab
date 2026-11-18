@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Ordinary streaming uploads through the real authenticated native API and CLI."""
 import hashlib
+from concurrent.futures import ProcessPoolExecutor
 from http.client import HTTPResponse
 import json
 import os
@@ -73,7 +74,8 @@ class StreamingProbe(Probe):
         status, schema = http(self.socket, 'GET', '/v1/openapi?capability=files')
         assert status == 200 and len(json.dumps({'status': status, 'body': schema}, separators=(',', ':'))) < 20000
         for route in ('/v1/sessions/{id}/files', '/v1/sessions/{id}/files/mkdir',
-                      '/v1/sessions/{id}/files/list', '/v1/sessions/{id}/files/search'):
+                      '/v1/sessions/{id}/files/list', '/v1/sessions/{id}/files/search',
+                      '/v1/sessions/{id}/files/edit'):
             assert route in schema['paths'], route
         assert 'get' in schema['paths']['/v1/sessions/{id}/files']
 
@@ -152,10 +154,59 @@ class StreamingProbe(Probe):
         assert not (workspace / 'cli-parents').exists()
         self.done('cli-files-mkdir-ls-search-read-parents-and-rm-roundtrip')
 
+    def versioned_edit(self, parent, workspace):
+        prefix = f'/v1/sessions/{parent["id"]}/files'
+        read = prefix + '?path=edit.txt'
+        original = b'one\r\nneedle\nend\n'
+        self.request(read + '&mode=448', original)
+        version_header = 'X-Sandcrab-Read-Version: sha256'
+        version = hashlib.sha256(original).hexdigest()
+        for url, extra, body in ((read, 'Range: bytes=0-2\r\n', b'one'),
+                                 (read + '&offset=2&limit=1', '', b'needle'),
+                                 (read, '', original)):
+            status, headers, selected = self.raw_get(url, extra + version_header)
+            assert status in (200, 206) and selected == body
+            assert headers['x-sandcrab-file-sha256'] == version
+        def edit(new, expected=version, old='needle'):
+            return http(self.socket, 'POST', prefix + '/edit',
+                        {'path': 'edit.txt', 'expectedSha256': expected, 'old': old, 'new': new})
+        for pattern in ('absent', 'e'):
+            status, refused = edit('x', old=pattern)
+            assert status == 409 and refused['error']['code'] == 'EDIT_MATCH_COUNT', (status, refused)
+            assert (workspace / 'edit.txt').read_bytes() == original
+        assert edit('x', expected='bad')[0] == 400
+        # Each client connects as the configured Unix peer UID.
+        with ProcessPoolExecutor(max_workers=2) as pool:
+            clients = [pool.submit(http, self.socket, 'POST', prefix + '/edit',
+                                   {'path': 'edit.txt', 'expectedSha256': version, 'old': 'needle', 'new': text})
+                       for text in ('left', 'right')]
+            attempts = [client.result() for client in clients]
+        for i, (status, reply) in enumerate(attempts):
+            if status == 409 and reply['error']['code'] == 'SESSION_FILES_BUSY':
+                attempts[i] = edit(('left', 'right')[i])
+        assert sorted(status for status, _ in attempts) == [200, 409], attempts
+        assert next(r for status, r in attempts if status == 409)['error']['code'] == 'EDIT_CONFLICT'
+        assert (workspace / 'edit.txt').stat().st_mode & 0o777 == 0o700
+        status, headers, _ = self.raw_get(read + '&offset=2&limit=1', version_header)
+        assert status == 200
+        _, command = self.session_exec(parent, "printf 'from shell' > edit.txt")
+        assert command['state'] == 'succeeded'
+        assert edit('x', expected=headers['x-sandcrab-file-sha256'])[1]['error']['code'] == 'EDIT_CONFLICT'
+        assert (workspace / 'edit.txt').read_bytes() == b'from shell'
+        _, command = self.session_exec(parent, "python3 -c \"open('large-edit', 'wb').truncate(1048577)\"")
+        assert command['state'] == 'succeeded'
+        status, headers, body = self.raw_get(prefix + '?path=large-edit', 'Range: bytes=0-0\r\n' + version_header)
+        assert status == 206 and body == b'\x00' and 'x-sandcrab-file-sha256' not in headers
+        _, command = self.session_exec(parent, 'rm edit.txt large-edit')
+        assert command['state'] == 'succeeded'
+        assert edit('x')[1]['error']['code'] == 'EDIT_CONFLICT'
+        self.done('conditional-edits-compare-whole-file-versions-and-preserve-competing-writes')
+
     def tests(self):
         parent = self.session_open()
         route = f'/v1/sessions/{parent["id"]}/files?path=artifact'
         workspace = self.session_workspace(parent)
+        self.versioned_edit(parent, workspace)
         self.request(route, b'original')
         self.request(route+'&replace=false', b'refused', 409)
         assert (workspace / 'artifact').read_bytes() == b'original'

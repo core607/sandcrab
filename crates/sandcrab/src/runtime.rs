@@ -406,6 +406,7 @@ impl Runtime {
                 entry_limit: 10000,
                 multipart: None,
                 selection: None,
+                version_selection: false,
             };
             let (result, contained) =
                 self.file_helper(&job, profile, &AtomicBool::new(false), Input::Null);
