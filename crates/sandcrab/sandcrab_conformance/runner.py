@@ -19,6 +19,7 @@ SUITES = {
     'resources': ('resources', 'ResourcesProbe'),
     'volumes': ('volume', 'VolumeProbe'),
     'plain-storage': ('plain_storage', 'PlainStorageProbe'),
+    'hard-quotas': ('hard_quota', 'HardQuotaProbe'),
     'files': ('file', 'FileProbe'),
     'templates': ('template', 'TemplateProbe'),
     'contexts': ('contexts', 'ContextsProbe'),

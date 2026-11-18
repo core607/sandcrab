@@ -132,7 +132,7 @@ impl Stage {
             && self
                 .overlay_volume
                 .as_ref()
-                .is_none_or(|id| uuid(id) && self.volume_id.is_none() && !self.rootfs)
+                .is_none_or(|id| uuid(id) && self.volume_id.is_none())
             && (!self.rootfs || self.volume_id.is_none())
             && name(&self.profile)
             && self.uid != 0

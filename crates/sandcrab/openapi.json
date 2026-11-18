@@ -1551,7 +1551,7 @@
           {
             "name": "X-Sandcrab-Read-Version",
             "in": "header",
-            "description": "Request a SHA-256 digest of the frozen whole file. A selected range can be read without a digest if the file exceeds the transfer limit.",
+            "description": "Hash the frozen whole file. Oversize files allow range reads without a digest.",
             "schema": {
               "type": "string",
               "enum": [
@@ -3057,6 +3057,7 @@
                 "sessionTtlMillis",
                 "transferBytes",
                 "hostCalls",
+                "hardWorkspaceQuota",
                 "memoryBytes",
                 "minimumMemoryBytes",
                 "cpuQuotaPercent",
@@ -3107,6 +3108,9 @@
                   "type": "integer",
                   "minimum": 1024,
                   "maximum": 1073741824
+                },
+                "hardWorkspaceQuota": {
+                  "type": "boolean"
                 },
                 "hostCalls": {
                   "type": "boolean",

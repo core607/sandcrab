@@ -79,7 +79,7 @@ Acceptance criteria:
 
 Remaining design questions include OpenSandbox adapter exposure, the default idle
 window, maximum lifetime and retention, queue bounds, and how
-[hard quotas](2026-11-18-hard-workspace-quotas.md) apply to workspaces.
+[hard quotas](../implemented/2026-11-18-hard-workspace-quotas.md) apply to workspaces.
 
 ## Alternatives
 

@@ -499,6 +499,39 @@ impl Runtime {
         cancelled: Arc<AtomicBool>,
         shared: Option<crate::file_access::ShellLease>,
     ) -> Result<Shell, OpenError> {
+        if profile.hard_workspace_quota && request.volume_id.is_none() && shared.is_none() {
+            let store = self.storage.as_ref().ok_or(OpenError {
+                code: "HARD_QUOTA_UNAVAILABLE",
+                contained: true,
+            })?;
+            let temporary =
+                crate::temporary_volumes::Temporary::create(store, request, profile, &cancelled)?;
+            let mut owned = request.clone();
+            owned.volume_id = Some(temporary.id.clone());
+            owned.workspace_generation = Some(temporary.generation.clone());
+            return match self.attach_shell(&owned, profile, cancelled, None) {
+                Ok(mut shell) => {
+                    shell.temporary = Some(temporary);
+                    Ok(shell)
+                }
+                Err(mut failure) => {
+                    if failure.contained {
+                        failure.contained = temporary.remove().is_ok();
+                    }
+                    Err(failure)
+                }
+            };
+        }
+        self.attach_shell(request, profile, cancelled, shared)
+    }
+
+    fn attach_shell(
+        &self,
+        request: &crate::sessions::Open,
+        profile: &Profile,
+        cancelled: Arc<AtomicBool>,
+        shared: Option<crate::file_access::ShellLease>,
+    ) -> Result<Shell, OpenError> {
         let mut attachment = match request.volume_id.as_deref().filter(|_| shared.is_none()) {
             Some(volume) => Some(
                 self.storage
@@ -729,6 +762,7 @@ impl Runtime {
             root,
             records,
             attachment: None,
+            temporary: None,
             mailbox,
             network,
             resources,
@@ -1136,6 +1170,7 @@ pub struct Shell {
     root: PathBuf,
     records: [PathBuf; 2],
     attachment: Option<Attachment>,
+    temporary: Option<crate::temporary_volumes::Temporary>,
     mailbox: Option<Arc<sandcrab_core::mailbox::Mailbox>>,
     network: Option<crate::egress::Lease>,
     resources: crate::session_resources::Group,
@@ -1186,6 +1221,9 @@ impl Shell {
         }
         if let Some(attachment) = self.attachment.take() {
             attachment.release();
+        }
+        if let Some(temporary) = self.temporary.take() {
+            temporary.remove()?;
         }
         if let Some(shared) = self.shared.take() {
             shared.finish(true);

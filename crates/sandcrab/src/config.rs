@@ -88,6 +88,8 @@ pub struct Profile {
     pub memory_bytes: u64,
     pub temporary_bytes: u64,
     pub temporary_inodes: u64,
+    #[serde(default)]
+    pub hard_workspace_quota: bool,
     pub tasks_max: u64,
     pub cpu_quota_percent: u64,
     #[serde(default = "cpu_weight")]
@@ -269,7 +271,12 @@ impl Config {
             }
         }
         if let Some(storage) = &config.storage {
-            crate::storage::verify_pool(storage)?;
+            let enforced = crate::storage::verify_pool(storage)?;
+            if !enforced && config.profiles.values().any(|p| p.hard_workspace_quota) {
+                return Err(invalid(
+                    "hard_workspace_quota requires a Sandcrab-owned XFS pool with project quotas",
+                ));
+            }
         }
         Ok(config)
     }
@@ -376,6 +383,17 @@ impl Config {
             ));
         }
         for (key, profile) in &self.profiles {
+            if profile.hard_workspace_quota
+                && !self.storage.as_ref().is_some_and(|s| {
+                    profile.temporary_bytes.is_multiple_of(1024)
+                        && profile.temporary_bytes <= s.max_volume_bytes
+                        && profile.temporary_inodes <= s.max_volume_inodes
+                })
+            {
+                return Err(invalid(format!(
+                    "Profile {key} needs a storage pool covering its byte and inode limits and a KiB-aligned byte limit"
+                )));
+            }
             if !name(key)
                 || !unit_name(&profile.exec_user)
                 || !normal(&profile.tools)
