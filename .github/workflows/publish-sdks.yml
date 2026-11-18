@@ -4,7 +4,7 @@ on:
   push:
     tags: ['v*']
   pull_request:
-    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', 'scripts/release_*.py', 'scripts/test_release_*.py', '.github/workflows/publish-sdks.yml', '.github/workflows/release.yml']
+    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', 'evals/sdk/workspace_*', 'crates/sandcrab/workspace-tools.json', 'scripts/release_*.py', 'scripts/test_release_*.py', '.github/workflows/publish-sdks.yml', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       candidate_tag:
