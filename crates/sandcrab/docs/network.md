@@ -1,6 +1,14 @@
 # Network egress
 
-Use `network = "none"` to disable egress, as in the installed default profile. To permit selected
+Fresh installations have two profiles. `default` has no egress. Select
+`--profile packages` to reach exactly `pypi.org`, `files.pythonhosted.org` and
+`registry.npmjs.org`. The package profile includes the system CA bundle when
+present. The standalone image supplies pip. On a systemd host using distribution
+Python, install `python3-pip` and `ca-certificates` to run pip in that profile.
+Write packages to a guest-owned directory with
+`python3 -m pip install --target /workspace/site PACKAGE`.
+
+Use `network = "none"` to disable egress in another profile. To permit selected
 destinations, use `network = { allow = ["pypi.org", "files.pythonhosted.org"] }`.
 Names match exactly, case-insensitively, with an optional final dot; list each
 subdomain separately. Use ASCII DNS names or encoded internationalized names.

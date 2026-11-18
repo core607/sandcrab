@@ -48,6 +48,22 @@ command exits nonzero. On native hosts that restrict user namespaces through
 AppArmor, the installer loads a [profile](sandcrab.apparmor) for the Sandcrab
 service. It leaves the host's global restriction in place.
 
+## Installed limits
+
+The installer uses the lower of physical memory and the visible cgroup v2
+ancestor ceilings. The standard systemd slice also caps memory at 1 GiB.
+After a 128 MiB allowance for the daemon and helpers, each 64 MiB adds one
+sandbox slot, with a minimum of one and a maximum of 64. A 512 MiB standalone
+container gets six slots. The admission count shares the enforced memory budget
+across all active workloads.
+
+The volume pool uses one quarter of available space on the storage filesystem,
+rounded down to MiB, between 1 MiB and 8 GiB. Each volume can use up to 64 MiB
+or the pool size, whichever is smaller. The volume count fits that pool and is
+capped at four per sandbox slot and 128 per installation. Inspect the resulting
+limits with `sandcrab info`. Reinstallation and upgrade keep the saved
+configuration, including operator-selected limits and profiles.
+
 ## Standalone container
 
 Use a Linux Docker engine with cgroup v2. Set `SANDCRAB_IMAGE` to the image digest published with your release, or build the same image from the local bundle:
@@ -80,3 +96,31 @@ The data volume supplies an overlay-capable backing filesystem; the image's
 writable overlay layer is unsuitable for writable template layers. Startup tests
 the selected filesystem and refuses unsupported storage. The two dedicated
 volumes retain data and credentials across container replacement.
+
+### Connect an application container
+
+On a fresh configuration volume, set `SANDCRAB_CONTAINER_CLIENT=UID:GID` to
+the numeric identity of the application. The daemon listens on
+`/var/lib/sandcrab/runtime.client/control.sock`. Mount a separate volume at
+that directory so the application receives only the socket. Use the same
+AppArmor option as above on hosts that require it.
+
+```sh
+docker volume create sandcrab-app-socket
+docker run -d --name sandcrab-app-service --privileged --cgroupns=private --network=none \
+  --memory=512m --memory-swap=512m --cpus=2 --pids-limit=512 \
+  -e SANDCRAB_CONTAINER_CLIENT=14001:14001 \
+  --mount type=volume,source=sandcrab-app-data,target=/var/lib/sandcrab \
+  --mount type=volume,source=sandcrab-app-config,target=/etc/sandcrab \
+  --mount type=volume,source=sandcrab-app-socket,target=/var/lib/sandcrab/runtime.client "$SANDCRAB_IMAGE"
+docker run --rm --network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+  --user 14001:14001 -e SANDCRAB_SOCKET=/run/sandcrab/control.sock \
+  --mount type=volume,source=sandcrab-app-socket,target=/run/sandcrab,readonly \
+  "$SANDCRAB_IMAGE" run -- python3 -c 'print(42)'
+```
+
+For [package downloads](../docs/network.md), start the daemon with
+`--network=bridge` and select `--profile packages` on the application command.
+The application container can keep `--network=none`. The daemon's proxy resolves
+the allowlisted package hosts. Authenticated clients control this installation,
+so the application owns end-user access to its tools.

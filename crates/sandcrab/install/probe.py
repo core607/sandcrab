@@ -76,6 +76,11 @@ def systemd(bundle, passed):
         record = json.loads(command.stdout)
         assert record['state'] == 'succeeded' and record['result']['stdout'] == '42\n'
         passed('installed CLI runs with no connection or profile settings')
+        info = json.loads(run([exe, 'info']).stdout)
+        assert info['profiles']['default']['network'] == 'none'
+        assert set(info['profiles']['packages']['network']['allow']) == {'pypi.org', 'files.pythonhosted.org', 'registry.npmjs.org'}
+        assert 1 <= info['limits']['maxSandboxes'] <= 64 and 1 <= info['storage']['maxVolumes'] <= 128
+        passed('fresh limits are bounded and package egress requires explicit profile selection')
         doctor = run([exe, 'doctor']).stdout
         assert 'OK  sandbox:' in doctor and 'OK  cgroup:' in doctor and 'OK  storage:' in doctor
         passed('systemd service starts; doctor runs a real sandbox')
@@ -158,7 +163,7 @@ def systemd(bundle, passed):
 
 
 @contextmanager
-def disposable_machine(image, passed, *, systemd, network='none'):
+def disposable_machine(image, passed, *, systemd, network='none', client_volume=None):
     name = 'sandcrab-install-' + uuid.uuid4().hex
     label = 'sandcrab.install-probe=' + name
     # No host namespace, cgroup bind mount, host network or Docker socket.
@@ -168,6 +173,9 @@ def disposable_machine(image, passed, *, systemd, network='none'):
     args = ['docker','run','--detach','--name',name,'--label',label,'--privileged','--cgroupns=private',
             '--network='+network,'--memory='+memory,'--memory-swap='+memory,'--cpus=2','--pids-limit=512',
             '--mount','type=volume,destination='+data]
+    if client_volume:
+        args.extend(['-e','SANDCRAB_CONTAINER_CLIENT=14001:14001',
+                     '--mount',f'type=volume,source={client_volume},target=/var/lib/sandcrab/runtime.client'])
     restricted = Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
     if restricted.exists() and restricted.read_text().strip() == '1':
         args.append('--security-opt=apparmor=sandcrab-service')
