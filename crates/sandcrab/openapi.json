@@ -74,7 +74,8 @@
                 "uploads",
                 "events",
                 "calls",
-                "templates"
+                "templates",
+                "workspaces"
               ]
             }
           }
@@ -269,7 +270,7 @@
     "/v1/sessions": {
       "post": {
         "operationId": "createSession",
-        "description": "Create an isolated bash session. Commands may queue during startup. Same ID/body returns retained state, including terminal; changed arguments conflict.",
+        "description": "Open a bash session. Commands can queue during startup. Repeating the same ID and body returns retained state. Changed arguments conflict.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Session200"
@@ -312,7 +313,7 @@
       },
       "get": {
         "operationId": "listSessions",
-        "description": "List up to 64 active/terminal UUIDs in order, without output. Continue with nextAfter even if deleted. Pages are not snapshots: rescan for new IDs before the cursor or changed serverId. No renew/forget.",
+        "description": "List up to 64 active or terminal UUIDs in order. Cursors survive deletion. Rescan for earlier IDs or a new serverId. Listing never renews or forgets a session.",
         "parameters": [
           {
             "name": "after",
@@ -391,7 +392,7 @@
       ],
       "post": {
         "operationId": "executeSessionCommand",
-        "description": "Execute bash source or enter the shell FIFO while starting/busy. State/files persist. Read/cancel/forget at /v1/runs/{id}. Cancelling queued work preserves the active command. Dispatched cancellation, timeout, output overflow or shell exit closes the session without reset.",
+        "description": "Run bash in FIFO order, including during startup. Shell state and files persist. Inspect, cancel or forget at /v1/runs/{id}. Cancelling queued work leaves the active command running. Dispatched cancellation, timeout, output overflow or shell exit closes the session.",
         "responses": {
           "200": {
             "$ref": "#/components/responses/Run200"
@@ -2381,6 +2382,256 @@
           }
         }
       }
+    },
+    "/v1/workspaces/{key}": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getWorkspace",
+        "responses": {
+          "200": {
+            "description": "Current durable workspace state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "ensureWorkspace",
+        "description": "Create or recover the installation-scoped workspace with an immutable profile.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "profile"
+                ],
+                "properties": {
+                  "profile": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current durable workspace state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Current durable workspace state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/commands": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "runWorkspaceCommand",
+        "description": "Admit one command in workspace order. Reuse its original identity, server, generation and submission window after a lost reply.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Run200"
+          },
+          "202": {
+            "$ref": "#/components/responses/Run200"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/forget": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "forgetWorkspace",
+        "description": "Forget a terminal storage record. Reusing the key then creates a new generation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceGeneration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Terminal record forgotten.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "forgotten"
+                  ],
+                  "properties": {
+                    "forgotten": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/delete": {
+      "parameters": [
+        {
+          "name": "key",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "deleteWorkspace",
+        "description": "Record deletion and close the currently owned shell before releasing storage.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceGeneration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Current durable workspace state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Current durable workspace state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2441,7 +2692,8 @@
                 "uploads",
                 "events",
                 "calls",
-                "templates"
+                "templates",
+                "workspaces"
               ]
             }
           },
@@ -2876,6 +3128,13 @@
             "type": "integer",
             "minimum": 0,
             "description": "Elapsed admission wait while queued, fixed on dispatch or refusal; zero for immediate admission."
+          },
+          "freshShell": {
+            "type": "boolean"
+          },
+          "workspaceGeneration": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "allOf": [
@@ -3241,6 +3500,14 @@
           },
           "usage": {
             "$ref": "#/components/schemas/StorageUsage"
+          },
+          "workspaceKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "workspaceGeneration": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -4447,6 +4714,135 @@
             "items": {
               "$ref": "#/components/schemas/FileEntry"
             }
+          }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "key",
+          "generation",
+          "submissionWindow",
+          "serverId",
+          "profile",
+          "state",
+          "code",
+          "byteLimit",
+          "inodeLimit"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "generation": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionWindow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "creating",
+              "ready",
+              "deleting",
+              "deleted",
+              "failed",
+              "closing"
+            ]
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "byteLimit": {
+            "type": "integer"
+          },
+          "inodeLimit": {
+            "type": "integer"
+          }
+        }
+      },
+      "WorkspaceCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "serverId",
+          "command",
+          "generation",
+          "submissionWindow"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Bash source; at most 16384 UTF-8 bytes, no NUL."
+          },
+          "timeoutMillis": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 300000
+          },
+          "outputLimitBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 1048576
+          },
+          "keepResult": {
+            "$ref": "#/components/schemas/KeepResult"
+          },
+          "generation": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionWindow": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "WorkspaceGeneration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "generation"
+        ],
+        "properties": {
+          "generation": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       }

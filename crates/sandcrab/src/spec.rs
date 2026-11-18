@@ -30,7 +30,7 @@ pub fn document(capability: Option<&str>) -> Value {
     // The response still carries every field. A capability view documents only
     // common discovery and its own metadata; the complete schema stays above.
     let metadata = match capability {
-        "sessions" | "volumes" => "storage",
+        "sessions" | "volumes" | "workspaces" => "storage",
         "files" | "uploads" => "files",
         "events" => "events",
         "calls" => "hostCalls",
@@ -132,6 +132,7 @@ mod tests {
             "runs",
             "sessions",
             "volumes",
+            "workspaces",
             "files",
             "uploads",
             "events",
@@ -145,6 +146,8 @@ mod tests {
                 "/v1/sessions/{id}/files".into()
             } else if capability == "calls" {
                 "/v1/runs/{id}/calls".into()
+            } else if capability == "workspaces" {
+                "/v1/workspaces/{key}".into()
             } else {
                 format!("/v1/{capability}")
             };

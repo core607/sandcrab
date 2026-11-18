@@ -25,13 +25,16 @@ pub fn new_uuid() -> io::Result<String> {
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     bytes[6] = bytes[6] & 0x0f | 0x40;
     bytes[8] = bytes[8] & 0x3f | 0x80;
+    Ok(format_uuid(bytes))
+}
+pub fn format_uuid(bytes: [u8; 16]) -> String {
     let text = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
-    Ok(format!(
+    format!(
         "{}-{}-{}-{}-{}",
         &text[..8],
         &text[8..12],
         &text[12..16],
         &text[16..20],
         &text[20..]
-    ))
+    )
 }

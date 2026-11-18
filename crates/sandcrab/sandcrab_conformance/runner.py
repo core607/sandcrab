@@ -31,6 +31,7 @@ SUITES = {
     'queue': ('queue', 'QueueProbe'),
     'retention': ('retention', 'RetentionProbe'),
     'streaming': ('streaming_file', 'StreamingProbe'),
+    'workspaces': ('workspace', 'WorkspaceProbe'),
     'events': ('events', 'EventProbe'),
     'host-calls': ('host_calls', 'HostCallsProbe'),
     'delegation': ('delegation', 'DirectProbe'),

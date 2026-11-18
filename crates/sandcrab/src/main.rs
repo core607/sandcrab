@@ -55,6 +55,7 @@ mod templates;
 mod transport;
 mod usage;
 mod volumes;
+mod workspace_api;
 mod workspaces;
 
 use cli::{ClientArgs, Connection, Env};
@@ -666,6 +667,7 @@ fn volume(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32
             },
             profile: cli::resolve_profile(options.get("--profile").copied(), env),
             clone_from: options.get("--clone-from").map(|s| s.to_string()),
+            workspace_key: None,
             byte_limit,
             inode_limit,
         };

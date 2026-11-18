@@ -221,6 +221,7 @@ mod tests {
         (
             Registry {
                 runs: BTreeMap::from([(id.clone(), run)]),
+                workspace_windows: BTreeMap::new(),
                 sessions: BTreeMap::new(),
                 active: 1,
                 reserved: 64,

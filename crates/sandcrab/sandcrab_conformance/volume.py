@@ -68,7 +68,8 @@ max_records = 12
         call('systemctl', 'reset-failed', self.unit, check=False)
         self.start()
         self.done('volume-bootstrap-refuses-preexisting-data')
-        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'uploads', 'events', 'calls', 'templates', 'volumes']
+        assert self.info['capabilities'] == ['runs', 'sessions', 'files', 'uploads', 'events', 'calls',
+                                             'templates', 'volumes', 'workspaces']
         assert self.info['storage']['maxVolumeBytes'] == 8388608
 
     def volume(self, **options):

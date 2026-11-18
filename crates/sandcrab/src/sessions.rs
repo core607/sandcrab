@@ -25,6 +25,8 @@ pub struct Open {
     pub profile: String,
     pub ttl_millis: Option<u64>,
     pub volume_id: Option<String>,
+    #[serde(skip)]
+    pub workspace_generation: Option<String>,
     pub template_id: Option<String>,
     #[serde(default)]
     pub rootfs: bool,
@@ -57,7 +59,7 @@ pub struct Command {
     pub keep_result: bool,
 }
 impl Command {
-    fn limits(&self, profile: &Profile) -> Result<(u64, usize), &'static str> {
+    pub(crate) fn limits(&self, profile: &Profile) -> Result<(u64, usize), &'static str> {
         if !sandcrab_core::uuid(&self.id)
             || !sandcrab_core::uuid(&self.server_id)
             || self.command.is_empty()
@@ -77,7 +79,7 @@ impl Command {
         }
         Ok((timeout, output))
     }
-    fn identity(&self, session: &str) -> Value {
+    pub(crate) fn identity(&self, session: &str) -> Value {
         let mut value = serde_json::to_value(self).unwrap();
         value["sessionId"] = session.into();
         value
@@ -96,6 +98,7 @@ pub(crate) struct Session {
     request: Open,
     pub state: String,
     deadline: Instant,
+    managed_idle: Option<u64>,
     pub expires_at: u64,
     cancelled: Arc<AtomicBool>,
     reason: String,
@@ -120,6 +123,18 @@ fn ttl(value: Option<u64>, profile: &Profile) -> Result<u64, &'static str> {
     Ok(value)
 }
 impl Session {
+    pub(crate) fn touch_workspace(&mut self) {
+        if let Some(idle) = self.managed_idle {
+            self.deadline = Instant::now() + Duration::from_millis(idle);
+            self.expires_at = expires_at(idle);
+        }
+    }
+
+    fn expired(&self, now: Instant) -> bool {
+        self.deadline <= now
+            && (self.managed_idle.is_none()
+                || (self.active_run.is_none() && self.pending.is_empty()))
+    }
     pub(crate) fn result_expired(&self, ttl: Duration, now: Instant) -> bool {
         self.terminal()
             && !self.request.keep_result
@@ -217,7 +232,7 @@ impl Registry {
             .filter(|(_, s)| {
                 // Workspace cleanup failures set cancellation without taking the registry.
                 // Propagate that signal to an active command and every child shell.
-                (s.deadline <= now || s.cancelled.load(Ordering::SeqCst))
+                (s.expired(now) || s.cancelled.load(Ordering::SeqCst))
                     && !s.terminal()
                     && s.state != "stopping"
                     && s.state != "closing"
@@ -225,11 +240,7 @@ impl Registry {
             .map(|(id, s)| {
                 (
                     id.clone(),
-                    if s.deadline <= now {
-                        "expired"
-                    } else {
-                        "closed"
-                    },
+                    if s.expired(now) { "expired" } else { "closed" },
                 )
             })
             .collect();
@@ -271,7 +282,7 @@ impl Service {
         if method == "POST" && action == "commands" {
             return parse()
                 .and_then(|v| serde_json::from_value(v).ok())
-                .map(|r| self.session_command(id, r, incarnation))
+                .map(|r| self.session_command(id, r, incarnation, None))
                 .unwrap_or_else(|| error(400, "INVALID_REQUEST"));
         }
         if method == "POST" && action == "shells" {
@@ -355,7 +366,8 @@ impl Service {
         }
     }
 
-    fn open_session(self: &Arc<Self>, request: Open) -> (u16, Value) {
+    pub(crate) fn open_session(self: &Arc<Self>, request: Open) -> (u16, Value) {
+        let managed = request.workspace_generation.is_some();
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
         }
@@ -376,6 +388,17 @@ impl Service {
         let Some(profile) = self.runtime.config.profiles.get(&request.profile).cloned() else {
             return error(400, "PROFILE_NOT_FOUND");
         };
+        if !managed
+            && let Some(volume) = &request.volume_id
+            && self
+                .runtime
+                .storage
+                .as_ref()
+                .and_then(|s| s.get(volume).ok())
+                .is_some_and(|v| v["workspaceKey"].is_string())
+        {
+            return error(409, "WORKSPACE_MANAGED");
+        }
         let profile = match profile.with_resources(request.resources.as_ref()) {
             Ok(profile) => profile,
             Err(code) => return error(400, code),
@@ -418,6 +441,7 @@ impl Service {
             request,
             state: "starting".into(),
             deadline: Instant::now() + Duration::from_millis(lifetime),
+            managed_idle: managed.then_some(lifetime),
             expires_at: expires_at(lifetime),
             cancelled: cancelled.clone(),
             reason: "closed".into(),
@@ -517,6 +541,7 @@ impl Service {
             request: input,
             state: "starting".into(),
             deadline: parent.deadline,
+            managed_idle: None,
             expires_at: parent.expires_at,
             cancelled: cancelled.clone(),
             reason: "closed".into(),
@@ -547,11 +572,12 @@ impl Service {
         (202, accepted)
     }
 
-    fn session_command(
+    pub(crate) fn session_command(
         self: &Arc<Self>,
         id: &str,
         request: Command,
         incarnation: Option<&str>,
+        workspace: Option<crate::workspace_api::Execution>,
     ) -> (u16, Value) {
         if request.server_id != self.id {
             return error(409, "SERVER_CHANGED");
@@ -575,6 +601,15 @@ impl Service {
             } else {
                 error(409, "ID_CONFLICT")
             };
+        }
+        if let Some(metadata) = &workspace {
+            let current = registry
+                .workspace_windows
+                .entry(metadata.generation.clone())
+                .or_default();
+            if *current != metadata.window || *current == u64::MAX {
+                return error(409, "WORKSPACE_SUBMISSION_EXPIRED");
+            }
         }
         if registry.sessions.contains_key(&request.id) {
             return error(409, "ID_CONFLICT");
@@ -602,6 +637,9 @@ impl Service {
             return error(409, code);
         }
         let limits = &self.runtime.config.service;
+        if workspace.is_some() && queued && session.pending.len() >= limits.max_queued {
+            return error(429, "WORKSPACE_QUEUE_FULL");
+        }
         if queued && registry.queued() >= limits.max_queued {
             return error(429, "QUEUE_CAPACITY");
         }
@@ -624,11 +662,13 @@ impl Service {
         if queued {
             run.enqueue(limits.queue_timeout_millis);
         }
+        run.workspace = workspace;
         let incarnation = run.stream_id.clone();
         let accepted = run.value();
         registry.reserved += output;
         registry.runs.insert(request.id.clone(), run);
         let session = registry.sessions.get_mut(id).unwrap();
+        session.touch_workspace();
         if !queued {
             session.state = "busy".into();
             session.active_run = Some(request.id.clone());

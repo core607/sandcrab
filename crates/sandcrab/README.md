@@ -14,6 +14,7 @@ Each section below names one topic page, which owns that contract.
 | [Client connections and HTTP](docs/http.md) | Loopback TCP, authentication and the HTTP endpoints |
 | [Commands and results](docs/commands.md) | Admission queues, result retention and live command events |
 | [Persistent sessions](docs/sessions.md) | Session lifetime, renewal, child shells and states |
+| [Persistent workspaces](docs/workspaces.md) | Caller keys, durable files, idle reopening and command recovery |
 | [Volumes and storage](docs/volumes.md) | Durable volumes, quotas and storage accounting |
 | [Files](docs/files.md) | Bounded file operations, uploads, downloads and filesystem capture |
 | [Verification](docs/verification.md) | Rust checks and the native conformance runner |

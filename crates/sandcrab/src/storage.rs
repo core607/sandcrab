@@ -48,6 +48,8 @@ pub struct Plan {
     pub clone_from: Option<String>,
     pub byte_limit: Option<u64>,
     pub inode_limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_key: Option<String>,
 }
 impl Plan {
     fn digest(&self) -> String {
@@ -56,6 +58,10 @@ impl Plan {
     fn valid(&self) -> bool {
         uuid(&self.id)
             && name(&self.profile)
+            && self.workspace_key.as_ref().is_none_or(|key| {
+                self.clone_from.is_none()
+                    && crate::workspace_api::storage_id(key).as_ref() == Some(&self.id)
+            })
             && self
                 .clone_from
                 .as_ref()
@@ -79,6 +85,14 @@ pub struct Record {
     pub operation: String,
 }
 impl Record {
+    fn check_workspace(&self, generation: Option<&str>) -> Result<()> {
+        match (&self.plan.workspace_key, generation) {
+            (None, None) => Ok(()),
+            (Some(_), Some(id)) if self.operation == id => Ok(()),
+            (Some(_), None) => Err(fault(409, "WORKSPACE_MANAGED")),
+            _ => Err(fault(409, "WORKSPACE_CHANGED")),
+        }
+    }
     fn valid(&self) -> bool {
         self.plan.valid()
             && self.plan_digest == self.plan.digest()
@@ -103,10 +117,15 @@ impl Record {
         !["deleted", "failed"].contains(&self.state.as_str())
     }
     fn value(&self, binding: Option<&Binding>) -> Value {
-        json!({"id":self.plan.id,"profile":self.plan.profile,"state":self.state,"code":self.code,
+        let mut value = json!({"id":self.plan.id,"profile":self.plan.profile,"state":self.state,"code":self.code,
             "byteLimit":self.bytes,"inodeLimit":self.inodes,"cloneFrom":self.plan.clone_from,
             "planDigest":self.plan_digest,"busy":binding.is_some(),
-            "attachedTo":binding.and_then(|b| if let Binding::Session(id) = b { Some(id) } else { None })})
+            "attachedTo":binding.and_then(|b| if let Binding::Session(id) = b { Some(id) } else { None })});
+        if let Some(key) = &self.plan.workspace_key {
+            value["workspaceKey"] = json!(key);
+            value["workspaceGeneration"] = json!(self.operation);
+        }
+        value
     }
 }
 
@@ -541,8 +560,17 @@ impl Store {
         {
             return Err(fault(429, "VOLUME_CAPACITY"));
         }
-        let bytes = plan.byte_limit.unwrap_or(self.config.max_volume_bytes);
-        let inodes = plan.inode_limit.unwrap_or(self.config.max_volume_inodes);
+        let (bytes, inodes) = if plan.workspace_key.is_some() {
+            (
+                profile.temporary_bytes.min(self.config.max_volume_bytes) / 1024 * 1024,
+                profile.temporary_inodes.min(self.config.max_volume_inodes),
+            )
+        } else {
+            (
+                plan.byte_limit.unwrap_or(self.config.max_volume_bytes),
+                plan.inode_limit.unwrap_or(self.config.max_volume_inodes),
+            )
+        };
         if !(1_048_576..=self.config.max_volume_bytes).contains(&bytes)
             || !bytes.is_multiple_of(1024)
             || !(32..=self.config.max_volume_inodes).contains(&inodes)
@@ -559,6 +587,7 @@ impl Store {
                 .records
                 .get(source)
                 .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+            record.check_workspace(None)?;
             if record.state != "ready" {
                 return Err(fault(409, "VOLUME_NOT_READY"));
             }
@@ -592,7 +621,12 @@ impl Store {
         state.working = true;
         Ok((state.value(&record), true))
     }
-    pub fn begin_delete(&self, id: &str, stopped: &AtomicBool) -> Result<(Value, bool)> {
+    pub fn begin_delete(
+        &self,
+        id: &str,
+        generation: Option<&str>,
+        stopped: &AtomicBool,
+    ) -> Result<(Value, bool)> {
         let mut state = self.state.lock().unwrap();
         Self::usable(&state)?;
         if stopped.load(Ordering::SeqCst) {
@@ -603,13 +637,16 @@ impl Store {
             .get(id)
             .cloned()
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+        record.check_workspace(generation)?;
         if ["deleted", "deleting"].contains(&record.state.as_str()) {
             return Ok((state.value(&record), false));
         }
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
         }
-        if state.bindings.contains_key(id) {
+        if let Some(binding) = state.bindings.get(id)
+            && (generation.is_none() || !matches!(binding, Binding::Session(_)))
+        {
             return Err(fault(409, "VOLUME_IN_USE"));
         }
         if state.active.is_some() {
@@ -622,13 +659,14 @@ impl Store {
         state.working = true;
         Ok((state.value(&record), true))
     }
-    pub fn forget(&self, id: &str) -> Result<()> {
+    pub fn forget(&self, id: &str, generation: Option<&str>) -> Result<()> {
         let mut state = self.state.lock().unwrap();
         Self::usable(&state)?;
         let record = state
             .records
             .get(id)
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+        record.check_workspace(generation)?;
         if !["deleted", "failed"].contains(&record.state.as_str()) {
             return Err(fault(409, "VOLUME_ACTIVE"));
         }
@@ -683,6 +721,20 @@ impl Store {
         let state = self.state.lock().unwrap();
         state.active.is_none() && !state.fenced
     }
+    pub(crate) fn wait_detached(&self, id: &str) -> bool {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        loop {
+            let state = self.state.lock().unwrap();
+            if state.fenced || std::time::Instant::now() >= until {
+                return false;
+            }
+            if !state.bindings.contains_key(id) {
+                return true;
+            }
+            drop(state);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
 
     pub fn preflight_bind(&self, id: &str, profile: &Profile) -> Result<()> {
         let state = self.state.lock().unwrap();
@@ -691,6 +743,7 @@ impl Store {
             .records
             .get(id)
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+        record.check_workspace(None)?;
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
         }
@@ -713,6 +766,7 @@ impl Store {
         id: &str,
         session: &str,
         profile: &Profile,
+        generation: Option<&str>,
     ) -> Result<Attachment> {
         let mut state = self.state.lock().unwrap();
         Self::usable(&state)?;
@@ -720,6 +774,7 @@ impl Store {
             .records
             .get(id)
             .ok_or_else(|| fault(404, "VOLUME_NOT_FOUND"))?;
+        record.check_workspace(generation)?;
         if record.state != "ready" {
             return Err(fault(409, "VOLUME_NOT_READY"));
         }
@@ -1111,6 +1166,7 @@ mod tests {
                     id: id.clone(),
                     profile: "python".into(),
                     clone_from: None,
+                    workspace_key: None,
                     byte_limit: None,
                     inode_limit: None,
                 },
