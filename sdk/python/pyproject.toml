@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=77"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling==1.33.0"]
+build-backend = "hatchling.build"
 
 [project]
 name = "sandcrab"
@@ -19,8 +19,11 @@ Documentation = "https://github.com/core607/sandcrab/tree/main/sdk/python"
 [project.scripts]
 sandcrab-mcp = "sandcrab.mcp:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.version]
+path = "src/sandcrab/_version.py"
 
-[tool.setuptools.dynamic]
-version = {attr = "sandcrab._version.__version__"}
+[tool.hatch.build.targets.wheel]
+packages = ["src/sandcrab", "src/sandcrab_templates"]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src/sandcrab", "src/sandcrab_templates", "tests"]
