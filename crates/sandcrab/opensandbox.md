@@ -18,7 +18,7 @@ listener configuration. Deletion, expiry and service restart revoke the scoped
 credentials, including when a native client reuses a sandbox's public ID.
 
 The lifecycle key controls the service's sandboxes; it is not a tenant identity.
-The transport and host trust requirements are those of [native TCP](README.md#loopback-tcp).
+The transport and host trust requirements are those of [native TCP](docs/http.md#loopback-tcp).
 The SDK's Kubernetes `secureAccess` option is unsupported; scoped endpoint
 credentials are always required by this adapter.
 
@@ -41,11 +41,11 @@ with this SDK for the [independent environment workflow](../../examples/sandcrab
 ## Lifecycle
 
 The adapter owns and pins its native session, shell and command records until its
-existing lifecycle releases them. The native [result TTL](README.md#result-retention)
+existing lifecycle releases them. The native [result TTL](docs/commands.md#result-retention)
 does not shorten SDK session lifetimes or command observation.
 
 `image.uri` selects an operator profile. Use `PROFILE@sha256:TEMPLATE_ID` to
-run an imported [template rootfs](README.md#templates) under that profile's
+run an imported [template rootfs](docs/templates.md) under that profile's
 identity and resource policy; a plain profile name creates an empty workspace
 with its configured host read mounts. Import the tree through the native API
 before SDK creation. SDK commands need `env` on the template's PATH as well as
@@ -56,7 +56,7 @@ that executable. Other entrypoints and image authentication are refused.
 
 Create, get, filtered list, renew and delete use `/v1/sandboxes`. Endpoint lookup
 maps ports 44772 and 18080 to path-routed command and read-only egress services.
-The returned network policy reports the selected profile's [egress allowlist](README.md#network-egress)
+The returned network policy reports the selected profile's [egress allowlist](docs/network.md)
 with a deny default, or an empty allowlist for `network = "none"`. Custom networking,
 registry images, snapshots, separate template options, scheduling and credential proxies
 are refused. Unused snapshot, template, platform, resource-request, lifecycle,
@@ -64,7 +64,7 @@ network, credential-proxy and volume options may be omitted or null. Unknown
 fields fail.
 
 `volumes` accepts a single read-write `/workspace` entry whose `pvc.claimName`
-names a `ready` [native volume](README.md#durable-volumes) with matching execution
+names a `ready` [native volume](docs/volumes.md#durable-volumes) with matching execution
 UID/GID. Empty or multi-volume arrays, `host` or `ossfs` sources, `readOnly: true`,
 `subPath`, mounts outside `/workspace`, `deleteOnSandboxTermination: true`,
 storage-class/size/access-mode requests and combining a volume with
@@ -80,7 +80,7 @@ Deletion waits for containment; an uncertain cleanup returns an error and keeps
 ownership reserved.
 
 SDK sandboxes use the native session directory and its
-[storage accounting](README.md#storage-accounting). Measured overage refuses
+[storage accounting](docs/volumes.md#storage-accounting). Measured overage refuses
 commands, new contexts and file mutations, while reads and file/directory deletion
 remain available. This periodic limit is not a write-time quota.
 
@@ -133,7 +133,7 @@ working-directory override persists for subsequent commands; that directory must
 exist. Contexts share `/workspace` and the parent's aggregate resource limits,
 while each has its own `/tmp`. Different contexts may execute concurrently;
 commands in one busy context share its bounded FIFO. Default command contexts
-use the same [queue](README.md#command-queue). Queue timeout produces an execution
+use the same [queue](docs/commands.md#command-queue). Queue timeout produces an execution
 error named `QUEUE_TIMEOUT` without running the command; its status stays terminal.
 Interrupting a queued command preserves the active command and its context.
 
@@ -152,7 +152,7 @@ independent wire checks verify Sandcrab's actual status and resource cleanup.
 ## Files
 
 The adapter uses multipart uploads; native callers can use the ordinary
-[streaming PUT](README.md#files). Both share bounded staging and file admission.
+[streaming PUT](docs/files.md). Both share bounded staging and file admission.
 
 SDK uploads accept fixed-length and chunked multipart bodies. Downloads return
 fixed-length raw bytes. Paths are relative to `/workspace` or start with

@@ -71,7 +71,7 @@ class Recipe:
                                    'programs': {name: shutil.which(name) is not None for name in
                                                 ('curl', 'python3', 'node', 'npm', 'bwrap', 'git')}},
             'inputSha256': {'binary': hashlib.sha256(self.binary.read_bytes()).hexdigest(),
-                            'readme': hashlib.sha256((self.source / 'crates/sandcrab/README.md').read_bytes()).hexdigest(),
+                            'readme': hashlib.sha256((self.source / 'crates/sandcrab/docs/installation.md').read_bytes()).hexdigest(),
                             'recipe': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()},
             'steps': [], 'measurementStatus': 'STARTING', 'cleanup': 'NOT_RUN',
             'modelTokens': 0, 'containsProductionContent': False,

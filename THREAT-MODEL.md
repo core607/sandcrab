@@ -19,7 +19,7 @@ The installed OpenSandbox adapter uses the service key for lifecycle operations
 and issues a separate scoped credential for each sandbox's execution endpoint.
 A party with the service credential can control sandboxes across that installation.
 Applications sharing it must enforce their own user, tenant and object permissions.
-See [client authentication](crates/sandcrab/README.md#loopback-tcp) and the [SDK contract](crates/sandcrab/opensandbox.md).
+See [client authentication](crates/sandcrab/docs/http.md#loopback-tcp) and the [SDK contract](crates/sandcrab/opensandbox.md).
 
 ## What a program can reach
 
@@ -36,9 +36,9 @@ reduces the kernel entry points available to guests. Approved calls still reach
 the shared kernel. Trusted file helpers need host UID mappings, and the fixed
 overlay exporter can clone its own mount through an authenticated daemon channel.
 The service treats those helpers and its protected binary directory as privileged
-host components. See the [workload and installation boundaries](crates/sandcrab/README.md#custom-installation).
+host components. See the [workload and installation boundaries](crates/sandcrab/docs/installation.md).
 
-The fixed [deletion-layer importer](crates/sandcrab/README.md#deletion-layers)
+The fixed [deletion-layer importer](crates/sandcrab/docs/templates.md#deletion-layers)
 receives `CAP_MKNOD` only to convert validated empty markers into device 0:0
 whiteouts in protected staging. Archives cannot supply device nodes. Ordinary
 file helpers and workloads receive no additional capability; imported layers
@@ -49,7 +49,7 @@ exact destination names through a daemon-owned CONNECT or SOCKS proxy. The
 daemon resolves each request and connects to a checked address. The allowlist
 controls where a tunnel starts. An allowed service can receive guest data or
 relay it elsewhere. TLS identity and payload validation belong to the client
-and remote service. See [network egress](crates/sandcrab/README.md#network-egress).
+and remote service. See [network egress](crates/sandcrab/docs/network.md).
 
 With host calls enabled, the guest can send opaque bytes to its caller. The
 caller owns authorization, credential handling, durable deduplication and effects
@@ -64,11 +64,11 @@ also bounds admission, pending commands, output and transfer resources. A queue
 timeout records that the command never executed. A running workload may hit its
 limit, consume its allowance continuously or lose progress on cancellation.
 Closing and restart recovery must confirm containment before releasing ownership.
-Uncertain cleanup can leave capacity reserved. See [command admission](crates/sandcrab/README.md#command-queue).
+Uncertain cleanup can leave capacity reserved. See [command admission](crates/sandcrab/docs/commands.md#command-queue).
 
 XFS project quotas can enforce volume byte and inode limits during writes.
 Ordinary-directory and overlay storage use periodic accounting. Writes can
 overshoot between observations, and workloads on the same filesystem can put
 pressure on other services. Operators own filesystem capacity and backups.
 Memory ceilings and passing load tests do not guarantee latency, disk availability
-or service availability under saturation. See [storage accounting](crates/sandcrab/README.md#storage-accounting).
+or service availability under saturation. See [storage accounting](crates/sandcrab/docs/volumes.md#storage-accounting).
