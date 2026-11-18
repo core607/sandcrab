@@ -56,6 +56,7 @@ max_records = 12
         return request, run
 
     def tests(self):
+        assert 'workspaces' in self.info['capabilities']
         route = '/v1/workspaces/editor-1'
         first = self.ensure(route)
         generation = first['generation']
