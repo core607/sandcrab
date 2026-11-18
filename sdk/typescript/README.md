@@ -59,6 +59,9 @@ development dependencies.
 
 On a service advertising `workspaces`, authorize the user and choose their
 workspace key in the application. Use the same key to resume its files later.
+Pass `{ templateId: base.id, freshChild: true }` to use an imported template
+and a clean shell for each command. The application can download a verified
+changeset with `await tools.checkpoint()`.
 
 ```ts
 import { SandcrabClient } from "sandcrab";

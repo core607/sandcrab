@@ -35,20 +35,27 @@ def _clip(text: str) -> tuple[str, bool]:
 
 
 class WorkspaceTools:
-    def __init__(self, client: AsyncSandcrabClient, route: str, generation: str, schemas: list[dict]):
+    def __init__(self, client: AsyncSandcrabClient, route: str, generation: str, schemas: list[dict], *, fresh_child: bool = False):
         self._client = client
         self._route = route
         self._generation = generation
+        self._fresh_child = fresh_child
         self.schemas = [item for item in schemas if item["name"] in TOOL_NAMES]
         self._inputs = {item["name"]: item["inputSchema"] for item in self.schemas}
         self.handlers = {name: partial(self.call, name) for name in self._inputs}
 
     @classmethod
-    async def bind(cls, client: AsyncSandcrabClient, key: str, profile: str | None = None) -> WorkspaceTools:
+    async def bind(cls, client: AsyncSandcrabClient, key: str, profile: str | None = None, *,
+                   template_id: str | None = None, fresh_child: bool = False) -> WorkspaceTools:
         if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", key):
             raise ValueError("Invalid workspace key")
         route = "/v1/workspaces/" + key
-        info = await client._request_json("POST", route, json_body={"profile": check_profile(profile or client.default_profile or "default")})
+        if type(fresh_child) is not bool:
+            raise ValueError("fresh_child must be a boolean")
+        plan = {"profile": check_profile(profile or client.default_profile or "default")}
+        if template_id is not None:
+            plan["templateId"] = check_digest(template_id, "template ID")
+        info = await client._request_json("POST", route, json_body=plan)
         generation = check_uuid(info["generation"], "generation")
         until = time.monotonic() + 35
         while info["state"] == "creating" and time.monotonic() < until:
@@ -57,7 +64,7 @@ class WorkspaceTools:
         if info["generation"] != generation or info["state"] != "ready":
             raise SandcrabError(409, "WORKSPACE_NOT_READY")
         catalog = await client._request_json("GET", "/v1/workspace-tools")
-        return cls(client, route, generation, catalog["tools"])
+        return cls(client, route, generation, catalog["tools"], fresh_child=fresh_child)
 
     def _validate(self, name: str, args: dict[str, Any]) -> None:
         schema = self._inputs[name]
@@ -116,6 +123,8 @@ class WorkspaceTools:
         run_id = str(uuid.uuid4())
         body = {**args, "id": run_id, "generation": self._generation, "serverId": current["serverId"],
                 "submissionWindow": current["submissionWindow"]}
+        if self._fresh_child:
+            body["freshChild"] = True
         await self._client._request_json("POST", self._route + "/commands", json_body=body,
                                          recovery_id=run_id, uncertain_op="workspace command")
         try:
@@ -123,13 +132,20 @@ class WorkspaceTools:
         except (httpx.TransportError, ProtocolError, SandcrabError) as error:
             raise TransportUncertainError("workspace command", run_id, error) from error
         result = run.get("result") or {}
+        if result.get("executed") is False:
+            return {"ok": False, "code": "REFUSED"}
         stdout, cut_out = _clip(result.get("stdout", ""))
         stderr, cut_err = _clip(result.get("stderr", ""))
         out = {"ok": run["state"] == "succeeded", "exitCode": result.get("exitCode"), "stdout": stdout, "stderr": stderr,
-               "freshShell": run["freshShell"], "truncated": cut_out or cut_err}
+               "freshShell": run["freshShell"], "truncated": bool(result.get("truncated")) or cut_out or cut_err}
         if not out["ok"]:
             out["code"] = "TIMEOUT" if run["state"] in ("timeout", "timed_out") else "COMMAND_FAILED"
         return out
+
+    async def checkpoint(self) -> bytes:
+        """Download a digest-verified tar of changes relative to the pinned template."""
+        return await self._client._request_bytes("GET", self._route + "/diff",
+            headers={"X-Sandcrab-Workspace-Generation": self._generation}, expect_etag=True)
 
     async def dispose(self) -> None:
         expected = {"generation": self._generation}
@@ -196,7 +212,7 @@ class WorkspaceTools:
                 raise ValueError("Choose one file range")
             headers["Range"] = f"bytes={start}-{min(end, start + TEXT_BYTES)}"
         else:
-            query.update(offset=args.get("offset", 1), limit=args.get("limit", 201))
+            query.update(offset=args.get("offset", 1), limit=args.get("limit", 201), maxBytes=TEXT_BYTES + 1)
         async with self._client._http.stream("GET", route + "?" + urlencode(query), headers=headers) as response:
             if response.status_code >= 400:
                 parse_json_response(response.status_code, await response.aread())
@@ -205,8 +221,6 @@ class WorkspaceTools:
             raw = bytearray()
             async for chunk in response.aiter_bytes(8192):
                 raw.extend(chunk[:TEXT_BYTES + 1 - len(raw)])
-                if len(raw) > TEXT_BYTES:
-                    break
             version = response.headers.get("x-sandcrab-file-sha256")
             if version:
                 check_digest(version)
@@ -241,15 +255,19 @@ class SyncWorkspaceTools:
     def dispose(self) -> None:
         self._runner.run(self._tools.dispose())
 
+    def checkpoint(self) -> bytes:
+        return self._runner.run(self._tools.checkpoint())
+
 
 @contextmanager
-def open_workspace_tools(key: str, *, profile: str | None = None, **connection):
+def open_workspace_tools(key: str, *, profile: str | None = None, template_id: str | None = None,
+                         fresh_child: bool = False, **connection):
     """Bind the same tools in a synchronous application, including a stdio MCP server."""
     from .client import AsyncSandcrabClient
     with asyncio.Runner() as runner:
         client = AsyncSandcrabClient(**connection)
         try:
-            tools = runner.run(WorkspaceTools.bind(client, key, profile))
+            tools = runner.run(WorkspaceTools.bind(client, key, profile, template_id=template_id, fresh_child=fresh_child))
             yield SyncWorkspaceTools(tools, runner)
         finally:
             runner.run(client.close())

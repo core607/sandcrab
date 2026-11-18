@@ -50,6 +50,9 @@ Run the example. It prints `42` and closes and forgets the session on exit.
 
 On a service advertising `workspaces`, authorize the user and choose their
 workspace key in the application. Use the same key to resume its files later.
+Pass `template_id=base["id"]` to bind a workspace to an imported template.
+Use `fresh_child=True` when each command needs a clean shell over the same files.
+The application can download a verified changeset with `tools.checkpoint()`.
 
 ```python
 from sandcrab import open_workspace_tools
