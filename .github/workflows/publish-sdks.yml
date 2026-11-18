@@ -51,10 +51,18 @@ jobs:
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct)"
           python -m unittest discover -s scripts -p 'test_release_*.py'
           python -m pip install build twine
-          python -m build --outdir dist/pypi sdk/python
+          build_packages() {
+            local source="$1" output="$2"
+            python -m build --outdir "$output/pypi" "$source/sdk/python"
+            mkdir -p "$output/npm"
+            npm pack "$source/sdk/typescript" --pack-destination "$output/npm"
+          }
+          build_packages "$PWD" "$PWD/dist"
           python -m twine check --strict dist/pypi/*
-          mkdir -p dist/npm
-          npm pack ./sdk/typescript --pack-destination dist/npm
+          replay=$(mktemp -d)
+          git archive HEAD sdk/python sdk/typescript | tar -x -C "$replay"
+          build_packages "$replay" "$replay/dist"
+          diff -qr dist "$replay/dist"
       - name: Download the accepted service archive
         if: github.event_name != 'pull_request'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
