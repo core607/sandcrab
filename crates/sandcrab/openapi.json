@@ -1778,7 +1778,8 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "summary": "Publish a staged raw file. Inspect the destination after a lost reply."
       }
     },
     "/v1/sessions/{id}/files/edit": {
