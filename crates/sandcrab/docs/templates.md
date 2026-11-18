@@ -8,7 +8,7 @@ with their own disposable writable layer at `/workspace`, or use it as the root
 filesystem. Export a parent's writable layer before closing it:
 
 ```sh
-sandcrab session diff --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID changes.tar
+sandcrab session diff --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID changes.tar
 ```
 
 `GET /v1/sessions/{id}/diff` captures a tar changeset from the upper layer.
@@ -33,16 +33,16 @@ length/hash and installs local output atomically. Use `-` for stdout or
 `--replace` to replace an existing regular destination.
 
 ```sh
-sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python environment.tar
-sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python rootfs.tar.gz
-sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --directory unpacked-image/rootfs
-sandcrab template list --socket /var/lib/sandcrab-demo/runtime/control.sock
-sandcrab template get --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
-sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --template SHA256
-sandcrab template delete --socket /var/lib/sandcrab-demo/runtime/control.sock SHA256
+sandcrab template import --socket /var/lib/sandcrab/runtime/control.sock --profile default environment.tar
+sandcrab template import --socket /var/lib/sandcrab/runtime/control.sock --profile default rootfs.tar.gz
+sandcrab template import --socket /var/lib/sandcrab/runtime/control.sock --profile default --directory unpacked-image/rootfs
+sandcrab template list --socket /var/lib/sandcrab/runtime/control.sock
+sandcrab template get --socket /var/lib/sandcrab/runtime/control.sock SHA256
+sandcrab session open --socket /var/lib/sandcrab/runtime/control.sock --profile default --template SHA256
+sandcrab template delete --socket /var/lib/sandcrab/runtime/control.sock SHA256
 ```
 
-The equivalent import is `POST /v1/templates?profile=python` with a plain tar body,
+The equivalent import is `POST /v1/templates?profile=default` with a plain tar body,
 using Content-Length or chunked framing. `GET /v1/templates` returns up to 64
 objects and a `nextAfter` cursor; continue with `?after=SHA256`.
 `GET` and `DELETE /v1/templates/SHA256` inspect and remove an object.
@@ -139,7 +139,7 @@ ordered IDs as one recipe. For rootfs use, workspace-layer files belong beneath
 updating a toolkit reuses the existing base and workspace objects.
 
 ```sh
-sandcrab template compose --socket /var/lib/sandcrab-demo/runtime/control.sock BASE_ID TOOLKIT_ID WORKSPACE_ID
+sandcrab template compose --socket /var/lib/sandcrab/runtime/control.sock BASE_ID TOOLKIT_ID WORKSPACE_ID
 ```
 
 The JSON reply contains `id`, `uid`, `gid` and `layers`. Use its ID wherever a
@@ -184,8 +184,8 @@ Import a native diff or a tar layer with `--layer`, or add `format=layer` to
 `--directory` imports keep their existing literal-name semantics.
 
 ```sh
-sandcrab template import --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --layer changes.tar
-sandcrab template compose --socket /var/lib/sandcrab-demo/runtime/control.sock BASE_ID CHANGES_ID
+sandcrab template import --socket /var/lib/sandcrab/runtime/control.sock --profile default --layer changes.tar
+sandcrab template compose --socket /var/lib/sandcrab/runtime/control.sock BASE_ID CHANGES_ID
 ```
 
 An empty regular `.wh.NAME` marker hides the lower path `NAME`.

@@ -1,20 +1,20 @@
 # Files
 
 ```sh
-sandcrab files mkdir --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID src/pkg --mode 750
-sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./input.bin nested/input.bin --parents
-sandcrab files ls --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID . --depth 2
-sandcrab files search --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID '*.bin' --path .
-sandcrab files read --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID nested/input.bin --bytes 0-63
-sandcrab files rm --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID nested --recursive
+sandcrab files mkdir --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID src/pkg --mode 750
+sandcrab files put --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID ./input.bin nested/input.bin --parents
+sandcrab files ls --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID . --depth 2
+sandcrab files search --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID '*.bin' --path .
+sandcrab files read --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID nested/input.bin --bytes 0-63
+sandcrab files rm --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID nested --recursive
 tar -cf project.tar -C ./project .
-sandcrab files put --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID ./project.tar project --tar
-sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'cd project; python3 main.py'
-sandcrab files get --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID project ./result.tar --tar
-sandcrab files status --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
-sandcrab files cancel --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
-sandcrab files forget --socket /var/lib/sandcrab-demo/runtime/control.sock UPLOAD_ID
-sandcrab files list --socket /var/lib/sandcrab-demo/runtime/control.sock
+sandcrab files put --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID ./project.tar project --tar
+sandcrab session exec --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID -- 'cd project; python3 main.py'
+sandcrab files get --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID project ./result.tar --tar
+sandcrab files status --socket /var/lib/sandcrab/runtime/control.sock UPLOAD_ID
+sandcrab files cancel --socket /var/lib/sandcrab/runtime/control.sock UPLOAD_ID
+sandcrab files forget --socket /var/lib/sandcrab/runtime/control.sock UPLOAD_ID
+sandcrab files list --socket /var/lib/sandcrab/runtime/control.sock
 ```
 
 Raw `files put` streams one request without hashing the source first. `--id`,
@@ -23,7 +23,7 @@ transfers and workspace inspection under `capability=files` and staged operation
 under `capability=uploads`.
 
 ```sh
-curl --unix-socket /var/lib/sandcrab-demo/runtime/control.sock --upload-file ./input.bin \
+curl --unix-socket /var/lib/sandcrab/runtime/control.sock --upload-file ./input.bin \
   'http://localhost/v1/sessions/SESSION_ID/files?path=nested/input.bin&parents=true'
 ```
 

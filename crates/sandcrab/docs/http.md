@@ -27,7 +27,7 @@ Any client command can replace `--socket PATH` with `--endpoint URL`:
 ```sh
 sudo sandcrab client-token --user app --output /etc/sandcrab-client/token
 sandcrab --token-file /etc/sandcrab-client/token info --endpoint http://127.0.0.1:9011
-sandcrab run --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile python --stream -- python3 -c 'print(6 * 7)'
+sandcrab run --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile default --stream -- python3 -c 'print(6 * 7)'
 ```
 
 `client-token` validates `--config` (default `/etc/sandcrab/config.toml`), refuses

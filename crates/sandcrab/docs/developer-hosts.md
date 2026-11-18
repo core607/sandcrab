@@ -1,10 +1,9 @@
 # Developer hosts
 
-The Sandcrab service runs only on Linux. Its installer acceptance covers the
-distributions named in the [quickstart](../../../README.md#quickstart) on `x86_64`
-and `aarch64`. The setups on this page are not tested; they describe how to obtain
-a Linux environment that meets the same requirements for development on macOS or
-Windows.
+The Sandcrab service runs on Linux. Installer acceptance covers Ubuntu 22.04,
+Ubuntu 24.04 and Debian 12 on `x86_64`, and Ubuntu 24.04 on `aarch64`.
+The [quickstart](../../../README.md#quickstart) installs the release on those
+hosts. The macOS and Windows setups below describe untested development options.
 
 ## Host requirements
 

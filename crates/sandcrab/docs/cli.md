@@ -1,11 +1,19 @@
 # CLI
 
+After the [standard installation](../../../README.md#quickstart), run these from
+a root shell to inspect the service and execute Python.
+
 ```sh
-sandcrab info --socket /var/lib/sandcrab-demo/runtime/control.sock
-sandcrab run --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python -- python3 -c 'print(6 * 7)'
-sandcrab get --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
-sandcrab cancel --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
-sandcrab forget --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
+sandcrab info --socket /var/lib/sandcrab/runtime/control.sock
+sandcrab run --socket /var/lib/sandcrab/runtime/control.sock --profile default -- python3 -c 'print(6 * 7)'
+```
+
+To inspect, cancel or forget a retained run, substitute its printed recovery ID.
+
+```sh
+sandcrab get --socket /var/lib/sandcrab/runtime/control.sock RUN_ID
+sandcrab cancel --socket /var/lib/sandcrab/runtime/control.sock RUN_ID
+sandcrab forget --socket /var/lib/sandcrab/runtime/control.sock RUN_ID
 ```
 
 `run` prints its recovery ID to stderr before submission, polls to a terminal

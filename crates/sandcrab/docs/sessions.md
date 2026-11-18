@@ -1,12 +1,12 @@
 # Persistent sessions
 
 ```sh
-sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --ttl-ms 60000
-sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'mkdir project; cd project; export VALUE=42'
-sandcrab session exec --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID -- 'printf "%s\n" "$VALUE"; pwd'
-sandcrab session renew --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID --ttl-ms 60000
-sandcrab session close --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID
-sandcrab session forget --socket /var/lib/sandcrab-demo/runtime/control.sock SESSION_ID
+sandcrab session open --socket /var/lib/sandcrab/runtime/control.sock --profile default --ttl-ms 60000
+sandcrab session exec --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID -- 'mkdir project; cd project; export VALUE=42'
+sandcrab session exec --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID -- 'printf "%s\n" "$VALUE"; pwd'
+sandcrab session renew --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID --ttl-ms 60000
+sandcrab session close --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID
+sandcrab session forget --socket /var/lib/sandcrab/runtime/control.sock SESSION_ID
 ```
 
 `open` prints its recovery ID before submission and waits for `ready`. `exec`

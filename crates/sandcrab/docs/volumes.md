@@ -21,14 +21,14 @@ Existing plain volumes retain periodic accounting; enabling host quotas does not
 silently assign projects to their data.
 
 ```sh
-sandcrab volume create --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --bytes 8388608 --inodes 256
-sandcrab session open --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --volume VOLUME_ID
+sandcrab volume create --socket /var/lib/sandcrab/runtime/control.sock --profile default --bytes 8388608 --inodes 256
+sandcrab session open --socket /var/lib/sandcrab/runtime/control.sock --profile default --volume VOLUME_ID
 # Execute commands, then close the session before cloning or deleting its volume.
-sandcrab volume create --socket /var/lib/sandcrab-demo/runtime/control.sock --profile python --clone-from VOLUME_ID
-sandcrab volume list --socket /var/lib/sandcrab-demo/runtime/control.sock
-sandcrab volume get --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
-sandcrab volume delete --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
-sandcrab volume forget --socket /var/lib/sandcrab-demo/runtime/control.sock VOLUME_ID
+sandcrab volume create --socket /var/lib/sandcrab/runtime/control.sock --profile default --clone-from VOLUME_ID
+sandcrab volume list --socket /var/lib/sandcrab/runtime/control.sock
+sandcrab volume get --socket /var/lib/sandcrab/runtime/control.sock VOLUME_ID
+sandcrab volume delete --socket /var/lib/sandcrab/runtime/control.sock VOLUME_ID
+sandcrab volume forget --socket /var/lib/sandcrab/runtime/control.sock VOLUME_ID
 ```
 
 A volume is an ordinary directory mounted at `/workspace`. Session closure,

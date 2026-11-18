@@ -55,8 +55,8 @@ The command's terminal outcome still controls the CLI exit status and forgetting
 To observe a retained run without cancelling or forgetting it, use:
 
 ```sh
-sandcrab events --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID
-sandcrab events --socket /var/lib/sandcrab-demo/runtime/control.sock RUN_ID --after CURSOR
+sandcrab events --socket /var/lib/sandcrab/runtime/control.sock RUN_ID
+sandcrab events --socket /var/lib/sandcrab/runtime/control.sock RUN_ID --after CURSOR
 ```
 
 This observer prints newline-delimited JSON containing `event`, `id` and `data`.
