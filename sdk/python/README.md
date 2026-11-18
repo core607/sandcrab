@@ -46,6 +46,35 @@ Run the example. It prints `42` and closes and forgets the session on exit.
 .venv/bin/python example.py
 ```
 
+## Bind tools to an agent
+
+On a service advertising `workspaces`, authorize the user and choose their
+workspace key in the application. Use the same key to resume its files later.
+
+```python
+from sandcrab import open_workspace_tools
+
+with open_workspace_tools("example-project", endpoint="http://127.0.0.1:9011",
+                          token_file="/etc/sandcrab-client/token") as tools:
+    tools.call("write_file", {"path": "hello.py", "content": "print(42)\n"})
+    print(tools.call("exec", {"command": "python3 hello.py"})["stdout"].strip())
+```
+
+For an async framework, call `await client.workspace_tools(key)` on
+`AsyncSandcrabClient`. Register each entry in `tools.schemas` with its
+corresponding async callable in `tools.handlers`. The six tools cover commands,
+reading, writing, exact edits, listing and search. Replace the application's
+host file tools along with its shell tool.
+
+`read_file` returns the whole-file version for `edit_file`. On `EDIT_CONFLICT`,
+read the file again. After `OUTCOME_UNKNOWN`, inspect the affected files before
+another write. `freshShell` on a successful command means the shell was newly
+opened. Closing the client keeps the files. The application can call
+`tools.dispose()` (await it on the async client) for permanent deletion.
+
+For the same tools through stdio, start `sandcrab-mcp --workspace example-project
+--endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token`.
+
 ## Native client
 
 Connect over a root-owned Unix control socket or a literal loopback HTTP endpoint with a

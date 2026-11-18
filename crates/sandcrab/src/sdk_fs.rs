@@ -55,6 +55,8 @@ pub enum Request {
     Search {
         path: String,
         pattern: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        contains: Option<String>,
     },
     Replace {
         entries: Vec<Replace>,
@@ -147,6 +149,7 @@ impl Request {
                 }
                 Self::Search {
                     path: path.ok_or((400, "INVALID_QUERY"))?,
+                    contains: None,
                     pattern: pattern
                         .filter(|s| !s.is_empty())
                         .unwrap_or_else(|| "**".into()),
@@ -226,13 +229,23 @@ impl Request {
     }
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::Search { path, pattern } => {
+            Self::Search {
+                path,
+                pattern,
+                contains,
+            } => {
                 normalized(path, true)?;
                 if pattern.is_empty()
                     || pattern.len() > 1024
                     || pattern.chars().any(char::is_control)
                 {
                     return Err((400, "GLOB_LIMIT"));
+                }
+                if contains
+                    .as_ref()
+                    .is_some_and(|s| s.is_empty() || s.len() > 1024 || s.contains('\0'))
+                {
+                    return Err((400, "INVALID_SEARCH_TEXT"));
                 }
                 Ok(())
             }

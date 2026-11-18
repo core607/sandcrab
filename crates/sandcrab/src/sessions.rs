@@ -99,6 +99,7 @@ pub(crate) struct Session {
     pub state: String,
     deadline: Instant,
     managed_idle: Option<u64>,
+    pub(crate) workspace_file_users: usize,
     pub expires_at: u64,
     cancelled: Arc<AtomicBool>,
     reason: String,
@@ -133,10 +134,13 @@ impl Session {
     fn expired(&self, now: Instant) -> bool {
         self.deadline <= now
             && (self.managed_idle.is_none()
-                || (self.active_run.is_none() && self.pending.is_empty()))
+                || (self.active_run.is_none()
+                    && self.pending.is_empty()
+                    && self.workspace_file_users == 0))
     }
     pub(crate) fn result_expired(&self, ttl: Duration, now: Instant) -> bool {
         self.terminal()
+            && self.workspace_file_users == 0
             && !self.request.keep_result
             && self
                 .completed_at
@@ -314,7 +318,7 @@ impl Service {
                 (200, registry.sessions[id].value())
             }
             "forget" => {
-                if !session.terminal() {
+                if !session.terminal() || session.workspace_file_users != 0 {
                     return error(409, "SESSION_ACTIVE");
                 }
                 registry.sessions.remove(id);
@@ -442,6 +446,7 @@ impl Service {
             state: "starting".into(),
             deadline: Instant::now() + Duration::from_millis(lifetime),
             managed_idle: managed.then_some(lifetime),
+            workspace_file_users: 0,
             expires_at: expires_at(lifetime),
             cancelled: cancelled.clone(),
             reason: "closed".into(),
@@ -542,6 +547,7 @@ impl Service {
             state: "starting".into(),
             deadline: parent.deadline,
             managed_idle: None,
+            workspace_file_users: 0,
             expires_at: parent.expires_at,
             cancelled: cancelled.clone(),
             reason: "closed".into(),

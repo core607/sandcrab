@@ -19,11 +19,12 @@ from .native import call, connect, http
 from .volume import VolumeProbe
 
 
-def binary_http(endpoint, method, path, body):
+def binary_http(endpoint, method, path, body, headers=None):
     with socket.socket(socket.AF_UNIX) as stream:
         stream.settimeout(75)
         connect(stream, endpoint)
-        stream.sendall(f'{method} {path} HTTP/1.1\r\nHost: sandcrab\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n'.encode() + body)
+        extra = ''.join(f'{key}: {value}\r\n' for key, value in (headers or {}).items())
+        stream.sendall(f'{method} {path} HTTP/1.1\r\nHost: sandcrab\r\n{extra}Content-Length: {len(body)}\r\nConnection: close\r\n\r\n'.encode() + body)
         response = HTTPResponse(stream)
         response.begin()
         data = response.read(16 * 1024 * 1024 + 1)

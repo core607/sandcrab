@@ -4,7 +4,7 @@ on:
   push:
     tags: ['v*']
   pull_request:
-    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', 'scripts/release_*.py', 'scripts/test_release_*.py', '.github/workflows/publish-sdks.yml', '.github/workflows/release.yml']
+    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', 'evals/sdk/workspace_*', 'crates/sandcrab/workspace-tools.json', 'scripts/release_*.py', 'scripts/test_release_*.py', '.github/workflows/publish-sdks.yml', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       candidate_tag:
@@ -81,6 +81,10 @@ jobs:
           python evals/sdk/native_quickstart.py sdk/python/README.md --package dist/pypi/*.whl
           python evals/sdk/native_quickstart.py sdk/typescript/README.md --package dist/npm/*.tgz
           sudo /var/lib/sandcrab-release/sandcrab session list --socket /var/lib/sandcrab/runtime/control.sock | jq -e '.ids == []'
+      - name: Exercise both packaged workspace clients and bound MCP tools
+        run: |
+          python evals/sdk/native_quickstart.py sdk/python/README.md --package dist/pypi/*.whl --workspace-tools
+          python evals/sdk/native_quickstart.py sdk/typescript/README.md --package dist/npm/*.tgz --workspace-tools
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sdk-packages

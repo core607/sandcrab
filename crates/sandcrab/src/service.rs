@@ -216,6 +216,16 @@ impl Service {
     }
 
     pub fn route(self: &Arc<Self>, method: &str, path: &str, body: &[u8]) -> (u16, Value) {
+        if method == "GET" && path == "/v1/workspace-tools" {
+            return if self.runtime.storage.is_some() {
+                (
+                    200,
+                    json!({"tools":serde_json::from_str::<Value>(include_str!("../workspace-tools.json")).expect("bundled tool schemas")}),
+                )
+            } else {
+                error(404, "WORKSPACES_DISABLED")
+            };
+        }
         if method == "GET"
             && let Some(response) = crate::inventory::route(self, path)
         {
@@ -231,6 +241,7 @@ impl Service {
                         "sessions",
                         "volumes",
                         "workspaces",
+                        "workspace-files",
                         "files",
                         "uploads",
                         "events",

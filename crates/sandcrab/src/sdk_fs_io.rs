@@ -11,7 +11,7 @@ use rustix::fs::{
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io,
+    io::{self, Read},
     os::unix::fs::{MetadataExt, PermissionsExt},
     time::UNIX_EPOCH,
 };
@@ -130,40 +130,76 @@ fn listing(
     }
     Ok(())
 }
-fn searching(
-    root: &File,
-    path: &str,
-    glob: &crate::sdk_glob::Glob,
-    depth: usize,
-    visited: &mut usize,
-    output: &mut Vec<Value>,
-    bytes: &mut usize,
-) -> io::Result<()> {
-    *visited += 1;
-    if *visited > 10000 || depth > 64 {
-        return Err(invalid("FILE_ENTRY_LIMIT"));
-    }
-    if !file_io::valid_path(path, true) {
-        return Err(invalid("INVALID_PATH"));
-    }
-    if node(root, path)?.metadata()?.is_dir() {
-        for name in names(&directory(root, path)?)? {
-            let child = if path == "." {
-                name
-            } else {
-                format!("{path}/{name}")
-            };
-            searching(root, &child, glob, depth + 1, visited, output, bytes)?;
+struct Search<'a> {
+    glob: crate::sdk_glob::Glob,
+    contains: Option<&'a [u8]>,
+    remaining: u64,
+    visited: usize,
+    bytes: usize,
+    matches: Vec<Value>,
+}
+impl Search<'_> {
+    fn visit(&mut self, root: &File, path: &str, depth: usize) -> io::Result<()> {
+        self.visited += 1;
+        if self.visited > 10000 || depth > 64 {
+            return Err(invalid("FILE_ENTRY_LIMIT"));
         }
-    } else if glob.matches(path.rsplit('/').next().unwrap()) {
-        let value = info(root, path)?;
-        *bytes += bounded(&value)? + 1;
-        if *bytes > METADATA_LIMIT {
-            return Err(invalid("FILE_METADATA_LIMIT"));
+        if !file_io::valid_path(path, true) {
+            return Err(invalid("INVALID_PATH"));
         }
-        output.push(value);
+        let kind = node(root, path)?.metadata()?.file_type();
+        if kind.is_dir() {
+            for name in names(&directory(root, path)?)? {
+                let child = if path == "." {
+                    name
+                } else {
+                    format!("{path}/{name}")
+                };
+                self.visit(root, &child, depth + 1)?;
+            }
+        } else if self.glob.matches(path.rsplit('/').next().unwrap()) {
+            if let Some(text) = self.contains {
+                if !kind.is_file() {
+                    return Ok(());
+                }
+                let (parent, name) = file_io::parent(root, path, false)?;
+                let mut file = file_io::regular(&parent, &name)?;
+                if !contains_bytes(&mut file, text, &mut self.remaining)? {
+                    return Ok(());
+                }
+            }
+            let value = info(root, path)?;
+            self.bytes += bounded(&value)? + 1;
+            if self.bytes > METADATA_LIMIT {
+                return Err(invalid("FILE_METADATA_LIMIT"));
+            }
+            self.matches.push(value);
+        }
+        Ok(())
     }
-    Ok(())
+}
+
+fn contains_bytes(input: &mut impl Read, text: &[u8], remaining: &mut u64) -> io::Result<bool> {
+    let overlap = text.len() - 1;
+    let mut block = vec![0; 32768 + overlap];
+    let mut carried = 0;
+    loop {
+        let capacity = (*remaining).saturating_add(1).min(32768) as usize;
+        let count = input.read(&mut block[carried..carried + capacity])?;
+        if count == 0 {
+            return Ok(false);
+        }
+        if count as u64 > *remaining {
+            return Err(invalid("FILE_LIMIT"));
+        }
+        *remaining -= count as u64;
+        let used = carried + count;
+        if memchr::memmem::find(&block[..used], text).is_some() {
+            return Ok(true);
+        }
+        carried = overlap.min(used);
+        block.copy_within(used - carried..used, 0);
+    }
 }
 fn make_directory(
     root: &File,
@@ -269,19 +305,21 @@ fn remove_tree(parent: &File, name: &str) -> io::Result<()> {
 }
 fn apply(job: &Job, root: &File, request: &Request, attempted: &mut bool) -> io::Result<Value> {
     match request {
-        Request::Search { path, pattern } => {
-            let glob = crate::sdk_glob::Glob::new(pattern)?;
-            let mut values = Vec::new();
-            searching(
-                root,
-                &normalize(path, true)?,
-                &glob,
-                0,
-                &mut 0,
-                &mut values,
-                &mut 2,
-            )?;
-            return Ok(Value::Array(values));
+        Request::Search {
+            path,
+            pattern,
+            contains,
+        } => {
+            let mut search = Search {
+                glob: crate::sdk_glob::Glob::new(pattern)?,
+                contains: contains.as_deref().map(str::as_bytes),
+                remaining: job.byte_limit,
+                visited: 0,
+                bytes: 2,
+                matches: Vec::new(),
+            };
+            search.visit(root, &normalize(path, true)?, 0)?;
+            return Ok(Value::Array(search.matches));
         }
         Request::Replace { entries, verbose } => {
             let (counts, changed) = crate::sdk_replace::stage(job, entries)?;

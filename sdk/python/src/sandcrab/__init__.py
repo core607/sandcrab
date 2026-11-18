@@ -22,8 +22,11 @@ from .errors import (
     TransportUncertainError,
 )
 from .mcp import SandcrabMcpServer
+from .workspace import WorkspaceTools, open_workspace_tools
 
 __all__ = [
+    "WorkspaceTools",
+    "open_workspace_tools",
     "AsyncHostCallDispatcher",
     "AsyncSandcrabClient",
     "AsyncSession",

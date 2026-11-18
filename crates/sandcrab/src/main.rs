@@ -56,6 +56,7 @@ mod transport;
 mod usage;
 mod volumes;
 mod workspace_api;
+mod workspace_files;
 mod workspaces;
 
 use cli::{ClientArgs, Connection, Env};

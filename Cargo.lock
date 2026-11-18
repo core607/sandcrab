@@ -415,6 +415,7 @@ dependencies = [
  "base64",
  "domain",
  "flate2",
+ "memchr",
  "regex",
  "rustix",
  "sandcrab-core",

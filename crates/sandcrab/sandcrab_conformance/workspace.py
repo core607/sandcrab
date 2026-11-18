@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 import uuid
 
-from .file import FileProbe
+from .file import FileProbe, binary_http
 from .native import Probe, http
 
 
@@ -69,6 +69,23 @@ max_records = 12
         reused = self.wait(second)
         assert reused['state'] == 'succeeded' and reused['result']['stdout'] == '42' and not reused['freshShell'], reused
         self.session_wait({'id': second['sessionId']}, terminal=True)
+        files = route + '/files'
+        headers = {'X-Sandcrab-Workspace-Generation': generation}
+        assert binary_http(self.socket, 'PUT', files + '?path=note', b'first\nsecond\n', headers)[0] == 200
+        status, response, selected = binary_http(self.socket, 'GET', files + '?path=note&offset=2&limit=1',
+                                                 b'', {**headers, 'X-Sandcrab-Read-Version': 'sha256'})
+        assert status == 200 and selected == b'second' and 'X-Sandcrab-File-Sha256' in response
+        edit = {'path': 'note', 'expectedSha256': response['X-Sandcrab-File-Sha256'], 'old': 'second', 'new': 'changed'}
+        assert binary_http(self.socket, 'POST', files + '/edit', json.dumps(edit).encode(), headers)[0] == 200
+        assert binary_http(self.socket, 'GET', files + '?path=note', b'', headers)[2] == b'first\nchanged\n'
+        assert binary_http(self.socket, 'PUT', files + '?path=cross.txt', b'x' * 32766 + b'needle', headers)[0] == 200
+        status, _, found = binary_http(self.socket, 'GET', files + '/search?pattern=*.txt&contains=needle', b'', headers)
+        assert status == 200 and [v['path'] for v in json.loads(found)['entries']] == ['cross.txt']
+        status, schema = http(self.socket, 'GET', '/v1/openapi?capability=workspace-files')
+        assert status == 200 and '/v1/workspaces/{key}/files/edit' in schema['paths']
+        wrong = {'X-Sandcrab-Workspace-Generation': str(uuid.uuid4())}
+        assert binary_http(self.socket, 'PUT', files + '?path=note', b'stale', wrong)[0] == 409
+        self.done('file-operations-reopen-by-key-and-fence-stale-generations')
         status, seen = http(self.socket, 'POST', route + '/commands', request)
         assert status == 200 and seen['id'] == accepted['id'] and seen['state'] == 'succeeded', seen
         assert http(self.socket, 'POST', route + '/commands', {**request, 'command': 'false'})[0] == 409
