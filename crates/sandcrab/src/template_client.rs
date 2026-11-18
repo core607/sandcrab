@@ -134,7 +134,7 @@ fn parse_import(args: &[String], env: &Env) -> io::Result<ImportSpec> {
     }
     let gzip = !directory && (gzip || has_gzip_suffix(&source));
     Ok(ImportSpec {
-        profile: cli::resolve_profile(profile, env)?,
+        profile: cli::resolve_profile(profile, env),
         source,
         directory,
         gzip,

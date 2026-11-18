@@ -4,7 +4,13 @@ use crate::{
     config::{self, invalid},
     sdk_types,
 };
-use std::{ffi::OsString, io, path::PathBuf};
+use std::{
+    ffi::OsString,
+    io,
+    path::{Path, PathBuf},
+};
+
+const INSTALLED_SOCKET: &str = "/var/lib/sandcrab/runtime/control.sock";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Env {
@@ -54,6 +60,9 @@ impl Connection {
             )),
             (Some(socket), None) => Ok(("--socket", socket.clone(), token_file)),
             (None, Some(endpoint)) => Ok(("--endpoint", endpoint.clone(), token_file)),
+            (None, None) if Path::new(INSTALLED_SOCKET).try_exists()? => {
+                Ok(("--socket", INSTALLED_SOCKET.into(), token_file))
+            }
             (None, None) => Err(invalid(
                 "Pass --socket PATH or --endpoint URL, or set SANDCRAB_SOCKET or SANDCRAB_ENDPOINT",
             )),
@@ -113,13 +122,11 @@ impl<'a> ClientArgs<'a> {
     }
 }
 
-pub fn resolve_profile(explicit: Option<&str>, env: &Env) -> io::Result<String> {
-    if let Some(profile) = explicit {
-        return Ok(profile.to_string());
-    }
-    env.profile
-        .clone()
-        .ok_or_else(|| invalid("--profile NAME or SANDCRAB_PROFILE is required"))
+pub fn resolve_profile(explicit: Option<&str>, env: &Env) -> String {
+    explicit
+        .or(env.profile.as_deref())
+        .unwrap_or("default")
+        .into()
 }
 
 fn digits(value: &str) -> Option<u64> {
@@ -274,11 +281,9 @@ mod tests {
         assert_eq!(flag, "--endpoint");
         assert_eq!(addr, "127.0.0.1:9011");
         assert_eq!(tok, Some(PathBuf::from("/tmp/tok")));
-        assert_eq!(resolve_profile(None, &tcp_only).unwrap(), "python");
-        assert_eq!(
-            resolve_profile(Some("override"), &tcp_only).unwrap(),
-            "override"
-        );
+        assert_eq!(resolve_profile(None, &Env::default()), "default");
+        assert_eq!(resolve_profile(None, &tcp_only), "python");
+        assert_eq!(resolve_profile(Some("override"), &tcp_only), "override");
     }
 
     #[test]
