@@ -6,10 +6,15 @@ build-backend = "setuptools.build_meta"
 name = "sandcrab"
 version = "0.3.0"
 description = "Native Python client, template workflows, host-call dispatcher and stdio MCP server for Sandcrab"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["httpx>=0.28.1,<1"]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+
+[project.urls]
+Repository = "https://github.com/core607/sandcrab"
+Documentation = "https://github.com/core607/sandcrab/tree/main/sdk/python"
 
 [project.scripts]
 sandcrab-mcp = "sandcrab.mcp:main"

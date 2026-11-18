@@ -6,16 +6,40 @@ host-call dispatch (`HostCallDispatcher`, `AsyncHostCallDispatcher`), a standard
 JSON-RPC 2.0 stdio MCP server (`sandcrab-mcp`), and the `sandcrab_templates` extension
 used alongside the published OpenSandbox SDK. It requires Python 3.11+ and `httpx>=0.28.1,<1`.
 
-Install from a source checkout:
+## Run your first session
+
+Run this example on the Linux host where Sandcrab is installed. Use the application
+account that owns the token from the [service setup](https://github.com/core607/sandcrab#cookbook).
+In an empty directory, create a virtual environment. Use the PyPI command below
+for a published version. For a version awaiting publication, give pip the
+absolute path to `sdk/python` in the [matching checkout](https://github.com/core607/sandcrab/tree/v0.3.0)
+in place of `sandcrab==0.3.0`.
 
 ```sh
-python -m pip install ./sdk/python
+python3 -m venv .venv
+.venv/bin/python -m pip install sandcrab==0.3.0
 ```
 
-Run the test suite:
+Save this as `example.py`.
+
+```python
+from sandcrab import SandcrabClient
+
+with SandcrabClient(
+    endpoint="http://127.0.0.1:9011",
+    token_file="/etc/sandcrab-client/token",
+    default_profile="default",
+) as client:
+    with client.open_session() as session:
+        session.write_file("src/main.py", "print(6 * 7)\n", parents=True)
+        session.exec("python3 src/main.py > answer.txt", check=True)
+        print(session.read_text("answer.txt").strip())
+```
+
+Run the example. It prints `42` and closes and forgets the session on exit.
 
 ```sh
-python -m unittest discover -s sdk/python/tests -v
+.venv/bin/python example.py
 ```
 
 ## Native client
@@ -25,22 +49,6 @@ Connect over a root-owned Unix control socket or a literal loopback HTTP endpoin
 `socket_path` nor `endpoint` is passed, the client reads `SANDCRAB_SOCKET` or
 `SANDCRAB_ENDPOINT` (plus `SANDCRAB_TOKEN_FILE` and `SANDCRAB_PROFILE`), and refuses
 implicit selection if both transport variables are set.
-
-```python
-from sandcrab import SandcrabClient
-
-with SandcrabClient(
-    endpoint="http://127.0.0.1:8080",
-    token_file="./client.token",
-    default_profile="default",
-) as client:
-    run = client.run(["echo", "ready"], check=True)
-
-    with client.open_session() as session:
-        session.write_file("src/main.py", "print(6 * 7)\n", parents=True)
-        result = session.exec("python3 src/main.py", check=True)
-        lines = session.read_text("src/main.py", offset=1, limit=1)
-```
 
 Exiting `with client.open_session() as session:` (or `async with await client.open_session()`)
 closes and forgets the session unless `keep_result=True` or `auto_close=False` is set.
@@ -62,7 +70,7 @@ bounded `application/x-tar` bytes.
 ## Caller-owned host calls
 
 `HostCallDispatcher` and `AsyncHostCallDispatcher` run handlers in the caller's process
-while Sandcrab relays opaque bytes; see [host calls](../../crates/sandcrab/host-calls.md).
+while Sandcrab relays opaque bytes; see [host calls](https://github.com/core607/sandcrab/blob/main/crates/sandcrab/host-calls.md).
 
 ```python
 import hashlib, hmac
@@ -92,12 +100,12 @@ command and leaves its record retained for inspection.
 
 ## Stdio MCP server
 
-`sandcrab-mcp` (or [examples/sandcrab-mcp.py](../../examples/sandcrab-mcp.py)) serves
+`sandcrab-mcp` (or [examples/sandcrab-mcp.py](https://github.com/core607/sandcrab/blob/main/examples/sandcrab-mcp.py)) serves
 MCP `2024-11-05` and `2025-03-26` JSON-RPC 2.0 over stdio using only the Python standard
 library alongside `SandcrabClient`:
 
 ```sh
-sandcrab-mcp --endpoint http://127.0.0.1:8080 --token-file ./client.token --profile default
+sandcrab-mcp --endpoint http://127.0.0.1:9011 --token-file /etc/sandcrab-client/token --profile default
 ```
 
 Exposed tools are bounded to sandbox execution and workspace-relative files:
@@ -110,7 +118,8 @@ through MCP are closed and forgotten automatically when stdin closes.
 ## Template publication alongside OpenSandbox (`sandcrab_templates`)
 
 `sandcrab_templates` remains importable directly (and re-exported from `sandcrab`) for
-filesystem capture and immutable publication beside the published OpenSandbox SDK:
+filesystem capture and immutable publication beside the published OpenSandbox SDK.
+From a source checkout, install both for the examples below.
 
 ```sh
 python -m pip install ./sdk/python -r evals/sdk/requirements.txt
@@ -131,7 +140,7 @@ async with TemplateClient("http://127.0.0.1:9011", token) as templates:
 
 Prepare and validate files before capture. `checkpoint.image` selects a rootfs
 template in OpenSandbox; workspace captures use native session `templateId`.
-The [native reference](../../crates/sandcrab/README.md#filesystem-capture) owns
+The [native reference](https://github.com/core607/sandcrab/blob/main/crates/sandcrab/README.md#filesystem-capture) owns
 freeze semantics, supported metadata, limits and omitted runtime state.
 `Checkpoint.to_dict()` and `Checkpoint.from_dict()` save and load a trusted local
 receipt; keep it with the captured archive outside the sandbox.
@@ -146,7 +155,7 @@ matching objects are reused. After a lost transport reply, the client performs o
 to reconcile that ID and never reposts automatically; if absent, `PublicationUncertain`
 carries its ID and `await templates.reconcile(checkpoint)` checks visibility later.
 
-The [independent environment example](../../examples/sandcrab-environment.py) builds,
+The [independent environment example](https://github.com/core607/sandcrab/blob/main/examples/sandcrab-environment.py) builds,
 validates, captures, publishes, and starts two independent instances:
 
 ```sh
@@ -156,11 +165,20 @@ python examples/sandcrab-environment.py --base-image PROFILE@sha256:ID \
 
 Compose independently imported layers with `await templates.compose([base_id,
 toolkit_id, workspace_id])`; the [native recipe
-contract](../../crates/sandcrab/README.md#composable-recipes) owns ordering, whiteouts,
+contract](https://github.com/core607/sandcrab/blob/main/crates/sandcrab/README.md#composable-recipes) owns ordering, whiteouts,
 limits and reference lifetimes. `recipe_id(layers)` computes the expected ID locally, and
-[examples/sandcrab-recipe.py](../../examples/sandcrab-recipe.py) validates composed layers:
+[examples/sandcrab-recipe.py](https://github.com/core607/sandcrab/blob/main/examples/sandcrab-recipe.py) validates composed layers:
 
 ```sh
 python examples/sandcrab-recipe.py --token-file ./client.token --profile default \
   --validate 'bash /workspace/test.sh' BASE_ID TOOLKIT_ID WORKSPACE_ID
+```
+
+## Development
+
+Run the SDK checks from the repository root.
+
+```sh
+python -m pip install ./sdk/python
+python -m unittest discover -s sdk/python/tests -v
 ```

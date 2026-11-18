@@ -3,6 +3,12 @@
   "version": "0.3.0",
   "description": "Zero-dependency TypeScript and Node.js client for the Sandcrab Linux sandbox daemon",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/core607/sandcrab.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/core607/sandcrab/tree/main/sdk/typescript",
   "type": "module",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
