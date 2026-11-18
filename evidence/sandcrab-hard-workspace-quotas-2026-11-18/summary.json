@@ -1,0 +1,85 @@
+{
+  "revision": "3e7ad6d6abbe4dbd70da3e1107ab8c444ac2a4e5",
+  "run": "https://github.com/core607/sandcrab/actions/runs/44371304135",
+  "binarySha256": "d084f5a1df5664f09c6868ba9a6eeb0d68f2adaed6a41aa4c5edc8665cb2a1a3",
+  "scope": "Disposable file-backed XFS, kernel project quotas and an ordinary control profile.",
+  "result": "PASS",
+  "cleanup": "PASS",
+  "poolImageBytes": 536870912,
+  "checks": {
+    "volume-bootstrap-refuses-preexisting-data": "PASS",
+    "profile-rejects-ordinary-storage-on-startup": "PASS",
+    "session-directory-enforces-byte-and-inode-limits-at-write": "PASS",
+    "session-overlay-enforces-byte-and-inode-limits-at-write": "PASS",
+    "workspace-directory-enforces-byte-and-inode-limits-at-write": "PASS",
+    "workspace-overlay-enforces-byte-and-inode-limits-at-write": "PASS",
+    "restart-reclaims-private-projects-after-containment": "PASS"
+  },
+  "backings": {
+    "ordinary-directory": {
+      "openMillis": 26.25286,
+      "initialAllocatedBytes": 8192
+    },
+    "ordinary-overlay": {
+      "openMillis": 51.704467,
+      "initialAllocatedBytes": 16384
+    },
+    "session-directory": {
+      "openMillis": 154.150608,
+      "initialAllocatedBytes": 4096,
+      "byteWrite": {
+        "observed": 8323072,
+        "limit": 8388608,
+        "errno": 28
+      },
+      "inodeCreate": {
+        "observed": 124,
+        "limit": 128,
+        "errno": 28
+      }
+    },
+    "session-overlay": {
+      "openMillis": 77.415061,
+      "initialAllocatedBytes": 4096,
+      "byteWrite": {
+        "observed": 8323072,
+        "limit": 8388608,
+        "errno": 28
+      },
+      "inodeCreate": {
+        "observed": 120,
+        "limit": 128,
+        "errno": 28
+      }
+    },
+    "workspace-directory": {
+      "openMillis": 83.745849,
+      "initialAllocatedBytes": 4096,
+      "byteWrite": {
+        "observed": 8323072,
+        "limit": 8388608,
+        "errno": 28
+      },
+      "inodeCreate": {
+        "observed": 124,
+        "limit": 128,
+        "errno": 28
+      }
+    },
+    "workspace-overlay": {
+      "openMillis": 165.070494,
+      "initialAllocatedBytes": 4096,
+      "byteWrite": {
+        "observed": 8323072,
+        "limit": 8388608,
+        "errno": 28
+      },
+      "inodeCreate": {
+        "observed": 120,
+        "limit": 128,
+        "errno": 28
+      }
+    }
+  },
+  "timing": "One observation per layout. Managed workspace opening includes the first successful command. Allocations count the writable backing directory and its initial children."
+}

@@ -116,6 +116,8 @@ with the actual configuration path. In a container, the operator can mount the
 dedicated filesystem on the host and expose its root at the configured data path.
 The [hard-quotas conformance suite](verification.md) records the initial allocated
 bytes and opening time for each backing, and write-time byte and inode refusals.
+The [512 MiB test-pool results](../../../evidence/sandcrab-hard-workspace-quotas-2026-11-18/summary.json)
+include each layout's opening cost and the usable file space under an 8 MiB project limit.
 
 ## Storage accounting
 
