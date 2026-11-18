@@ -10,6 +10,9 @@ on:
       candidate_tag:
         description: Optional stable tag to validate against the checked-out release manifests
         type: string
+      resume_run:
+        description: Original tag workflow run whose published service still needs SDK publication
+        type: string
 
 permissions:
   contents: read
@@ -21,19 +24,19 @@ concurrency:
 
 jobs:
   check:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.resume_run == ''
     uses: ./.github/workflows/ci.yml
   conformance:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.resume_run == ''
     uses: ./.github/workflows/evals.yml
   readiness:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.resume_run == ''
     uses: ./.github/workflows/sandcrab-readiness.yml
     with:
       retain_image: true
   build:
     needs: readiness
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.readiness.result == 'success') }}
+    if: ${{ !cancelled() && inputs.resume_run == '' && (github.event_name == 'pull_request' || needs.readiness.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -112,10 +115,44 @@ jobs:
       archive_aarch64: ${{ needs.readiness.outputs.release_archive_aarch64 }}
       image: ${{ needs.readiness.outputs.tested_image }}
 
+  recovery:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.resume_run != ''
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.verify.outputs.tag }}
+      revision: ${{ steps.verify.outputs.revision }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: sdk-packages
+          run-id: ${{ inputs.resume_run }}
+          github-token: ${{ github.token }}
+          path: dist
+      - name: Match the original tag build to the published release assets
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORIGINAL_RUN: ${{ inputs.resume_run }}
+          CANDIDATE: ${{ inputs.candidate_tag }}
+        run: |
+          test -z "$CANDIDATE"
+          python3 scripts/release_recovery.py "$ORIGINAL_RUN" dist >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sdk-packages
+          path: dist/
+          if-no-files-found: error
+
   pypi:
-    needs: service
+    needs: [service, recovery]
+    if: ${{ !cancelled() && (needs.service.result == 'success' || needs.recovery.result == 'success') }}
     runs-on: ubuntu-24.04
     environment: pypi
+    env:
+      RELEASE_TAG: ${{ needs.recovery.outputs.tag || github.ref_name }}
     permissions:
       actions: read
       contents: read
@@ -130,18 +167,21 @@ jobs:
           path: dist
       - name: Verify existing files and select missing distributions
         id: reconcile
-        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry pypi --prepare pending >> "$GITHUB_OUTPUT"
+        run: python3 scripts/release_packages.py "$RELEASE_TAG" dist --registry pypi --prepare pending >> "$GITHUB_OUTPUT"
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
         if: steps.reconcile.outputs.pending == 'true'
         with:
           packages-dir: pending/
       - name: Read back the accepted distribution bytes
-        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry pypi --verify
+        run: python3 scripts/release_packages.py "$RELEASE_TAG" dist --registry pypi --verify
 
   npm:
-    needs: service
+    needs: [service, recovery]
+    if: ${{ !cancelled() && (needs.service.result == 'success' || needs.recovery.result == 'success') }}
     runs-on: ubuntu-24.04
     environment: npm
+    env:
+      RELEASE_TAG: ${{ needs.recovery.outputs.tag || github.ref_name }}
     permissions:
       actions: read
       contents: read
@@ -156,23 +196,27 @@ jobs:
           path: dist
       - name: Verify existing files and select missing distributions
         id: reconcile
-        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry npm --prepare pending >> "$GITHUB_OUTPUT"
+        run: python3 scripts/release_packages.py "$RELEASE_TAG" dist --registry npm --prepare pending >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         if: steps.reconcile.outputs.pending == 'true'
         with:
           node-version: '24'
           package-manager-cache: false
       - if: steps.reconcile.outputs.pending == 'true'
-        run: npm publish pending/*.tgz --registry=https://registry.npmjs.org --access public --provenance
+        run: npm publish ./pending/*.tgz --registry=https://registry.npmjs.org --access public --provenance
       - name: Read back the accepted distribution bytes
-        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry npm --verify
+        run: python3 scripts/release_packages.py "$RELEASE_TAG" dist --registry npm --verify
 
   installed-release:
-    needs: [pypi, npm]
+    needs: [pypi, npm, recovery]
+    if: ${{ !cancelled() && needs.pypi.result == 'success' && needs.npm.result == 'success' }}
     runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ needs.recovery.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
+          ref: ${{ needs.recovery.outputs.revision || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
@@ -185,7 +229,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --pattern sandcrab-linux-x86_64.zip --pattern SHA256SUMS
+          gh release download "$RELEASE_TAG" --pattern sandcrab-linux-x86_64.zip --pattern SHA256SUMS
           awk '$2 == "sandcrab-linux-x86_64.zip"' SHA256SUMS | sha256sum --check
           sudo /usr/bin/python3 -I sandcrab-linux-x86_64.zip
           sudo install -d -m 0711 /etc/sandcrab-client
