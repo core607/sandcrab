@@ -30,7 +30,7 @@ pub fn document(capability: Option<&str>) -> Value {
     // The response still carries every field. A capability view documents only
     // common discovery and its own metadata; the complete schema stays above.
     let metadata = match capability {
-        "sessions" | "volumes" => "storage",
+        "sessions" | "volumes" | "workspaces" => "storage",
         "files" | "uploads" => "files",
         "events" => "events",
         "calls" => "hostCalls",
@@ -46,9 +46,7 @@ pub fn document(capability: Option<&str>) -> Value {
     ];
     let info = &mut document["components"]["schemas"]["Info"];
     info["additionalProperties"] = json!(true);
-    info["description"] = json!(
-        "Common discovery and selected capability metadata. The response includes further fields; /v1/openapi describes them all."
-    );
+    info["description"] = json!("See /v1/openapi for all discovery fields.");
     info["properties"]
         .as_object_mut()
         .unwrap()
@@ -133,6 +131,7 @@ mod tests {
             "runs",
             "sessions",
             "volumes",
+            "workspaces",
             "files",
             "uploads",
             "events",
@@ -146,6 +145,8 @@ mod tests {
                 "/v1/sessions/{id}/files".into()
             } else if capability == "calls" {
                 "/v1/runs/{id}/calls".into()
+            } else if capability == "workspaces" {
+                "/v1/workspaces/{key}".into()
             } else {
                 format!("/v1/{capability}")
             };

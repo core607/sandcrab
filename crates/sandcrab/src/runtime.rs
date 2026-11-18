@@ -539,7 +539,7 @@ impl Runtime {
                         code: "VOLUMES_DISABLED",
                         contained: true,
                     })?
-                    .bind(volume, id, profile)
+                    .bind(volume, id, profile, request.workspace_generation.as_deref())
                     .map_err(|e| OpenError {
                         code: e.code,
                         contained: true,

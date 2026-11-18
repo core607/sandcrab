@@ -55,29 +55,10 @@ impl Service {
             let Ok(plan) = serde_json::from_value::<Plan>(value) else {
                 return error(400, "INVALID_REQUEST");
             };
-            let profile = self.runtime.config.profiles.get(&plan.profile).cloned();
-            let id = plan.id.clone();
-            return match store.begin_create(
-                plan,
-                profile.as_ref(),
-                server == self.id,
-                &self.stopped,
-            ) {
-                Ok((value, false)) => (200, value),
-                Ok((value, true)) => {
-                    let service = self.clone();
-                    let worker = id.clone();
-                    if thread::Builder::new()
-                        .spawn(move || service.create_volume(&worker, &profile.unwrap()))
-                        .is_err()
-                    {
-                        store.finish(&id, "failed", Some("STORAGE_UNAVAILABLE"), true);
-                        return error(503, "STORAGE_UNAVAILABLE");
-                    }
-                    (202, value)
-                }
-                Err(e) => error(e.status, e.code),
-            };
+            if plan.workspace_key.is_some() {
+                return error(400, "INVALID_REQUEST");
+            }
+            return self.begin_volume(store, plan, server == self.id);
         }
         let Some(path) = path.strip_prefix("/v1/volumes/") else {
             return error(404, "NOT_FOUND");
@@ -100,11 +81,20 @@ impl Service {
         }
         if action == "forget" {
             return store
-                .forget(id)
+                .forget(id, None)
                 .map(|()| (200, json!({"forgotten":true})))
                 .unwrap_or_else(|e| error(e.status, e.code));
         }
-        match store.begin_delete(id, &self.stopped) {
+        self.delete_volume(store, id, None)
+    }
+
+    pub(crate) fn delete_volume(
+        &self,
+        store: &Arc<Store>,
+        id: &str,
+        generation: Option<&str>,
+    ) -> (u16, Value) {
+        match store.begin_delete(id, generation, &self.stopped) {
             Ok((value, false)) => (200, value),
             Ok((value, true)) => {
                 let store = store.clone();
@@ -113,7 +103,7 @@ impl Service {
                 let fallback = id.clone();
                 if thread::Builder::new()
                     .spawn(move || {
-                        let removed = worker.remove_data(&id).is_ok();
+                        let removed = worker.wait_detached(&id) && worker.remove_data(&id).is_ok();
                         worker.finish(
                             &id,
                             "deleted",
@@ -125,6 +115,32 @@ impl Service {
                 {
                     // The deletion intent is already durable; restart must finish it.
                     store.finish(&fallback, "deleted", Some("STORAGE_UNAVAILABLE"), false);
+                    return error(503, "STORAGE_UNAVAILABLE");
+                }
+                (202, value)
+            }
+            Err(e) => error(e.status, e.code),
+        }
+    }
+
+    pub(crate) fn begin_volume(
+        self: &Arc<Self>,
+        store: &Store,
+        plan: Plan,
+        current_epoch: bool,
+    ) -> (u16, Value) {
+        let profile = self.runtime.config.profiles.get(&plan.profile).cloned();
+        let id = plan.id.clone();
+        match store.begin_create(plan, profile.as_ref(), current_epoch, &self.stopped) {
+            Ok((value, false)) => (200, value),
+            Ok((value, true)) => {
+                let service = self.clone();
+                let worker = id.clone();
+                if thread::Builder::new()
+                    .spawn(move || service.create_volume(&worker, &profile.unwrap()))
+                    .is_err()
+                {
+                    store.finish(&id, "failed", Some("STORAGE_UNAVAILABLE"), true);
                     return error(503, "STORAGE_UNAVAILABLE");
                 }
                 (202, value)

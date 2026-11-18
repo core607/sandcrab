@@ -18,5 +18,5 @@ pub mod raw;
 pub mod transfer;
 pub mod unit;
 
-pub use ids::{hex, new_uuid, uuid};
+pub use ids::{format_uuid, hex, new_uuid, uuid};
 pub use json::parse;

@@ -72,8 +72,16 @@ pub(crate) struct Run {
     pub completed_at: Option<Instant>,
     pub waiting: Option<crate::queue::Waiting>,
     pub queue_wait_millis: u64,
+    pub workspace: Option<crate::workspace_api::Execution>,
 }
 impl Run {
+    fn retire_workspace_result(&self, windows: &mut BTreeMap<String, u64>) {
+        if let Some(workspace) = &self.workspace
+            && let Some(window) = windows.get_mut(&workspace.generation)
+        {
+            *window = window.saturating_add(1);
+        }
+    }
     pub(crate) fn new(
         request: Value,
         profile: String,
@@ -94,6 +102,7 @@ impl Run {
             completed_at: None,
             waiting: None,
             queue_wait_millis: 0,
+            workspace: None,
         })
     }
     pub(crate) fn terminal(&self) -> bool {
@@ -119,11 +128,16 @@ impl Run {
         if let Some(id) = self.request.get("sessionId") {
             value["sessionId"] = id.clone();
         }
+        if let Some(workspace) = &self.workspace {
+            value["freshShell"] = json!(workspace.fresh_shell);
+            value["workspaceGeneration"] = json!(workspace.generation);
+        }
         value
     }
 }
 pub(crate) struct Registry {
     pub runs: BTreeMap<String, Run>,
+    pub workspace_windows: BTreeMap<String, u64>,
     pub sessions: BTreeMap<String, crate::sessions::Session>,
     pub active: usize,
     pub reserved: usize,
@@ -141,6 +155,7 @@ impl Registry {
                     .is_some_and(|at| now.saturating_duration_since(at) >= ttl);
             if expired {
                 released += run.reservation;
+                run.retire_workspace_result(&mut self.workspace_windows);
             }
             !expired
         });
@@ -152,6 +167,7 @@ impl Registry {
     fn new() -> Self {
         Self {
             runs: BTreeMap::new(),
+            workspace_windows: BTreeMap::new(),
             sessions: BTreeMap::new(),
             active: 0,
             reserved: 0,
@@ -165,6 +181,7 @@ impl Registry {
             return Err("RUN_ACTIVE");
         }
         let reservation = run.reservation;
+        run.retire_workspace_result(&mut self.workspace_windows);
         self.runs.remove(id);
         self.reserved -= reservation;
         self.queue_completed.retain(|queued| queued != id);
@@ -177,6 +194,7 @@ pub struct Service {
     pub runtime: Runtime,
     pub id: String,
     pub(crate) registry: Mutex<Registry>,
+    pub(crate) workspace_shells: Mutex<BTreeMap<String, crate::workspace_api::Shell>>,
     pub stopped: Arc<AtomicBool>,
     pub(crate) file_count: Arc<AtomicUsize>,
     pub(crate) file_cancellations: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
@@ -189,6 +207,7 @@ impl Service {
             runtime,
             id: sandcrab_core::new_uuid()?,
             registry: Mutex::new(Registry::new()),
+            workspace_shells: Mutex::new(BTreeMap::new()),
             stopped,
             file_count: Arc::new(AtomicUsize::new(0)),
             file_cancellations: Mutex::new(BTreeMap::new()),
@@ -211,6 +230,7 @@ impl Service {
                         "runs",
                         "sessions",
                         "volumes",
+                        "workspaces",
                         "files",
                         "uploads",
                         "events",
@@ -245,6 +265,7 @@ impl Service {
             ];
             let storage=self.runtime.storage.as_ref().map(|s| {
                 capabilities.push("volumes");
+                capabilities.push("workspaces");
                 json!({"maxVolumeBytes":s.config.max_volume_bytes,"maxVolumeInodes":s.config.max_volume_inodes,
                     "maxVolumes":s.config.max_volumes,"maxRecords":s.config.max_records,"available":s.available(),
                     "quotaEnforced":s.quota_enforced(),"poolBytes":s.config.pool_bytes,
@@ -288,6 +309,9 @@ impl Service {
         }
         if path == "/v1/sessions" || path.starts_with("/v1/sessions/") {
             return self.session_route(method, path, body);
+        }
+        if path.starts_with("/v1/workspaces/") {
+            return self.workspace_route(method, path, body);
         }
         if path == "/v1/volumes"
             || path.starts_with("/v1/volumes/")
@@ -500,6 +524,7 @@ impl Service {
             session.active_run = None;
             if session.state == "busy" {
                 session.state = "ready".into();
+                session.touch_workspace();
             }
         }
         drop(registry);
@@ -614,6 +639,7 @@ mod tests {
             id.clone(),
             Run {
                 calls: None,
+                workspace: None,
                 request: serde_json::to_value(&request).unwrap(),
                 profile: request.profile.clone(),
                 state: "running".into(),

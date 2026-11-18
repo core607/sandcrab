@@ -28,8 +28,10 @@ reference host in the [provider decision](../implemented/2026-11-02-sandcrab-lig
 
 ## Proposal
 
-This is an unimplemented design. Sessions, volumes and templates remain supported
-interfaces; a workspace composes them rather than adding a second storage system.
+The [native workspace API](../../crates/sandcrab/docs/workspaces.md) covers empty
+volume-backed workspaces. Template-backed workspaces, SDK adoption and downstream
+acceptance remain proposed. Sessions, volumes and templates remain supported
+interfaces.
 
 - **Identity.** A workspace key belongs to one installation. Authenticated native
   clients using the same key reach the same workspace across connections, daemon
