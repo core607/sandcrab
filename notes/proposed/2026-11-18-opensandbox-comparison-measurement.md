@@ -13,7 +13,8 @@ documents the verified Python, Kotlin and `osb` interfaces.
 
 ## Proposal
 
-The CLI check runs during installer acceptance. The same-host comparison remains open.
+The CLI check runs during installer acceptance. The [paired measurement](../../benchmarks/density/opensandbox/README.md)
+uses two isolated guests of the same engine. The full-checkpoint summary and its interpretation remain open.
 
 A comparison stage in the density benchmark measures Sandcrab and OpenSandbox's
 local Docker runtime on the no-KVM reference host:

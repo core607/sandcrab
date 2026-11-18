@@ -111,5 +111,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--seed', type=int, required=True)
+    parser.add_argument('--files', type=int, default=FILES)
     args = parser.parse_args()
-    print(json.dumps(create(args.root, args.seed), sort_keys=True))
+    print(json.dumps(create(args.root, args.seed, files=args.files), sort_keys=True))

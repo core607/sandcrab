@@ -2,6 +2,10 @@
 
 The seeded workload, scorer, native HTTP client and collectors exercise the public sandbox API on a disposable Linux systemd host.
 
+The [same-host comparison](opensandbox/README.md) runs the published OpenSandbox
+Python SDK against Sandcrab and upstream Docker with the same CPU, memory and
+seeded tasks.
+
 The [W0 measurement report](https://github.com/core607/poketto/blob/0fdd11cbc6ffea63b536ecf3749796551ba414d5/executor-native/evidence/sandcrab-w0-2026-11-02/README.md)
 links retained raw results, failed attempts and their measurement boundaries.
 
