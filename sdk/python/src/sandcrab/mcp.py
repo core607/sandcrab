@@ -10,9 +10,10 @@ from typing import Any, BinaryIO
 
 import httpx
 
-from .client import SandcrabClient
 from ._version import __version__
+from .client import SandcrabClient
 from .errors import CommandFailedError, ProtocolError, SandcrabError, TransportUncertainError
+from .workspace import SyncWorkspaceTools, open_workspace_tools
 
 SUPPORTED_PROTOCOLS = ("2025-03-26", "2024-11-05")
 DEFAULT_PROTOCOL = "2024-11-05"
@@ -207,11 +208,15 @@ def _write_rpc_frame(stream: BinaryIO, payload: dict[str, Any], framing: str) ->
 class SandcrabMcpServer:
     """Bounded stdio MCP server delegating sandbox operations to `SandcrabClient`."""
 
-    def __init__(self, client: SandcrabClient) -> None:
-        self.client = client
+    def __init__(self, client: SandcrabClient | SyncWorkspaceTools) -> None:
+        self._workspace = client if isinstance(client, SyncWorkspaceTools) else None
+        self.schemas = self._workspace.schemas if self._workspace is not None else TOOLS
+        self.client = None if isinstance(client, SyncWorkspaceTools) else client
         self._owned_sessions: set[str] = set()
 
     def close(self) -> None:
+        if self.client is None:
+            return
         for session_id in list(self._owned_sessions):
             try:
                 self.client.close_session(session_id, forget=True)
@@ -227,6 +232,9 @@ class SandcrabMcpServer:
         self.close()
 
     def _call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        if self._workspace is not None:
+            return self._workspace.call(name, args)
+        assert self.client is not None
         if name == "sandcrab_run":
             command = args.get("command")
             if not isinstance(command, list) or not command or not all(isinstance(x, str) for x in command):
@@ -365,7 +373,7 @@ class SandcrabMcpServer:
             return {"jsonrpc": "2.0", "id": req_id, "result": {}}
 
         if method == "tools/list":
-            return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
+            return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": self.schemas}}
 
         if method == "tools/call":
             tool_name = params.get("name")
@@ -376,7 +384,7 @@ class SandcrabMcpServer:
                     "id": req_id,
                     "error": {"code": -32602, "message": "tools/call requires string name and object arguments"},
                 }
-            known_names = {tool["name"] for tool in TOOLS}
+            known_names = {tool["name"] for tool in self.schemas}
             if tool_name not in known_names:
                 return {
                     "jsonrpc": "2.0",
@@ -390,7 +398,7 @@ class SandcrabMcpServer:
                     "id": req_id,
                     "result": {
                         "content": [{"type": "text", "text": json.dumps(output)}],
-                        "isError": False,
+                        "isError": output.get("ok") is False,
                     },
                 }
             except (
@@ -465,18 +473,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--socket", dest="socket_path", help="Root-owned Sandcrab Unix socket path")
-    group.add_argument("--endpoint", help="Loopback HTTP endpoint such as http://127.0.0.1:8080")
+    group.add_argument("--endpoint", help="Loopback HTTP endpoint such as http://127.0.0.1:9011")
     parser.add_argument("--token-file", help="64-hex service token file for loopback HTTP")
     parser.add_argument("--profile", help="Default Sandcrab profile when tool calls omit profile")
+    parser.add_argument("--workspace", help="Bind all command and file tools to this workspace key")
     args = parser.parse_args(argv)
     try:
-        client = SandcrabClient(
-            socket_path=args.socket_path,
-            endpoint=args.endpoint,
-            token_file=args.token_file,
-            default_profile=args.profile,
-        )
-    except ValueError as err:
+        connection = dict(socket_path=args.socket_path, endpoint=args.endpoint, token_file=args.token_file)
+        if args.workspace is not None:
+            with open_workspace_tools(args.workspace, profile=args.profile, **connection) as tools:
+                SandcrabMcpServer(tools).serve_stdio()
+            return 0
+        client = SandcrabClient(default_profile=args.profile, **connection)
+    except (ValueError, SandcrabError, httpx.TransportError) as err:
         print(f"sandcrab-mcp: {err}", file=sys.stderr)
         return 2
     with SandcrabMcpServer(client) as server:

@@ -31,7 +31,7 @@ pub fn document(capability: Option<&str>) -> Value {
     // common discovery and its own metadata; the complete schema stays above.
     let metadata = match capability {
         "sessions" | "volumes" | "workspaces" => "storage",
-        "files" | "uploads" => "files",
+        "files" | "uploads" | "workspace-files" => "files",
         "events" => "events",
         "calls" => "hostCalls",
         _ => "",
@@ -57,16 +57,20 @@ pub fn document(capability: Option<&str>) -> Value {
         .unwrap()
         .retain(|name| fields.contains(&name.as_str().unwrap()));
     let prefix = format!("/v1/{capability}");
+    let file_contracts = (capability == "workspace-files").then(|| document["paths"].clone());
     document["paths"]
         .as_object_mut()
         .unwrap()
         .retain(|path, _| {
             path == "/v1/info"
                 || path == "/v1/openapi"
+                || (capability == "workspaces" && path == "/v1/workspace-tools")
                 || if capability == "events" {
                     path == "/v1/runs/{id}/events"
                 } else if capability == "calls" {
                     path.starts_with("/v1/runs/{id}/calls")
+                } else if capability == "workspace-files" {
+                    path.starts_with("/v1/workspaces/{key}/files")
                 } else if capability == "files" {
                     path.starts_with("/v1/sessions/{id}/files/")
                         || [
@@ -84,6 +88,9 @@ pub fn document(capability: Option<&str>) -> Value {
                         && !path.contains("/calls")
                 }
         });
+    if let Some(paths) = file_contracts {
+        expand_file_contracts(&mut document["paths"], &paths);
+    }
     for item in document["paths"].as_object_mut().unwrap().values_mut() {
         for operation in item.as_object_mut().unwrap().values_mut() {
             if let Some(fields) = operation.as_object_mut()
@@ -120,6 +127,29 @@ pub fn document(capability: Option<&str>) -> Value {
     document
 }
 
+fn expand_file_contracts(item: &mut Value, paths: &Value) {
+    if let Some(reference) = item
+        .get("$ref")
+        .and_then(Value::as_str)
+        .and_then(|s| s.strip_prefix("#/paths"))
+    {
+        *item = paths
+            .pointer(reference)
+            .expect("bundled session file contract")
+            .clone();
+        return;
+    }
+    match item {
+        Value::Object(fields) => fields
+            .values_mut()
+            .for_each(|v| expand_file_contracts(v, paths)),
+        Value::Array(values) => values
+            .iter_mut()
+            .for_each(|v| expand_file_contracts(v, paths)),
+        _ => (),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +163,7 @@ mod tests {
             "sessions",
             "volumes",
             "workspaces",
+            "workspace-files",
             "files",
             "uploads",
             "events",
@@ -148,6 +179,8 @@ mod tests {
                 "/v1/runs/{id}/calls".into()
             } else if capability == "workspaces" {
                 "/v1/workspaces/{key}".into()
+            } else if capability == "workspace-files" {
+                "/v1/workspaces/{key}/files".into()
             } else {
                 format!("/v1/{capability}")
             };

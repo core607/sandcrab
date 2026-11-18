@@ -213,21 +213,6 @@ impl Service {
             {
                 return error(409, "WORKSPACE_SUBMISSION_EXPIRED");
             }
-            if let Some(owned) = shells.get(key) {
-                match registry.sessions.get(&owned.id) {
-                    Some(s) if s.incarnation == owned.incarnation && !s.terminal() => {
-                        if s.state == "closing" {
-                            return error(503, "WORKSPACE_CLEANUP_UNCONFIRMED");
-                        }
-                        if s.state == "stopping" {
-                            return error(409, "WORKSPACE_REOPENING");
-                        }
-                    }
-                    _ => {
-                        shells.remove(key);
-                    }
-                }
-            }
         }
         if record["state"] != "ready" {
             return error(409, "WORKSPACE_NOT_READY");
@@ -240,9 +225,57 @@ impl Service {
         if let Err(code) = request.limits(config) {
             return error(400, code);
         }
+        let owned = match self.open_workspace_shell(key, volume, record, shells) {
+            Ok(owned) => owned,
+            Err(reply) => return reply,
+        };
+        let metadata = Execution {
+            key: key.into(),
+            generation: generation.as_str().unwrap().into(),
+            fresh_shell: !owned.used,
+            window,
+        };
+        let result =
+            self.session_command(&owned.id, request, Some(&owned.incarnation), Some(metadata));
+        if result.0 == 202 {
+            owned.used = true;
+        }
+        result
+    }
+    pub(crate) fn open_workspace_shell<'a>(
+        self: &Arc<Self>,
+        key: &str,
+        volume: &str,
+        record: &Value,
+        shells: &'a mut BTreeMap<String, Shell>,
+    ) -> Result<&'a mut Shell, (u16, Value)> {
+        if record["state"] != "ready" {
+            return Err(error(409, "WORKSPACE_NOT_READY"));
+        }
+        let profile = record["profile"].as_str().unwrap();
+        let generation = &record["workspaceGeneration"];
+        {
+            let mut registry = self.registry.lock().unwrap();
+            registry.expire_sessions();
+            if let Some(owned) = shells.get(key) {
+                match registry.sessions.get(&owned.id) {
+                    Some(s) if s.incarnation == owned.incarnation && !s.terminal() => {
+                        if s.state == "closing" {
+                            return Err(error(503, "WORKSPACE_CLEANUP_UNCONFIRMED"));
+                        }
+                        if s.state == "stopping" {
+                            return Err(error(409, "WORKSPACE_REOPENING"));
+                        }
+                    }
+                    _ => {
+                        shells.remove(key);
+                    }
+                }
+            }
+        }
         if !shells.contains_key(key) {
             let Ok(id) = sandcrab_core::new_uuid() else {
-                return error(503, "SESSION_UNAVAILABLE");
+                return Err(error(503, "SESSION_UNAVAILABLE"));
             };
             let open = Open {
                 id: id.clone(),
@@ -258,14 +291,14 @@ impl Service {
             };
             let (status, reply) = self.open_session(open);
             if status == 200 {
-                return error(503, "SESSION_UNAVAILABLE");
+                return Err(error(503, "SESSION_UNAVAILABLE"));
             }
             if status != 202 {
-                return (status, reply);
+                return Err((status, reply));
             }
             let registry = self.registry.lock().unwrap();
             let Some(session) = registry.sessions.get(&id) else {
-                return error(409, "SESSION_ENDED");
+                return Err(error(409, "SESSION_ENDED"));
             };
             shells.insert(
                 key.to_owned(),
@@ -276,18 +309,6 @@ impl Service {
                 },
             );
         }
-        let owned = shells.get_mut(key).unwrap();
-        let metadata = Execution {
-            key: key.into(),
-            generation: generation.as_str().unwrap().into(),
-            fresh_shell: !owned.used,
-            window,
-        };
-        let result =
-            self.session_command(&owned.id, request, Some(&owned.incarnation), Some(metadata));
-        if result.0 == 202 {
-            owned.used = true;
-        }
-        result
+        Ok(shells.get_mut(key).unwrap())
     }
 }

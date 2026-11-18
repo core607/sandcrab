@@ -449,6 +449,7 @@ dependencies = [
  "base64",
  "domain",
  "flate2",
+ "memchr",
  "nix",
  "regex",
  "rustix",

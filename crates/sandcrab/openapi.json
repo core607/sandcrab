@@ -75,7 +75,8 @@
                 "events",
                 "calls",
                 "templates",
-                "workspaces"
+                "workspaces",
+                "workspace-files"
               ]
             }
           }
@@ -1777,7 +1778,8 @@
           "default": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "summary": "Publish a staged raw file. Inspect the destination after a lost reply."
       }
     },
     "/v1/sessions/{id}/files/edit": {
@@ -2004,6 +2006,16 @@
             "schema": {
               "type": "string",
               "default": "."
+            }
+          },
+          {
+            "name": "contains",
+            "in": "query",
+            "description": "Also require this literal text in a regular file. The profile transfer limit bounds the total search bytes.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
             }
           }
         ],
@@ -2622,6 +2634,274 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/files": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "get": {
+        "operationId": "readFileByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "parameters": [
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/parameters/0"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/parameters/1"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/parameters/2"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/parameters/3"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/parameters/4"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/responses/200"
+          },
+          "206": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/get/responses/206"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFileByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "parameters": [
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/delete/parameters/0"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/delete/parameters/1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/delete/responses/200"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "putFileByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "parameters": [
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/parameters/0"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/parameters/1"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/parameters/2"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/parameters/3"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/requestBody"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files/put/responses/200"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/files/edit": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "post": {
+        "operationId": "editSessionFileByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "requestBody": {
+          "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1edit/post/requestBody"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1edit/post/responses/200"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/files/mkdir": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "post": {
+        "operationId": "mkdirFileByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "requestBody": {
+          "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1mkdir/post/requestBody"
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1mkdir/post/responses/200"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/files/list": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "get": {
+        "operationId": "listSessionFilesByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "parameters": [
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1list/get/parameters/0"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1list/get/parameters/1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1list/get/responses/200"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspaces/{key}/files/search": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/WorkspaceKey"
+        },
+        {
+          "$ref": "#/components/parameters/WorkspaceGenerationHeader"
+        }
+      ],
+      "get": {
+        "operationId": "searchSessionFilesByWorkspace",
+        "description": "Access the workspace by key and generation, opening a managed shell on demand.",
+        "parameters": [
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1search/get/parameters/0"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1search/get/parameters/1"
+          },
+          {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1search/get/parameters/2"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/paths/~1v1~1sessions~1{id}~1files~1search/get/responses/200"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/workspace-tools": {
+      "get": {
+        "operationId": "workspaceToolSchemas",
+        "description": "Get the model-facing schemas for the SDKs' workspace-bound tools.",
+        "responses": {
+          "200": {
+            "description": "Workspace tool catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "tools"
+                  ],
+                  "properties": {
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "description",
+                          "inputSchema"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -4961,6 +5241,24 @@
       "Id": {
         "name": "id",
         "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "WorkspaceKey": {
+        "name": "key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+        }
+      },
+      "WorkspaceGenerationHeader": {
+        "name": "X-Sandcrab-Workspace-Generation",
+        "in": "header",
         "required": true,
         "schema": {
           "type": "string",

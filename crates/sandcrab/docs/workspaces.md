@@ -20,6 +20,17 @@ authorization and the mapping to keys.
 | `POST /v1/workspaces/KEY/delete` with `{"generation":"…"}` | Record deletion, close the shell and remove storage after confirmed cleanup. Poll until `deleted`. |
 | `POST /v1/workspaces/KEY/forget` with the same generation | Remove a deleted or failed record. Reusing the key creates a different generation. |
 
+Use the [native file operations](files.md) under `/v1/workspaces/KEY/files`
+and pass `X-Sandcrab-Workspace-Generation` from workspace discovery. The daemon
+opens a shell when needed and pins its generation through the transfer. File
+reads, writes, exact edits, directory creation, listing, search and removal
+use the same payloads as the session routes. The `workspace-files` OpenAPI
+view contains their request and response schemas.
+
+`GET /v1/workspace-tools` returns the tool names, descriptions and JSON input
+schemas used by both native SDKs and the stdio MCP server. The application
+binds a workspace before passing schemas and handlers to a model.
+
 Commands admitted to one workspace run in order. A full queue refuses a submission
 before execution. The idle window extends on admission and after a command
 finishes. Guest commands keep their own execution timeout. Empty workspaces

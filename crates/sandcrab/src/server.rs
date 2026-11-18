@@ -92,8 +92,10 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             slice: &slice,
             received: &received,
         };
-        let (head, mut body) = match http::streaming_start(&mut input, |method, path| {
-            (method == "PUT" && crate::file_stream::endpoint(path).is_some())
+        let (mut head, mut body) = match http::streaming_start(&mut input, |method, path| {
+            (method == "PUT"
+                && (crate::file_stream::endpoint(path).is_some()
+                    || crate::workspace_files::target(method, path).is_some()))
                 || (method == "POST" && crate::template_api::import_path(path))
                 || (method == "POST"
                     && service.runtime.config.service.opensandbox
@@ -190,6 +192,24 @@ fn exchange(stream: &mut Stream, service: &Arc<Service>) -> io::Result<()> {
             drop(body);
             return json_reply(stream, 401, &error(401, "AUTH_REQUIRED").1, true);
         }
+        let _workspace_file =
+            if let Some((key, tail)) = crate::workspace_files::target(&head.method, &head.path) {
+                let pin = match service.workspace_file(
+                    key,
+                    head.header("x-sandcrab-workspace-generation"),
+                    deadline.get(),
+                ) {
+                    Ok(pin) => pin,
+                    Err((status, reply)) => {
+                        drop(body);
+                        return json_reply(stream, status, &reply, true);
+                    }
+                };
+                head.path = format!("/v1/sessions/{}/{}", pin.id, tail);
+                Some(pin)
+            } else {
+                None
+            };
         let expect = head.header("expect");
         if expect.is_some_and(|value| !value.eq_ignore_ascii_case("100-continue")) {
             drop(body);

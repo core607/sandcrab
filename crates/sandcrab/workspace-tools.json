@@ -1,0 +1,169 @@
+[
+  {
+    "name": "exec",
+    "description": "Run one shell command in this workspace. Files persist when an idle shell reopens.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "timeoutMillis": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "command"
+      ]
+    }
+  },
+  {
+    "name": "read_file",
+    "description": "Read text or a byte range. Use the returned version for an exact edit. Line offsets are one-based and byte endpoints are inclusive.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "byteStart": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byteEnd": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "write_file",
+    "description": "Write UTF-8 text in this workspace. Set replace to false to require a new file.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "replace": {
+          "type": "boolean"
+        },
+        "parents": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ]
+    }
+  },
+  {
+    "name": "edit_file",
+    "description": "Replace one exact occurrence using the version returned by read_file.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "old": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "new": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "path",
+        "version",
+        "old",
+        "new"
+      ]
+    }
+  },
+  {
+    "name": "list_dir",
+    "description": "List entries under a relative directory. Depth defaults to one.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "search",
+    "description": "Search filenames by glob, optionally requiring literal text inside matching files.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "contains": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "required": []
+    }
+  }
+]

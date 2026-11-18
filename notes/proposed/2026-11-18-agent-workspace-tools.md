@@ -19,8 +19,9 @@ or handlers and write their own.
 
 ## Proposal
 
-This is an unimplemented design that depends on
-[persistent workspaces](2026-11-18-persistent-workspaces.md).
+The SDKs and stdio MCP server implement the bound tool set on
+[persistent workspaces](2026-11-18-persistent-workspaces.md). Model comparisons
+with session-scoped tools remain pending.
 
 The Python and TypeScript SDKs provide a framework-neutral tool set bound to one
 workspace:
