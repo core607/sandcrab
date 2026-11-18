@@ -754,9 +754,7 @@ pub fn serve(service: Arc<Service>) -> io::Result<()> {
             tcp_first = !stream.tcp();
             stream.set_write_timeout(Some(Duration::from_secs(1)))?;
             if let Stream::Unix(socket) = &stream
-                && rustix::net::sockopt::socket_peercred(socket)
-                    .map(|c| c.uid.as_raw())
-                    .ok()
+                && crate::transport::peer_uid(socket).ok()
                     != Some(service.runtime.config.service.client_uid)
             {
                 let _ = http::write(&mut stream, 403, br#"{"error":{"code":"PEER_REJECTED"}}"#);

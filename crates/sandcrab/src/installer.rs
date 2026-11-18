@@ -285,18 +285,6 @@ impl Action {
     }
 }
 
-fn default_config(group: &str) -> String {
-    let mounts = ["/usr", "/bin", "/lib", "/lib64", "/etc/ld.so.cache"]
-        .into_iter()
-        .filter(|s| Path::new(s).exists())
-        .map(|s| format!("\"{s}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    include_str!("../install/default.toml")
-        .replace("@CGROUP@", group)
-        .replace("@MOUNTS@", &mounts)
-}
-
 pub fn install(dry_run: bool, container: bool, upgrade: bool) -> io::Result<()> {
     let exe = std::env::current_exe()?.canonicalize()?;
     if !dry_run && rustix::process::geteuid().as_raw() != 0 {
@@ -331,7 +319,7 @@ pub fn install(dry_run: bool, container: bool, upgrade: bool) -> io::Result<()> 
     } else {
         SYSTEMD_GROUP
     };
-    let config = default_config(group);
+    let config = crate::install_defaults::render(group, container)?;
     crate::config::Config::parse(&config)?;
     use Action::*;
     let mut steps = vec![

@@ -161,11 +161,7 @@ pub(crate) fn connect(endpoint: &Endpoint) -> io::Result<Stream> {
     let stream = UnixStream::connect(socket)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
-    if rustix::net::sockopt::socket_peercred(&stream)
-        .map(|c| c.uid.as_raw())
-        .ok()
-        != Some(0)
-    {
+    if transport::peer_uid(&stream)? != 0 {
         return Err(invalid("Daemon peer must be root"));
     }
     Ok(Stream::Unix(stream))

@@ -8,6 +8,13 @@ use std::{
     time::Duration,
 };
 
+/// The kernel can report PID zero across sibling PID namespaces. The UID is
+/// still authoritative and is the only credential used by the native transport.
+pub fn peer_uid(socket: &UnixStream) -> io::Result<u32> {
+    use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+    Ok(getsockopt(socket, PeerCredentials)?.uid())
+}
+
 pub fn local_address(text: &str) -> io::Result<SocketAddr> {
     text.parse::<SocketAddr>()
         .ok()

@@ -293,11 +293,14 @@ jobs:
             sudo apparmor_parser -r crates/sandcrab/install/sandcrab.apparmor
           fi
           python3 crates/sandcrab/install/probe.py --image "sandcrab-ci:$GITHUB_SHA" --report "$RUNNER_TEMP/install-image.json"
+          python3 crates/sandcrab/install/container_clients.py --image "sandcrab-ci:$GITHUB_SHA" --report "$RUNNER_TEMP/container-clients.json"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: sandcrab-container-check
-          path: ${{ runner.temp }}/install-image.json
+          path: |
+            ${{ runner.temp }}/install-image.json
+            ${{ runner.temp }}/container-clients.json
           if-no-files-found: warn
       - name: Save the tested image for publication
         id: save_image
