@@ -14,6 +14,7 @@ sandcrab-core = { path = "../sandcrab-core" }
 sandcrab-launch = { path = "../sandcrab-launch" }
 sandcrab-shell = { path = "../sandcrab-shell" }
 rustix = { workspace = true, features = ["net", "process", "param", "mount"] }
+nix = { version = "0.32", default-features = false, features = ["socket"] }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 signal-hook = "=0.4.5"

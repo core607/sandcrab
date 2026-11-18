@@ -22,6 +22,7 @@ mod files;
 mod guest_call;
 mod helper;
 mod host_calls;
+mod install_defaults;
 mod installer;
 mod inventory;
 mod multipart;

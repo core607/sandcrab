@@ -1,6 +1,6 @@
 FROM debian:12-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash python3 mount passwd \
+    && apt-get install -y --no-install-recommends bash ca-certificates python3 python3-pip mount passwd \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/sandcrab
 COPY --chmod=0755 sandcrab bwrap ./

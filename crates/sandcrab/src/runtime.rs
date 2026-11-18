@@ -143,6 +143,9 @@ impl Runtime {
         )?;
         directory(root, 0o751)?;
         let lock = install::runtime_lock(root)?;
+        if config.service.socket.parent() != Some(root.as_path()) {
+            directory(&root.with_added_extension("client"), 0o755)?;
+        }
         directory(&root.join("jobs"), 0o711)?;
         directory(&root.join("records"), 0o711)?;
         directory(&root.join("file-ops"), 0o700)?;

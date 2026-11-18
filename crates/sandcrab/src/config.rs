@@ -300,10 +300,15 @@ impl Config {
         }
         if !normal(&service.runtime_root)
             || !normal(&service.socket)
-            || service.socket.parent() != Some(service.runtime_root.as_path())
+            || (service.socket.parent() != Some(service.runtime_root.as_path())
+                && service.socket
+                    != service
+                        .runtime_root
+                        .with_added_extension("client")
+                        .join("control.sock"))
         {
             return Err(invalid(
-                "service.socket must be inside a normalized absolute runtime_root",
+                "Use a socket in runtime_root or control.sock in its sibling .client directory",
             ));
         }
         if !normal(&service.cgroup_root)

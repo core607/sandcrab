@@ -1,0 +1,11 @@
+exec_user = "sandcrab-exec"
+tools = "/var/lib/sandcrab/tools"
+read_only = [@MOUNTS@]
+memory_bytes = 134217728
+temporary_bytes = 16777216
+temporary_inodes = 4096
+tasks_max = 64
+cpu_quota_percent = 50
+timeout_millis = 30000
+session_ttl_millis = 60000
+output_limit_bytes = 65536
