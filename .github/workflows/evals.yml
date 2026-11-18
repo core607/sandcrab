@@ -30,6 +30,8 @@ on:
     secrets:
       model_key:
         required: false
+      openai_model_key:
+        required: false
 
 permissions:
   contents: read
@@ -109,8 +111,9 @@ jobs:
           EVAL_REPEATS: ${{ inputs.repeats || 3 }}
           EVAL_BUDGET: ${{ inputs.budget_usd || '1.00' }}
           DEEPSEEK_API_KEY: ${{ secrets.model_key }}
+          OPENAI_API_KEY: ${{ secrets.openai_model_key }}
         run: |
-          sudo --preserve-env=DEEPSEEK_API_KEY python3 evals/native.py --binary build/bin/sandcrab \
+          sudo --preserve-env=DEEPSEEK_API_KEY,OPENAI_API_KEY python3 evals/native.py --binary build/bin/sandcrab \
             --tools /var/lib/sandcrab-evals/tools --python /var/lib/sandcrab-evals/python/bin/python \
             --output /var/lib/sandcrab-evals/results --mode "$EVIDENCE_MODE" --suite "$EVAL_SUITE" --model "$EVAL_MODEL" \
             --epochs "$EVAL_REPEATS" --budget-usd "$EVAL_BUDGET" --workspace-client "$EVAL_WORKSPACE_CLIENT"

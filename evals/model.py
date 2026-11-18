@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 
 import httpx
 from inspect_ai.model import ChatCompletionChoice, ChatMessageAssistant, ModelAPI, ModelOutput, ModelUsage, modelapi
@@ -9,8 +10,8 @@ from inspect_ai.tool import ToolCall
 from inspect_ai.util import store
 
 from budget import BudgetStopped, Ledger
+from providers import PROVIDERS
 
-URL = 'https://api.deepseek.com/chat/completions'
 REQUEST_BYTES = 65536
 RESPONSE_BYTES = 1048576
 
@@ -62,22 +63,28 @@ def completion(value: dict, cost_micros: int, output_limit: int) -> ModelOutput:
                                         output_tokens=usage['completion_tokens'], total_tokens=usage['prompt_tokens'] + usage['completion_tokens'],
                                         total_cost=cost_micros / 1000000),
                        metadata={'servedModel': value['model'], 'systemFingerprint': value.get('system_fingerprint'),
-                                 'costBasis': 'peak-rate upper estimate, all input uncached'})
+                                 'costBasis': 'upper estimate, all input charged at the catalog ceiling'})
 
 
-@modelapi(name='bounded-deepseek')
-class BoundedDeepSeek(ModelAPI):
+class BoundedChat(ModelAPI):
+    model_id: str
+
     def __init__(self, model_name: str, ledger: Ledger, transport=None):
         super().__init__(model_name)
-        if model_name != ledger.prices.data['model']:
+        if model_name != self.model_id or model_name != ledger.prices.data['model']:
             raise ValueError('The model has no approved pricing catalog')
+        self.provider = PROVIDERS[model_name]
         self.ledger, self.transport = ledger, transport
-        self.key = os.environ.get('DEEPSEEK_API_KEY', '')
+        self.key = os.environ.get(self.provider.key_env, '')
         if not self.key:
-            raise ValueError('DEEPSEEK_API_KEY is required for a model-directed run')
+            raise ValueError(self.provider.key_env + ' is required for a model-directed run')
 
     def max_connections(self):
         return 1
+
+    def accepts_response(self, value):
+        release = self.ledger.prices.data['advertised_release']
+        return value.get('model') in {self.model_name, release, release.lower()}
 
     async def generate(self, input, tools, tool_choice, config):
         output_limit = config.max_tokens or self.ledger.prices.output_limit
@@ -87,8 +94,8 @@ class BoundedDeepSeek(ModelAPI):
             choice = 'required' if tool_choice == 'any' else tool_choice
         else:
             choice = {'type': 'function', 'function': {'name': tool_choice.name}}
-        payload = {'model': self.model_name, 'messages': messages(input), 'max_tokens': output_limit,
-                   'stream': False, 'thinking': {'type': 'disabled'}, 'temperature': 0,
+        payload = {'model': self.model_name, 'messages': messages(input), **self.request_options(output_limit),
+                   'stream': False,
                    'tools': [{'type': 'function', 'function': {'name': t.name, 'description': t.description,
                              'parameters': t.parameters.model_dump(exclude_none=True, by_alias=True)}} for t in tools],
                    'tool_choice': choice, 'parallel_tool_calls': False}
@@ -103,7 +110,7 @@ class BoundedDeepSeek(ModelAPI):
         try:
             # No redirects, proxy inheritance, retry, streaming API or server-side tools.
             async with httpx.AsyncClient(transport=self.transport, timeout=45, trust_env=False, follow_redirects=False) as client:
-                async with client.stream('POST', URL, content=raw,
+                async with client.stream('POST', self.provider.endpoint, content=raw,
                                          headers={'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json'}) as response:
                     if response.status_code != 200:
                         classification = f'http_{response.status_code}'
@@ -116,8 +123,7 @@ class BoundedDeepSeek(ModelAPI):
                             raise ValueError('Upstream response exceeds its bound')
             classification = 'response_format'
             value = json.loads(data)
-            release = self.ledger.prices.data['advertised_release']
-            if value.get('model') not in {self.model_name, release, release.lower()} or len(value.get('choices', [])) != 1:
+            if not self.accepts_response(value) or len(value.get('choices', [])) != 1:
                 raise ValueError('Unexpected model response')
             classification = 'usage_or_reply_contract'
             usage = value['usage']
@@ -132,3 +138,25 @@ class BoundedDeepSeek(ModelAPI):
             # Provider bodies and HTTP exception text can echo credentials. Logs retain only
             # this classification and the durable request ID, never the raw exception chain.
             raise BudgetStopped('Model request ' + identifier + ' has uncertain outcome or usage (' + classification + '); batch stopped') from None
+
+
+@modelapi(name='bounded-deepseek')
+class BoundedDeepSeek(BoundedChat):
+    model_id = 'deepseek-flash'
+
+    def request_options(self, output_limit):
+        return {'max_tokens': output_limit, 'thinking': {'type': 'disabled'}, 'temperature': 0}
+
+
+@modelapi(name='bounded-openai')
+class BoundedOpenAI(BoundedChat):
+    model_id = 'gpt-6-luna'
+
+    def request_options(self, output_limit):
+        return {'max_completion_tokens': output_limit, 'reasoning_effort': 'none',
+                'service_tier': 'default', 'store': False}
+
+    def accepts_response(self, value):
+        served = value.get('model')
+        return (value.get('service_tier') in (None, 'default') and isinstance(served, str)
+                and re.fullmatch(r'gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?', served) is not None)

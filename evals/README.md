@@ -45,9 +45,10 @@ the local URL. Summary links are relative to the downloaded artifact; GitHub's
 job summary does not host the viewer.
 
 These scripted results establish that the harness can drive and score the API.
-The **Agent evaluations** workflow runs a selected suite with a plain tool-calling
-DeepSeek Flash agent. Set the repository secret `DEEPSEEK_EVAL_API_KEY` for the
-unprivileged evaluator. Start the workflow on trusted `main`, choose `workspace` (the default), `native`
+The **Agent evaluations** workflow runs a selected suite with DeepSeek Flash
+or GPT-6 Luna. Set the selected provider's repository secret, `DEEPSEEK_EVAL_API_KEY`
+or `OPENAI_EVAL_API_KEY`, for the unprivileged evaluator. Start the workflow on
+trusted `main`, choose `workspace` (the default), `native`
 or `all`, the programming client (`sdk` by default), repeat count and batch budget,
 then read the workflow summary. The native-only suite selects the `native` client automatically.
 Incorrect task results are measurements; missing
@@ -212,11 +213,13 @@ partial tool output, within the same request byte limit as successful replies.
 
 ## Paid-run limits
 
-[pricing.yaml](pricing.yaml) owns the verified provider context ceiling and peak
-rates. Before each dispatch, [budget.py](budget.py) reserves the full context plus
-maximum output cost and fsyncs a request ID and digest to a new ledger. Input is
-charged at the cache-miss rate even when cached, so recorded costs are upper
-estimates under that catalog, not invoices. A valid response releases unused
+[DeepSeek pricing](pricing.yaml) and [OpenAI pricing](pricing-openai-luna.yaml)
+set each model's verified context ceiling and cost bounds. Luna uses global
+standard-tier Chat Completions with reasoning disabled for function calls.
+Its input bound includes long-context cache writes. Before each dispatch,
+[budget.py](budget.py) reserves the full context plus maximum output cost and
+fsyncs a request ID and digest to a new ledger. Every input token is charged at
+the catalog ceiling when estimating cost. A valid response releases unused
 reservation. Missing or invalid usage, transport failure, cancellation or a lost
 response retains the maximum reservation and stops the entire batch. Neither the
 transport nor Inspect retries it; an existing ledger cannot be reused for paid work.
@@ -266,7 +269,9 @@ privileged copy to collect them. The workflow transfers report ownership to its
 runner after the controller exits, including on failure.
 
 Use `--suite native`, `workspace` or `all` (default) to select cases. For a paid
-local run, supply `DEEPSEEK_API_KEY` through the environment, preserve only that
-variable through sudo, and add `--mode model --suite workspace --epochs 3 --budget-usd 1.00`.
+local run, supply `DEEPSEEK_API_KEY` for `--model deepseek-flash` or
+`OPENAI_API_KEY` for `--model gpt-6-luna` through the environment. Preserve
+the selected variable through sudo and add
+`--mode model --suite workspace --epochs 3 --budget-usd 1.00`.
 Keep the key out of arguments, cases and artifacts. Inspect the complete ledger
 after any interrupted run before authorizing another batch.
