@@ -83,9 +83,10 @@ Register each entry in `tools.schemas` with its async callable in
 `tools.handlers`. The six tools cover commands, reading, writing, exact edits,
 listing and search. Replace the application's host file tools along with its
 shell tool. Pass the version from `read_file` to `edit_file`. On `EDIT_CONFLICT`,
-read again. After `OUTCOME_UNKNOWN`, inspect the affected files before another
-write. `freshShell` accompanies successful commands after reopening. Closing
-the client keeps the files. Call `await tools.dispose()` for permanent deletion.
+read again. A missing or unverifiable write receipt returns `OUTCOME_UNKNOWN`.
+Inspect the affected files before another write. `freshShell` accompanies successful
+commands after reopening. Closing the client keeps the files. Call
+`await tools.dispose()` for permanent deletion.
 
 ## Connection and session lifecycle
 
@@ -98,7 +99,7 @@ and `SANDCRAB_ENDPOINT` without an explicit option throws `TypeError`.
 (`Symbol.asyncDispose`) close and forget the session when leaving scope unless
 `keepResult: true` or `autoClose: false` is passed.
 
-If transport fails after sending a mutating submission (`submitRun`, `openSession`,
+If a mutating request returns no usable reply (`submitRun`, `openSession`,
 `submitSessionCommand`, `createVolume`), the client throws `TransportUncertainError`
 with `recoveryId` instead of submitting a duplicate request.
 

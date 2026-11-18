@@ -824,7 +824,6 @@ export class SandcrabClient {
         uncertainOp &&
         recoveryId &&
         !(err instanceof SandcrabError) &&
-        !(err instanceof ProtocolError) &&
         !(err instanceof TypeError) &&
         !(err instanceof RangeError)
       ) {

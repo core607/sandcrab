@@ -34,6 +34,15 @@ def cases(call, seed=None):
     edit = {'path': path, 'version': version, 'old': 'needle', 'new': 'changed'}
     assert call('edit_file', edit) == {'ok': True, 'replacedCount': 1}
     assert call('edit_file', edit) == {'ok': False, 'code': 'EDIT_CONFLICT'}
+    assert call('write_file', {'path': 'log', 'content': 'first\nsecond\n'})['ok']
+    selection = call('read_file', {'path': 'log', 'offset': 2, 'limit': 1})
+    assert selection['ok'] and selection['content'] == 'second', selection
+    appended = call('exec', {'command': "echo third >> log"})
+    assert appended['ok'], appended
+    stale = call('edit_file', {'path': 'log', 'version': selection['version'], 'old': 'first', 'new': 'lost'})
+    assert stale == {'ok': False, 'code': 'EDIT_CONFLICT'}, stale
+    retained = call('read_file', {'path': 'log'})
+    assert retained['ok'] and retained['content'].splitlines() == ['first', 'second', 'third'], retained
     listed = call('list_dir', {'path': 'notes'})
     assert listed['ok'] and [row['path'] for row in listed['entries']] == [path], listed
     found = call('search', {'pattern': '*.txt', 'contains': 'changed'})

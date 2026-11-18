@@ -6,6 +6,7 @@ import base64
 import codecs
 from contextlib import contextmanager
 from functools import partial
+import hashlib
 import re
 import time
 from typing import TYPE_CHECKING, Any
@@ -177,11 +178,17 @@ class WorkspaceTools:
                                "replace": str(args.get("replace", True)).lower()})
             receipt = await self._client._request_json("PUT", route + "?" + query, content=data, headers=headers,
                                                        recovery_id=path, uncertain_op="write file")
+            if (receipt.get("path") != path or type(receipt.get("bytes")) is not int
+                    or receipt["bytes"] != len(data) or receipt.get("sha256") != hashlib.sha256(data).hexdigest()):
+                return dict(UNKNOWN)
             return {"ok": True, "bytes": receipt["bytes"], "version": receipt["sha256"]}
         if name == "edit_file":
             edit = {"path": path, "expectedSha256": check_digest(args["version"]), "old": args["old"], "new": args["new"]}
             receipt = await self._client._request_json("POST", route + "/edit", json_body=edit, headers=headers,
                                                        recovery_id=path, uncertain_op="edit file")
+            if (receipt.get("path") != path or type(receipt.get("replacedCount")) is not int
+                    or receipt["replacedCount"] != 1):
+                return dict(UNKNOWN)
             return {"ok": True, "replacedCount": receipt["replacedCount"]}
         query = {"path": path}
         if name == "list_dir":

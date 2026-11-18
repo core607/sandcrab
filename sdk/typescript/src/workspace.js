@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { checkDigest, checkProfile, checkRelativePath, checkUuid, ProtocolError, SandcrabError, TransportUncertainError } from "./index.js";
 
 const TEXT_BYTES = 16384;
@@ -119,11 +119,15 @@ class WorkspaceTools {
       if (rawBody.length > 32768) throw new RangeError("Content exceeds tool limit");
       const query = new URLSearchParams({ path: file, parents: String(args.parents ?? true), replace: String(args.replace ?? true) });
       const reply = await this.client._requestJson("PUT", route + "?" + query, { headers, rawBody, recoveryId: file, uncertainOp: "write file" });
+      if (reply.path !== file || reply.bytes !== rawBody.length || reply.sha256 !== createHash("sha256").update(rawBody).digest("hex")) {
+        return unknownOutcome();
+      }
       return { ok: true, bytes: reply.bytes, version: reply.sha256 };
     }
     if (name === "edit_file") {
       const jsonBody = { path: file, expectedSha256: checkDigest(args.version), old: args.old, new: args.new };
       const reply = await this.client._requestJson("POST", route + "/edit", { headers, jsonBody, recoveryId: file, uncertainOp: "edit file" });
+      if (reply.path !== file || reply.replacedCount !== 1) return unknownOutcome();
       return { ok: true, replacedCount: reply.replacedCount };
     }
     const query = new URLSearchParams({ path: file });

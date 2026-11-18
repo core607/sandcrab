@@ -229,6 +229,27 @@ class SyncClientTests(unittest.TestCase):
             self.assertEqual(RUN_ID, ctx.exception.recovery_id)
         self.assertEqual(1, posts)
 
+    def test_unreadable_reply_is_uncertain_only_after_submission(self) -> None:
+        requests = []
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append((request.method, request.url.path))
+            if requests == [("GET", "/v1/info")]:
+                return httpx.Response(200, json={"serverId": EPOCH})
+            return httpx.Response(200, content=b"[")
+
+        with SandcrabClient(default_profile="default", transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(TransportUncertainError) as failed:
+                client.submit_run(["true"], id=RUN_ID)
+            self.assertEqual(failed.exception.recovery_id, RUN_ID)
+            with self.assertRaises(ProtocolError):
+                client.get_run(RUN_ID)
+        with SandcrabClient(default_profile="default", transport=httpx.MockTransport(handler)) as fresh:
+            with self.assertRaises(ProtocolError):
+                fresh.submit_run(["true"], id=RUN_ID)
+        self.assertEqual(requests, [
+            ("GET", "/v1/info"), ("POST", "/v1/runs"), ("GET", f"/v1/runs/{RUN_ID}"), ("GET", "/v1/info"),
+        ])
+
     def test_session_context_files_volumes_and_gzip_templates(self) -> None:
         events: list[tuple[str, str]] = []
         stored_tar = bytearray()
