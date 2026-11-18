@@ -70,8 +70,9 @@ reading, writing, exact edits, listing and search. Replace the application's
 host file tools along with its shell tool.
 
 `read_file` returns the whole-file version for `edit_file`. On `EDIT_CONFLICT`,
-read the file again. After `OUTCOME_UNKNOWN`, inspect the affected files before
-another write. `freshShell` on a successful command means the shell was newly
+read the file again. A missing or unverifiable write receipt returns
+`OUTCOME_UNKNOWN`. Inspect the affected files before another write.
+`freshShell` on a successful command means the shell was newly
 opened. Closing the client keeps the files. The application can call
 `tools.dispose()` (await it on the async client) for permanent deletion.
 
@@ -92,7 +93,7 @@ closes and forgets the session unless `keep_result=True` or `auto_close=False` i
 records unless `keep_result=True`, and raise `CommandFailedError` when `check=True` and
 the command does not succeed.
 
-If transport fails after submitting a mutating request (`submit_run`, `open_session`,
+If a mutating request returns no usable reply (`submit_run`, `open_session`,
 `submit_session_command`, `create_volume`), the client raises `TransportUncertainError`
 carrying `recovery_id` and never reposts under a new ID.
 

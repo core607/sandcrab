@@ -327,12 +327,11 @@ class SandcrabClient:
                     buf.extend(chunk)
                     if len(buf) > JSON_BOUND:
                         raise ProtocolError("JSON response exceeded client bound")
-                status = response.status_code
-        except (httpx.TransportError, TimeoutError) as error:
+                return parse_json_response(response.status_code, buf, recovery_id=recovery_id)
+        except (httpx.TransportError, ProtocolError, TimeoutError) as error:
             if uncertain_op and recovery_id:
                 raise TransportUncertainError(uncertain_op, recovery_id, error) from error
             raise
-        return parse_json_response(status, buf, recovery_id=recovery_id)
 
     def _request_bytes(
         self,
@@ -1275,12 +1274,11 @@ class AsyncSandcrabClient:
                     buf.extend(chunk)
                     if len(buf) > JSON_BOUND:
                         raise ProtocolError("JSON response exceeded client bound")
-                status = response.status_code
-        except (httpx.TransportError, TimeoutError) as error:
+                return parse_json_response(response.status_code, buf, recovery_id=recovery_id)
+        except (httpx.TransportError, ProtocolError, TimeoutError) as error:
             if uncertain_op and recovery_id:
                 raise TransportUncertainError(uncertain_op, recovery_id, error) from error
             raise
-        return parse_json_response(status, buf, recovery_id=recovery_id)
 
     async def _request_bytes(
         self,
