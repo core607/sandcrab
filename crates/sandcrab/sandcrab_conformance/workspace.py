@@ -74,7 +74,7 @@ max_records = 12
         assert self.wait(request)['freshShell'] is True
         reused = self.wait(second)
         assert reused['state'] == 'succeeded' and reused['result']['stdout'] == '42' and not reused['freshShell'], reused
-        self.session_wait({'id': second['sessionId']}, terminal=True)
+        self.measure_idle_reopen(route, generation, second['sessionId'])
         files = route + '/files'
         headers = {'X-Sandcrab-Workspace-Generation': generation}
         assert binary_http(self.socket, 'PUT', files + '?path=note', b'first\nsecond\n', headers)[0] == 200
@@ -132,6 +132,34 @@ max_records = 12
         assert http(self.socket, 'POST', route + '/delete', expected)[0] == 409
         self.done('delayed-mutations-cannot-alter-a-new-generation-of-the-same-key')
         self.template_workspace()
+
+    def measure_idle_reopen(self, route, generation, parent):
+        samples = []
+        for index in range(3):
+            assert self.session_wait({'id': parent}, terminal=True)['state'] == 'expired'
+            assert not (self.workloads_group / ('session-' + parent)).exists()
+            sample = {'idleSessionCgroupPresent': False}
+            for kind in (('workspace', 'session') if index % 2 == 0 else ('session', 'workspace')):
+                start = time.monotonic_ns()
+                if kind == 'session':
+                    raw = self.session_open()
+                    request, result = self.session_exec(raw, 'printf 42')
+                else:
+                    request, submitted = self.command(route, generation, 'printf 42')
+                    parent = submitted['sessionId']
+                    result = self.wait(submitted)
+                    assert result['freshShell']
+                sample[kind + 'ToFirstCommandMillis'] = (time.monotonic_ns() - start) / 1e6
+                assert result['state'] == 'succeeded' and result['result']['stdout'] == '42'
+                self.forget(request)
+                if kind == 'session':
+                    self.session_close(raw)
+                    self.session_forget(raw)
+            samples.append(sample)
+        self.session_wait({'id': parent}, terminal=True)
+        self.receipt['idleReopen'] = {'samples': samples, 'idleWindowMillis': 1000,
+                                      'timing': 'Unix client to completed printf 42, including workspace lookup or raw session open and readiness.'}
+        self.done('idle-workspace-releases-its-workload-cgroup-and-reopens-by-key')
 
     def template_workspace(self):
         tree = archive([('base', tarfile.REGTYPE, b'base', 0o644),
