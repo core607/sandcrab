@@ -252,7 +252,7 @@ impl Service {
             });
             return (
                 200,
-                json!({"apiVersion":1,"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
+                json!({"apiVersion":1,"releaseVersion":env!("CARGO_PKG_VERSION"),"serverId":self.id,"capabilities":capabilities,"profiles":profiles,"storage":storage,
                     "limits":{"maxSandboxes":self.runtime.config.service.max_sandboxes,"maxRecords":self.runtime.config.service.max_records,
                         "resultTtlMillis":self.runtime.config.service.result_ttl_millis,
                         "maxQueued":self.runtime.config.service.max_queued,"queueTimeoutMillis":self.runtime.config.service.queue_timeout_millis,

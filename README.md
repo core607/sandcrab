@@ -198,6 +198,13 @@ helper's notices and source. The [conformance runner](crates/sandcrab/docs/verif
 exercises real Linux sandboxes. [Inspect evals](evals/README.md) test agent use of the API.
 The [density benchmark](benchmarks/density/README.md) measures a reproducible workload.
 
+For a stable release above 0.3.1, set the service and both SDKs to the same
+version before tagging the commit. The [release workflow](.github/workflows/publish-sdks.yml)
+tests both packaged README examples against that commit's service archive. It
+publishes the service, then PyPI and npm, verifying the uploaded bytes at each
+destination. Rerun failed jobs to finish a partial release. A manual run with
+`candidate_tag` checks the proposed version and runs acceptance without publishing.
+
 Maintainers can test a released ZIP against a reviewed commit on a public consumer's own
 branch. Add the repository to the JSON array in the `SANDCRAB_DOWNSTREAM_REPOSITORIES`
 Actions variable. The consumer provides `.github/ci/sandcrab-release-check.sh`, receives

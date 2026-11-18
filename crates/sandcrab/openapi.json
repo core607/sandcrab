@@ -2419,7 +2419,8 @@
           "limits",
           "events",
           "hostCalls",
-          "admission"
+          "admission",
+          "releaseVersion"
         ],
         "properties": {
           "apiVersion": {
@@ -2740,6 +2741,10 @@
                 "minimum": 0
               }
             }
+          },
+          "releaseVersion": {
+            "type": "string",
+            "description": "Installed Sandcrab release version."
           }
         }
       },

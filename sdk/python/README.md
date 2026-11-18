@@ -6,6 +6,10 @@ host-call dispatch (`HostCallDispatcher`, `AsyncHostCallDispatcher`), a standard
 JSON-RPC 2.0 stdio MCP server (`sandcrab-mcp`), and the `sandcrab_templates` extension
 used alongside the published OpenSandbox SDK. It requires Python 3.11+ and `httpx>=0.28.1,<1`.
 
+Install the SDK version matching the service release. The client discovers
+`/v1/info` before its first operation and warns if the service advertises a
+different release version. Older services may omit this field.
+
 ## Run your first session
 
 Run this example on the Linux host where Sandcrab is installed. Use the application

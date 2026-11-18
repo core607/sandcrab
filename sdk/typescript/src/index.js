@@ -6,6 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import zlib from "node:zlib";
 
+const SDK_VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const DIGEST_RE = /^[0-9a-f]{64}$/;
 const PROFILE_RE = /^[a-z][a-z0-9-]{0,47}$/;
 const CODE_RE = /^[A-Z0-9_]{1,64}$/;
@@ -699,6 +700,8 @@ export class SandcrabClient {
     this.timeoutMs = options.timeoutMs ?? 75000;
     this._agent = new http.Agent({ keepAlive: false });
     this._serverId = null;
+    this._discovery = null;
+    this._warnedRelease = null;
   }
 
   close() {
@@ -715,12 +718,15 @@ export class SandcrabClient {
 
   async _ensureServerId() {
     if (!this._serverId) {
-      await this.info();
+      this._discovery ??= this.info().finally(() => { this._discovery = null; });
+      await this._discovery;
+      if (!this._serverId) throw new ProtocolError("Discovery returned no serverId");
     }
     return this._serverId;
   }
 
-  _openRawRequest(method, route, { headers = {}, body = null, stream = false } = {}) {
+  async _openRawRequest(method, route, { headers = {}, body = null, stream = false } = {}) {
+    if (!this._serverId && route !== "/v1/info") await this._ensureServerId();
     return new Promise((resolve, reject) => {
       const reqHeaders = { ...this._conn.headers, ...headers };
       let payloadBuffer = null;
@@ -788,6 +794,7 @@ export class SandcrabClient {
     route,
     { jsonBody = undefined, rawBody = undefined, streamBody = undefined, headers = {}, recoveryId = null, uncertainOp = null } = {}
   ) {
+    if (uncertainOp && !this._serverId) await this._ensureServerId();
     let res;
     try {
       const body = streamBody !== undefined ? streamBody : rawBody !== undefined ? rawBody : jsonBody;
@@ -868,6 +875,10 @@ export class SandcrabClient {
     const data = await this._requestJson("GET", "/v1/info");
     if (typeof data.serverId === "string") {
       this._serverId = checkUuid(data.serverId, "serverId");
+    }
+    if (typeof data.releaseVersion === "string" && data.releaseVersion !== SDK_VERSION && data.releaseVersion !== this._warnedRelease) {
+      this._warnedRelease = data.releaseVersion;
+      process.emitWarning("Sandcrab SDK " + SDK_VERSION + " connected to service " + data.releaseVersion, { code: "SANDCRAB_VERSION_MISMATCH" });
     }
     return data;
   }

@@ -1,21 +1,39 @@
-name: SDK packages
+name: Release and SDK packages
 
 on:
+  push:
+    tags: ['v*']
   pull_request:
-    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', '.github/workflows/publish-sdks.yml']
+    paths: ['sdk/**', 'evals/sdk/native_quickstart.py', 'scripts/release_*.py', 'scripts/test_release_*.py', '.github/workflows/publish-sdks.yml', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
-      registry:
-        description: Publish the version in the SDK manifest to this registry
-        type: choice
-        options: [pypi, npm]
-        required: true
+      candidate_tag:
+        description: Optional stable tag to validate against the checked-out release manifests
+        type: string
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  check:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/ci.yml
+  conformance:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/evals.yml
+  readiness:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/sandcrab-readiness.yml
+    with:
+      retain_image: true
   build:
+    needs: readiness
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.readiness.result == 'success') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -30,18 +48,31 @@ jobs:
           package-manager-cache: false
       - name: Build and check the distributions
         run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct)"
+          python -m unittest discover -s scripts -p 'test_release_*.py'
           python -m pip install build twine
           python -m build --outdir dist/pypi sdk/python
           python -m twine check --strict dist/pypi/*
           mkdir -p dist/npm
           npm pack ./sdk/typescript --pack-destination dist/npm
-      - name: Install the current public service on the disposable runner
+      - name: Download the accepted service archive
+        if: github.event_name != 'pull_request'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.readiness.outputs.release_archive }}
+          path: candidate
+      - name: Build the PR's candidate service
+        if: github.event_name == 'pull_request'
+        run: docker build --target release --output type=local,dest=candidate .
+      - name: Check release versions
+        if: startsWith(github.ref, 'refs/tags/') || inputs.candidate_tag != ''
         env:
-          GH_TOKEN: ${{ github.token }}
-        working-directory: ${{ runner.temp }}
+          CANDIDATE_TAG: ${{ inputs.candidate_tag || github.ref_name }}
+        run: python scripts/release_packages.py "$CANDIDATE_TAG" dist
+      - name: Install the candidate on the disposable runner
+        working-directory: candidate
         run: |
-          gh release download --repo core607/sandcrab --pattern sandcrab-linux-x86_64.zip --pattern SHA256SUMS
-          awk '$2 == "sandcrab-linux-x86_64.zip"' SHA256SUMS | sha256sum --check
+          sha256sum -c SHA256SUMS
           sudo /usr/bin/python3 -I sandcrab-linux-x86_64.zip
           sudo install -d -m 0711 /etc/sandcrab-client
           sudo /var/lib/sandcrab-release/sandcrab client-token --user "$(id -un)" --output /etc/sandcrab-client/token
@@ -56,36 +87,98 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  service:
+    if: github.event_name == 'push'
+    needs: [check, conformance, readiness, build]
+    uses: ./.github/workflows/release.yml
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+    with:
+      archive: ${{ needs.readiness.outputs.release_archive }}
+      archive_aarch64: ${{ needs.readiness.outputs.release_archive_aarch64 }}
+      image: ${{ needs.readiness.outputs.tested_image }}
+
   pypi:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.registry == 'pypi'
-    needs: build
+    needs: service
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
+      actions: read
+      contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: sdk-packages
           path: dist
-      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+      - name: Verify existing files and select missing distributions
+        id: reconcile
+        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry pypi --prepare pending >> "$GITHUB_OUTPUT"
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        if: steps.reconcile.outputs.pending == 'true'
         with:
-          packages-dir: dist/pypi/
+          packages-dir: pending/
+      - name: Read back the accepted distribution bytes
+        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry pypi --verify
 
   npm:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.registry == 'npm'
-    needs: build
+    needs: service
     runs-on: ubuntu-24.04
     environment: npm
     permissions:
+      actions: read
+      contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: sdk-packages
           path: dist
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - name: Verify existing files and select missing distributions
+        id: reconcile
+        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry npm --prepare pending >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: steps.reconcile.outputs.pending == 'true'
         with:
           node-version: '24'
           package-manager-cache: false
-      - run: npm publish dist/npm/*.tgz --registry=https://registry.npmjs.org --access public --provenance
+      - if: steps.reconcile.outputs.pending == 'true'
+        run: npm publish pending/*.tgz --registry=https://registry.npmjs.org --access public --provenance
+      - name: Read back the accepted distribution bytes
+        run: python3 scripts/release_packages.py "$GITHUB_REF_NAME" dist --registry npm --verify
+
+  installed-release:
+    needs: [pypi, npm]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install the published service at the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern sandcrab-linux-x86_64.zip --pattern SHA256SUMS
+          awk '$2 == "sandcrab-linux-x86_64.zip"' SHA256SUMS | sha256sum --check
+          sudo /usr/bin/python3 -I sandcrab-linux-x86_64.zip
+          sudo install -d -m 0711 /etc/sandcrab-client
+          sudo /var/lib/sandcrab-release/sandcrab client-token --user "$(id -un)" --output /etc/sandcrab-client/token
+      - name: Install both published SDKs in fresh projects
+        run: |
+          python evals/sdk/native_quickstart.py sdk/python/README.md
+          python evals/sdk/native_quickstart.py sdk/typescript/README.md
