@@ -108,10 +108,14 @@ def systemd(bundle, passed):
             assert 'OK  sandbox:' in run([link, 'doctor']).stdout
             passed('protected /usr/local/bin symlink resolves bundled bwrap')
         client_dir = Path('/var/lib/sandcrab-client-probe')
-        client_dir.mkdir(mode=0o700)
+        client_dir.mkdir(mode=0o711)
         try:
             daemon_pw = pwd.getpwnam('daemon')
-            os.chown(client_dir, daemon_pw.pw_uid, daemon_pw.pw_gid)
+            private_dir = client_dir / 'client-owned'
+            private_dir.mkdir(mode=0o700)
+            os.chown(private_dir, daemon_pw.pw_uid, daemon_pw.pw_gid)
+            assert run([exe, 'client-token', '--user', 'daemon', '--output', private_dir / 'token'], check=False).returncode != 0
+            assert not (private_dir / 'token').exists()
             assert run([exe, 'client-token', '--user', 'sandcrab-exec', '--output', client_dir / 'bad'], check=False).returncode != 0
             provisioned = run([exe, 'client-token', '--user', 'daemon', '--output', client_dir / 'token'])
             assert secret.decode().strip() not in provisioned.stdout + provisioned.stderr

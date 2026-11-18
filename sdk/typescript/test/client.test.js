@@ -30,6 +30,31 @@ function sseFrame(id, event, data) {
   return `id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+test("overlapping observers share one host-call effect and reject a changed request", async () => {
+  const ledger = new InMemoryReplyLedger();
+  const first = new HostCallDispatcher({ ledger });
+  const second = new HostCallDispatcher({ ledger });
+  const context = { runId: RUN_ID, callId: CALL_ID, requestSha256: "digest" };
+  let entered, finish;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { finish = resolve; });
+  let effects = 0;
+  first.onCall(async () => {
+    effects += 1;
+    entered();
+    await gate;
+    return "reply";
+  });
+  const owner = first.handlePayload(Buffer.from("ping"), context);
+  await started;
+  const follower = second.handlePayload(Buffer.from("ping"), context);
+  await assert.rejects(second.handlePayload(Buffer.from("other"), { ...context, requestSha256: "other" }), ProtocolError);
+  finish();
+  assert.deepEqual(await Promise.all([owner, follower]), [Buffer.from("reply"), Buffer.from("reply")]);
+  assert.equal(effects, 1);
+  assert.equal(ledger.size, 1);
+});
+
 async function withMockServer(handler, fn) {
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

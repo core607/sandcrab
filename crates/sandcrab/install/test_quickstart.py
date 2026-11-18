@@ -10,12 +10,19 @@ import shutil
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from quickstart import README, recipe
 
 
 class ReadmeRecipe(unittest.TestCase):
+    def test_documented_download_matches_the_candidate_version(self):
+        manifest = (README.parent / 'crates/sandcrab/Cargo.toml').read_text(encoding='utf-8')
+        version = re.search(r'^version = "([^"]+)"', manifest, re.M).group(1)
+        download = recipe(README.read_text(encoding='utf-8'))[0]
+        self.assertIn(f'/releases/download/v{version}/sandcrab-linux-x86_64.zip', download)
+
     def test_editor_or_extra_command_cannot_pass_as_three_unassisted_steps(self):
         readme = README.read_text(encoding='utf-8')
         self.assertEqual(len(recipe(readme)), 3)
@@ -112,20 +119,48 @@ class BundleFiles(unittest.TestCase):
         self.entry.install_files(self.archive, self.release)
         (self.release / 'LICENSE').unlink()
         (self.release / 'sandcrab').write_bytes(b'prior-release-binary')
-        events = []
-        replaced = self.entry.install_files(
-            self.archive,
-            self.release,
-            upgrade=True,
-            before_replace=lambda: events.append((self.release / 'sandcrab').read_bytes()),
-        )
+        replaced = self.entry.install_files(self.archive, self.release, upgrade=True)
         self.assertTrue(replaced)
-        self.assertEqual(events, [b'prior-release-binary'])
         for name, mode in self.entry.FILES.items():
             path = self.release / name
             self.assertEqual(path.read_bytes(), name.encode())
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
         self.assertFalse(self.entry.install_files(self.archive, self.release, upgrade=True))
+
+    def test_upgrade_keeps_previous_files_until_activation_and_restores_them_on_failure(self):
+        self.entry.install_files(self.archive, self.release)
+        binary = self.release / 'sandcrab'
+        binary.write_bytes(b'old')
+        observed = []
+
+        def install(release, upgrade, *, dry_run=False):
+            self.assertTrue(upgrade)
+            self.assertEqual((release / 'sandcrab').read_bytes(), b'sandcrab')
+            observed.append(('preflight' if dry_run else 'install', binary.read_bytes()))
+            if not dry_run:
+                raise RuntimeError('activation failed')
+
+        with (patch.object(self.entry, '_install', side_effect=install),
+              patch.object(self.entry, '_systemctl') as systemctl,
+              patch.object(self.entry, 'ServiceBackup') as backup):
+            backup.return_value.active = True
+            backup.return_value.restore.side_effect = lambda: observed.append(('restore', binary.read_bytes()))
+            with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+                self.entry.install_files(self.archive, self.release, upgrade=True, configure=True)
+            systemctl.assert_called_once_with('stop', self.entry.UNIT)
+        self.assertEqual(observed, [('preflight', b'old'), ('install', b'sandcrab'), ('restore', b'old')])
+        self.assertEqual(set(self.root.iterdir()), {self.release})
+
+    def test_failed_preflight_leaves_running_installation_alone(self):
+        self.entry.install_files(self.archive, self.release)
+        binary = self.release / 'sandcrab'
+        binary.write_bytes(b'old')
+        with (patch.object(self.entry, '_install', side_effect=RuntimeError('conflict')),
+              patch.object(self.entry, '_systemctl') as systemctl):
+            with self.assertRaisesRegex(RuntimeError, 'conflict'):
+                self.entry.install_files(self.archive, self.release, upgrade=True, configure=True)
+            systemctl.assert_not_called()
+        self.assertEqual(binary.read_bytes(), b'old')
 
     def test_mismatched_elf_architecture_is_refused_before_installation(self):
         def elf_header(e_machine):

@@ -8,12 +8,14 @@ import json
 import sys
 from typing import Any, BinaryIO
 
+import httpx
+
 from .client import SandcrabClient
 from .errors import CommandFailedError, ProtocolError, SandcrabError, TransportUncertainError
 
 SUPPORTED_PROTOCOLS = ("2025-03-26", "2024-11-05")
 DEFAULT_PROTOCOL = "2024-11-05"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
 MCP_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
 MCP_FILE_BOUND_BYTES = 1024 * 1024
 
@@ -399,6 +401,7 @@ class SandcrabMcpServer:
                 ValueError,
                 KeyError,
                 TimeoutError,
+                httpx.TransportError,
             ) as err:
                 err_payload: dict[str, Any] = {"error": str(err)}
                 if isinstance(err, SandcrabError):
@@ -409,6 +412,8 @@ class SandcrabMcpServer:
                 elif isinstance(err, TransportUncertainError):
                     err_payload["code"] = "TRANSPORT_UNCERTAIN"
                     err_payload["recoveryId"] = err.recovery_id
+                elif isinstance(err, httpx.TransportError):
+                    err_payload["code"] = "TRANSPORT_ERROR"
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,

@@ -84,7 +84,8 @@ const dispatcher = new HostCallDispatcher().onJson("sign-sha256", async (req) =>
 await client.run(["python3", "sign_step.py"], { profile: "python", dispatcher, check: true });
 ```
 
-`InMemoryReplyLedger` deduplicates `(runId, callId)` within one caller lifetime and
-rejects changed request bytes; pass a persistent `ReplyLedger` when handlers trigger
-durable external effects. Unhandled handler errors cancel the sandbox run and leave its
+Dispatchers sharing a reply ledger share the result of overlapping observations
+of the same `(runId, callId)` and reject changed request bytes. In-memory replies
+last for the caller's lifetime. For durable external effects, record the reply in
+the transaction that commits the effect. Unhandled handler errors cancel the sandbox run and leave its
 record retained for inspection.
