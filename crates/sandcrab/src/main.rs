@@ -66,7 +66,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run] [--upgrade]\n  sandcrab upgrade [--dry-run]\n  sandcrab uninstall [--dry-run]\n  sandcrab client-token --user USER --output FILE [--config FILE] [--replace]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info [--socket PATH]\n  sandcrab run [--socket PATH] [--profile NAME] [--timeout-ms DURATION] [--stream] [--keep-result] [--memory-bytes BYTES] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list [--socket PATH] [--after UUID]\n  sandcrab get|cancel|forget [--socket PATH] RUN_ID\n  sandcrab events [--socket PATH] RUN_ID [--after CURSOR]\n  sandcrab session open [--socket PATH] [--profile NAME] [--ttl-ms DURATION] [--keep-result] [--volume UUID | --template SHA256] [--rootfs] [--memory-bytes BYTES] [--cpu-percent N]\n  sandcrab session shell [--socket PATH] PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec [--socket PATH] SESSION_ID [--timeout-ms DURATION] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list [--socket PATH] [--after UUID]\n  sandcrab session get|close|forget [--socket PATH] SESSION_ID\n  sandcrab session renew [--socket PATH] SESSION_ID --ttl-ms DURATION\n  sandcrab session diff [--socket PATH] SESSION_ID DESTINATION [--replace]\n  sandcrab template --help\n  sandcrab volume create [--socket PATH] [--profile NAME] [--id UUID] [--clone-from UUID] [--bytes BYTES] [--inodes N]\n  sandcrab volume list [--socket PATH] [--after UUID]\n  sandcrab volume get|delete|forget [--socket PATH] VOLUME_ID\n\nClient commands accept --socket PATH or --endpoint http://LOOPBACK:PORT anywhere before --, or SANDCRAB_SOCKET / SANDCRAB_ENDPOINT.\nProfile commands fall back to SANDCRAB_PROFILE. Pass --token-file FILE anywhere before -- or set SANDCRAB_TOKEN_FILE for TCP.\nQuantities accept plain integers or suffixes (e.g. 32Mi, 1Gi, 30s, 5m; --memory and --cpu/--timeout/--ttl aliases).\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
+const HELP: &str = "Sandcrab\n\nCommands:\n  sandcrab install [--dry-run] [--upgrade]\n  sandcrab upgrade [--dry-run]\n  sandcrab uninstall [--dry-run]\n  sandcrab client-token --user USER --output FILE [--config FILE] [--replace]\n  sandcrab doctor [--config FILE]\n  sandcrab serve --config FILE | --container\n  sandcrab check --config FILE\n  sandcrab info [--socket PATH]\n  sandcrab run [--socket PATH] [--profile NAME] [--timeout-ms DURATION] [--stream] [--keep-result] [--memory-bytes BYTES] [--cpu-percent N] -- COMMAND [ARG...]\n  sandcrab list [--socket PATH] [--after UUID]\n  sandcrab get|cancel|forget [--socket PATH] RUN_ID\n  sandcrab events [--socket PATH] RUN_ID [--after CURSOR]\n  sandcrab session open [--socket PATH] [--profile NAME] [--ttl-ms DURATION] [--keep-result] [--volume UUID | --template SHA256] [--rootfs] [--memory-bytes BYTES] [--cpu-percent N]\n  sandcrab session shell [--socket PATH] PARENT_SESSION_ID [--keep-result]\n  sandcrab session exec [--socket PATH] SESSION_ID [--timeout-ms DURATION] [--stream] [--keep-result] -- SHELL_SOURCE\n  sandcrab session list [--socket PATH] [--after UUID]\n  sandcrab session get|close|forget [--socket PATH] SESSION_ID\n  sandcrab session renew [--socket PATH] SESSION_ID --ttl-ms DURATION\n  sandcrab session diff [--socket PATH] SESSION_ID DESTINATION [--replace]\n  sandcrab template --help\n  sandcrab volume create [--socket PATH] [--profile NAME] [--id UUID] [--clone-from UUID] [--bytes BYTES] [--inodes N]\n  sandcrab volume list [--socket PATH] [--after UUID]\n  sandcrab volume get|delete|forget [--socket PATH] VOLUME_ID\n\nClient commands accept --socket PATH or --endpoint http://LOOPBACK:PORT anywhere before --, or SANDCRAB_SOCKET / SANDCRAB_ENDPOINT.\nWith no connection setting, use the installed Unix socket. Profile commands use --profile, SANDCRAB_PROFILE, or default. Pass --token-file FILE anywhere before -- or set SANDCRAB_TOKEN_FILE for TCP.\nQuantities accept plain integers or suffixes (e.g. 32Mi, 1Gi, 30s, 5m; --memory and --cpu/--timeout/--ttl aliases).\n\nserve requires root and a bounded delegated cgroup v2 subtree. run uses the profile's isolated execution account.\n";
 
 fn parse_install_flags(args: &[String], allow_upgrade: bool) -> io::Result<(bool, bool)> {
     let (mut dry_run, mut upgrade) = (false, false);
@@ -388,7 +388,7 @@ fn run(
         return Err(config::invalid("COMMAND is required"));
     }
     let endpoint = connection.endpoint(env)?;
-    let profile = cli::resolve_profile(profile, env)?;
+    let profile = cli::resolve_profile(profile, env);
     client::run(
         &endpoint,
         &profile,
@@ -450,7 +450,7 @@ fn session(
             if rootfs && template.is_none() {
                 return Err(config::invalid("--rootfs requires --template"));
             }
-            let profile = cli::resolve_profile(profile, env)?;
+            let profile = cli::resolve_profile(profile, env);
             client::open_session(
                 &connection.endpoint(env)?,
                 &profile,
@@ -664,7 +664,7 @@ fn volume(args: &[String], connection: &Connection, env: &Env) -> io::Result<i32
                 Some(id) => id.to_string(),
                 None => sandcrab_core::new_uuid()?,
             },
-            profile: cli::resolve_profile(options.get("--profile").copied(), env)?,
+            profile: cli::resolve_profile(options.get("--profile").copied(), env),
             clone_from: options.get("--clone-from").map(|s| s.to_string()),
             byte_limit,
             inode_limit,

@@ -31,9 +31,12 @@ command's exit result. Inspect or forget the printed ID instead of rerunning it.
 Client commands accept `--socket PATH` or `--endpoint URL` anywhere before `--`,
 or fall back to `SANDCRAB_SOCKET` or `SANDCRAB_ENDPOINT`. Setting both environment
 variables without an explicit connection flag fails rather than guessing a transport.
+With neither set, the CLI checks for the installed Unix socket at
+`/var/lib/sandcrab/runtime/control.sock` and authenticates it as usual.
 Commands that select a profile (`run`, `session open`, `volume create`,
-`template import`) accept `--profile NAME` in any option position or fall back to
-`SANDCRAB_PROFILE`. Byte and duration flags (`--memory-bytes` / `--memory`, `--bytes`,
+`template import`) use `--profile NAME`, then `SANDCRAB_PROFILE`, then
+the profile named `default`. Select a profile explicitly for configurations
+that use another name. Byte and duration flags (`--memory-bytes` / `--memory`, `--bytes`,
 `--timeout-ms` / `--timeout`, `--ttl-ms` / `--ttl`) accept plain integer units or
 exact suffixes (`Ki`, `Mi`, `Gi`, `Ti`, `KiB`, `MiB`, `GiB`, `TiB`, `k`, `M`, `G`,
 `T`, `B`; `ms`, `s`, `m`, `h`, `d`). `--cpu-percent` accepts integer percentages, and

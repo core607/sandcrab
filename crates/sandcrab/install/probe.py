@@ -70,6 +70,12 @@ def systemd(bundle, passed):
         assert not any(credentials), 'A foreign listener received the new installation credential'
         passed('occupied loopback port fails installation without disclosing a credential')
         run([exe, 'install'])
+        command = subprocess.run(
+            [exe, 'run', '--', 'python3', '-c', 'print(6 * 7)'],
+            env={'PATH': os.defpath}, capture_output=True, text=True, check=True, timeout=45)
+        record = json.loads(command.stdout)
+        assert record['state'] == 'succeeded' and record['result']['stdout'] == '42\n'
+        passed('installed CLI runs with no connection or profile settings')
         doctor = run([exe, 'doctor']).stdout
         assert 'OK  sandbox:' in doctor and 'OK  cgroup:' in doctor and 'OK  storage:' in doctor
         passed('systemd service starts; doctor runs a real sandbox')
@@ -209,8 +215,7 @@ def container(image, passed, bundle=None):
             time.sleep(.2)
         doctor = run(['docker','exec',identifier,'sandcrab','doctor']).stdout
         assert 'OK  cgroup:' in doctor and 'OK  sandbox:' in doctor
-        result = json.loads(run(['docker','exec',identifier,'sandcrab','run','--socket',
-                                 '/var/lib/sandcrab/runtime/control.sock','--profile','default',
+        result = json.loads(run(['docker','exec',identifier,'sandcrab','run',
                                  '--','/usr/bin/id','-u']).stdout)
         assert result['state']=='succeeded' and int(result['result']['stdout'])>0
         passed('packaged daemon is usable in a bounded private cgroup without systemd')
