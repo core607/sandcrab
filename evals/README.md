@@ -16,8 +16,11 @@ To collect paired scripted receipts in Actions, dispatch **Agent evaluations** o
 `main` with `evidence_mode=scripted`, `suite=workspace`, `workspace_client=mcp-pair`
 and one repeat. Both catalogs exercise the same tasks and independent grader.
 [The six-task scripted comparison](../evidence/sandcrab-workspace-tools-scripted-2026-11-18/summary.json)
-links the CI artifacts. Choosing `evidence_mode=model` enables the metered model
-and its dedicated secret.
+links the CI artifacts. The [GPT-6 Luna comparison](../evidence/sandcrab-workspace-tools-luna-2026-11-19/summary.json)
+ran each task once with each catalog. Workspace tools passed five tasks and
+session tools passed four. Workspace tools completed the log repair. Both
+catalogs missed the multi-file build. Choosing `evidence_mode=model` enables
+the metered model and its dedicated secret.
 
 The `comparison` in the CI summary reports paired outcomes, tool traffic, tokens
 and median elapsed time. Raw attempts and workspace artifacts stay with the run.
