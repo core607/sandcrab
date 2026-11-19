@@ -1,0 +1,88 @@
+{
+  "revision": "66266e8c906ae040d2fb1e349ec2753c1fd862fa",
+  "artifactRun": "https://github.com/core607/sandcrab/actions/runs/44424232827",
+  "artifactId": 14483037207,
+  "artifactName": "sandcrab-local-luna-pair",
+  "execution": "local",
+  "mode": "model",
+  "model": "bounded-openai/gpt-6-luna",
+  "status": "success",
+  "scope": "One trial per task per MCP catalog on the same six synthetic tasks, run on a local disposable Linux service. The model used the OpenAI API.",
+  "serviceRelease": "v0.4.0",
+  "serviceBundleSha256": "ae875ccfeca301a9a8941bb1f1e24a717d54567a4eb1902735f5222b7899b981",
+  "corpusSha256": "a5b70937f1055831bd2f64fed89401d36fcf68752b8146b2de69e8a688e86c95",
+  "comparison": {
+    "interfaces": {
+      "session-mcp": {
+        "attempts": 6,
+        "passed": 4,
+        "cleanupFailures": 0,
+        "errors": 0,
+        "medianSeconds": 18.95,
+        "toolCalls": 40,
+        "mcpToolCalls": 31,
+        "apiCalls": 115,
+        "failedToolCalls": 9,
+        "inputTokens": 90785,
+        "outputTokens": 4626
+      },
+      "workspace-mcp": {
+        "attempts": 6,
+        "passed": 5,
+        "cleanupFailures": 0,
+        "errors": 0,
+        "medianSeconds": 15.909,
+        "toolCalls": 37,
+        "mcpToolCalls": 30,
+        "apiCalls": 111,
+        "failedToolCalls": 5,
+        "inputTokens": 70258,
+        "outputTokens": 4694
+      }
+    },
+    "pairedTrials": 6,
+    "unpairedTrials": 0,
+    "bothPassed": 4,
+    "onlySessionPassed": 0,
+    "onlyWorkspacePassed": 1,
+    "bothFailed": 1
+  },
+  "settledRequests": 89,
+  "inputTokens": 161043,
+  "outputTokens": 9320,
+  "budget": {
+    "limitUsd": "1.000000",
+    "maximumAccountedUsd": "0.087549",
+    "unresolvedRequests": 0
+  },
+  "cleanup": "PASS",
+  "evidenceSha256": "d05e8b5c9cd03ff90a41dc8718c602c9e24d59ad79f3e45acd585f172162e8b5",
+  "artifactDigest": "sha256:10a79d5ca1b3c7b7e33713b0e89a6b6bf8fd28fac78b2ef15d5317ad7266b001",
+  "serviceBinarySha256": "ac7b7185f7c34fbc6d18e73ce7ea963142f856b4ee39ab7dcdb876efc5b9dee7",
+  "casePasses": {
+    "binary-index": {
+      "session-mcp": true,
+      "workspace-mcp": true
+    },
+    "csv-report": {
+      "session-mcp": true,
+      "workspace-mcp": true
+    },
+    "inventory": {
+      "session-mcp": true,
+      "workspace-mcp": true
+    },
+    "log-repair": {
+      "session-mcp": false,
+      "workspace-mcp": true
+    },
+    "multi-file-build": {
+      "session-mcp": false,
+      "workspace-mcp": false
+    },
+    "range-repair": {
+      "session-mcp": true,
+      "workspace-mcp": true
+    }
+  }
+}
